@@ -52,6 +52,7 @@ Install tools needed for system administration and development.
           - dnsutils
           - bind-tools
           - cronie
+          - openbsd-netcat
         state: present
       tags: [base, packages]
 #+end_src
