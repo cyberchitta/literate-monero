@@ -325,27 +325,6 @@ fi
 echo ""
 
 # ============================================================================
-# Virtualization Checks
-# ============================================================================
-echo "=== Virtualization Checks ==="
-
-# KVM/QEMU
-if command -v virsh &>/dev/null; then
-  check_pass "libvirt installed"
-  
-  # Tails VM
-  if virsh list --all | grep -q "{{ tails_vm_name }}"; then
-    check_pass "Tails VM defined"
-  else
-    check_warn "Tails VM not defined"
-  fi
-else
-  check_warn "libvirt not installed"
-fi
-
-echo ""
-
-# ============================================================================
 # Security Checks
 # ============================================================================
 echo "=== Security Checks ==="
