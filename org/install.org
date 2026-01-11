@@ -54,15 +54,35 @@ This checks:
 
 ** Running Installation
 
+The playbook should be run phase-by-phase in order. This is the tested and recommended approach:
+
 #+begin_example
-# Run everything
-ansible-playbook playbook.yml
+# Validate configuration first
+cd ansible
+ansible-playbook validate.yml
 
-# Run specific phase
-ansible-playbook playbook.yml --tags firewall
+# Run phases in order
+ansible-playbook playbook.yml --tags base -K
+ansible-playbook playbook.yml --tags wireguard -K
+ansible-playbook playbook.yml --tags privacy -K
+ansible-playbook playbook.yml --tags i2p -K
+ansible-playbook playbook.yml --tags monerod -K
+ansible-playbook playbook.yml --tags users -K
+ansible-playbook playbook.yml --tags mining -K
+ansible-playbook playbook.yml --tags firewall -K
+ansible-playbook playbook.yml --tags monitoring -K
+ansible-playbook playbook.yml --tags backup -K
+ansible-playbook playbook.yml --tags verify -K
+#+end_example
 
-# Dry run
-ansible-playbook playbook.yml --check --diff
+Each phase can be re-run independently if needed:
+
+#+begin_example
+# Re-run specific phase
+ansible-playbook playbook.yml --tags firewall -K
+
+# Dry run to see what would change
+ansible-playbook playbook.yml --tags firewall --check --diff
 #+end_example
 
 ** Development/Debugging Workflow
