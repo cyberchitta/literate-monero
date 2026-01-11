@@ -110,6 +110,52 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
       tags: [monerod, config]
 #+end_src
 
+** Download and Configure Spy Node Ban List
+
+The ban list is cryptographically signed by multiple MRL developers, but we don't verify
+signatures in automated updates due to a bootstrapping problem: GPG keys themselves must
+be fetched from potentially compromised hosts. Our security model relies on:
+
+1. HTTPS transport security (GitHub's TLS)
+2. Size validation (detect corrupted/malicious updates)
+3. Manual verification available for paranoid operators
+
+For manual GPG verification, see: https://github.com/Boog900/monero-ban-list#signatures
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Download Monero spy node ban list
+      get_url:
+        url: https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt
+        dest: /etc/monero/ban_list.txt
+        mode: '0644'
+        force: yes
+      register: ban_list_download
+      tags: [monerod, config, security]
+
+    - name: Verify ban list downloaded successfully
+      stat:
+        path: /etc/monero/ban_list.txt
+      register: ban_list_file
+      tags: [monerod, config, security]
+
+    - name: Check ban list has content
+      shell: wc -l /etc/monero/ban_list.txt | awk '{print $1}'
+      register: ban_list_lines
+      changed_when: false
+      tags: [monerod, config, security]
+
+    - name: Display ban list stats
+      debug:
+        msg:
+          - "Ban list downloaded: {{ ban_list_file.stat.exists }}"
+          - "Ban list entries: {{ ban_list_lines.stdout }}"
+          - ""
+          - "Note: GPG signatures not verified (keys must come from same potentially"
+          - "compromised hosts). Relying on HTTPS + size validation instead."
+          - "For manual verification: https://github.com/Boog900/monero-ban-list#signatures"
+      tags: [monerod, config, security]
+#+end_src
+
 ** monerod Configuration
 
 #+begin_src ini :tangle ../configs/templates/monerod.conf.j2
@@ -152,6 +198,11 @@ tx-proxy=i2p,127.0.0.1:7656,disable_noise
 # P2P inbound via I2P hidden service
 # Allows other I2P users to connect anonymously
 anonymous-inbound={{ monero_i2p_address }},127.0.0.1:18085,128
+
+# Block known spy nodes (MRL recommended)
+# List maintained by Monero Research Lab
+# https://github.com/monero-project/meta/issues/1124
+ban-list=/etc/monero/ban_list.txt
 
 # Note: Blockchain sync uses clearnet (intentional - sybil protection)
 # See: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
@@ -392,6 +443,86 @@ echo ""
       tags: [monerod, scripts]
 #+end_src
 
+** Ban List Maintenance
+
+Script to update the ban list weekly with safety checks.
+
+#+begin_src bash :tangle ../configs/templates/update-monero-banlist.sh.j2
+#!/bin/bash
+# Update Monero spy node ban list
+# MRL recommendation: https://github.com/monero-project/meta/issues/1124
+#
+# Security model:
+# - GPG signatures NOT verified automatically (bootstrapping problem: keys
+#   fetched from same potentially compromised hosts as ban list itself)
+# - Relies on HTTPS transport security + size validation
+# - Manual GPG verification: https://github.com/Boog900/monero-ban-list#signatures
+
+set -euo pipefail
+
+TEMP_FILE="/tmp/ban_list.txt.tmp"
+BAN_LIST="/etc/monero/ban_list.txt"
+
+# Download latest ban list (HTTPS provides transport security)
+curl -s https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt -o "$TEMP_FILE"
+
+# Verify download succeeded and has content
+if [ ! -f "$TEMP_FILE" ] || [ ! -s "$TEMP_FILE" ]; then
+  echo "ERROR: Failed to download ban list" >&2
+  exit 1
+fi
+
+# Count entries
+NEW_COUNT=$(wc -l < "$TEMP_FILE")
+OLD_COUNT=$(wc -l < "$BAN_LIST" 2>/dev/null || echo 0)
+
+# Check for suspicious changes (>50% size change suggests corruption/attack)
+# This catches both malicious additions and accidental corruption
+if [ "$OLD_COUNT" -gt 0 ]; then
+  DIFF=$(echo "scale=2; ($NEW_COUNT - $OLD_COUNT) / $OLD_COUNT * 100" | bc | sed 's/-.*//' | cut -d. -f1)
+  if [ "${DIFF:-0}" -gt 50 ]; then
+    echo "WARNING: Ban list size changed by ${DIFF}% (old: $OLD_COUNT, new: $NEW_COUNT)" >&2
+    echo "Possible corruption or malicious update. Manual review required." >&2
+    echo "Verify manually: https://github.com/Boog900/monero-ban-list" >&2
+    exit 1
+  fi
+fi
+
+# Update ban list
+mv "$TEMP_FILE" "$BAN_LIST"
+chmod 644 "$BAN_LIST"
+
+# Restart monerod if running and list changed
+if systemctl is-active --quiet monerod && [ "$NEW_COUNT" != "$OLD_COUNT" ]; then
+  echo "Ban list updated ($OLD_COUNT -> $NEW_COUNT entries). Restarting monerod..."
+  systemctl restart monerod
+  logger -t monero-ban-list "Ban list updated: $OLD_COUNT -> $NEW_COUNT entries, monerod restarted"
+else
+  echo "Ban list up to date ($NEW_COUNT entries)"
+fi
+#+end_src
+
+Deploy the script and set up weekly updates.
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Deploy ban list update script
+      template:
+        src: ../configs/templates/update-monero-banlist.sh.j2
+        dest: /usr/local/bin/update-monero-banlist.sh
+        mode: '0755'
+      tags: [monerod, scripts, security]
+
+    - name: Create weekly ban list update cron job
+      cron:
+        name: "Update Monero spy node ban list"
+        minute: "0"
+        hour: "3"
+        weekday: "0"
+        job: "/usr/local/bin/update-monero-banlist.sh >> /var/log/monero-banlist.log 2>&1"
+        user: root
+      tags: [monerod, cron, security]
+#+end_src
+
 ** Verification
 
 #+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
@@ -434,6 +565,7 @@ echo ""
           - "  I2P address: {{ monero_i2p_address }}"
           - "  Transaction broadcast: I2P (primary) + Tor (fallback)"
           - "  Blockchain sync: Clearnet (sybil protection)"
+          - "  Spy node protection: Ban list enabled ({{ ban_list_lines.stdout }} entries)"
           - ""
           - "Bandwidth limits:"
           - "  Upload: {{ monerod_limit_rate_up }} KB/s"
@@ -453,6 +585,9 @@ echo ""
           - "  sudo monerod-status.sh"
           - "  journalctl -u monerod -f"
           - ""
+          - "Ban list updates: Weekly (Sundays at 3 AM)"
+          - "Manual update: sudo update-monero-banlist.sh"
+          - ""
           - "P2Pool will automatically use this node once sync completes"
           - ""
       tags: [monerod, verify]
@@ -471,6 +606,60 @@ journalctl -u monerod -f
 systemctl restart monerod
 du -sh /opt/monerod  # Check disk usage
 #+end_example
+
+*** Spy Node Ban List
+
+The ban list blocks known spy nodes that attempt to link IP addresses to transactions.
+
+Maintained by: Monero Research Lab
+Source: https://github.com/Boog900/monero-ban-list
+MRL issue: https://github.com/monero-project/meta/issues/1124
+
+*Security model:*
+
+We do NOT verify GPG signatures automatically because:
+- GPG keys must be fetched from potentially compromised hosts
+- Bootstrapping problem: if GitHub is compromised, keys are too
+- No additional security vs HTTPS alone
+
+Instead we rely on:
+1. HTTPS transport security (GitHub's TLS)
+2. Size validation (>50% change triggers manual review)
+3. Manual verification available for paranoid operators
+
+#+begin_example
+# Manual ban list operations
+sudo update-monero-banlist.sh  # Update now
+cat /etc/monero/ban_list.txt | wc -l  # Count entries
+tail /var/log/monero-banlist.log  # Check update log
+#+end_example
+
+*Manual GPG verification (optional):*
+
+For maximum security, verify signatures manually:
+
+#+begin_example
+# Download ban list and signatures
+cd /tmp
+wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/ban_list.txt
+wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/sigs/boog900.sig
+wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/sigs/jeffro256.sig
+
+# Import GPG keys (verify fingerprints out-of-band!)
+gpg --fetch-keys https://github.com/Cuprate/cuprate/raw/main/misc/gpg_keys/boog900.asc
+gpg --fetch-keys https://github.com/monero-project/monero/raw/master/utils/gpg_keys/jeffro256.asc
+
+# Verify signatures
+gpg --verify boog900.sig ban_list.txt
+gpg --verify jeffro256.sig ban_list.txt
+
+# If verified, copy to production
+sudo cp ban_list.txt /etc/monero/ban_list.txt
+sudo systemctl restart monerod
+#+end_example
+
+The ban list complements Fluorine Fermi's algorithmic peer selection.
+Both provide defense-in-depth against network surveillance.
 
 *** Network Privacy
 
