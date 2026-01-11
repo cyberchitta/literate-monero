@@ -141,21 +141,21 @@ This script tangles all org files to generate Ansible fragments and configuratio
 #+begin_src bash :tangle ../ansible/tangle-all.sh :shebang "#!/bin/bash"
 # Tangle all org files with indentation preserved
 # Generated from install.org
+# Get absolute paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "=== Setting up directory structure ==="
-mkdir -p fragments
-mkdir -p group_vars
-mkdir -p ../configs/templates
+# Create directories with absolute paths
+mkdir -p "$PROJECT_ROOT/ansible/fragments"
+mkdir -p "$PROJECT_ROOT/ansible/group_vars"
+mkdir -p "$PROJECT_ROOT/configs/templates"
 
 echo ""
 echo "=== Tangling all org files with preserved indentation ==="
 echo ""
 
-# Get script directory and project root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-# Tangle each phase file
+# Tangle each phase file using absolute paths
 for f in "$PROJECT_ROOT"/org/*.org; do
   if [ -f "$f" ]; then
     echo "Tangling: $(basename $f)"
@@ -169,7 +169,7 @@ done
 
 echo ""
 echo "=== Tangling complete ==="
-echo "Run ./assemble-playbook.sh to create final playbook.yml"
+echo "Run $PROJECT_ROOT/ansible/assemble-playbook.sh to create final playbook.yml"
 #+end_src
 
 ** Playbook Assembly Script
