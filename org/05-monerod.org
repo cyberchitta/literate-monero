@@ -479,8 +479,13 @@ OLD_COUNT=$(wc -l < "$BAN_LIST" 2>/dev/null || echo 0)
 # Check for suspicious changes (>50% size change suggests corruption/attack)
 # This catches both malicious additions and accidental corruption
 if [ "$OLD_COUNT" -gt 0 ]; then
-  DIFF=$(echo "scale=2; ($NEW_COUNT - $OLD_COUNT) / $OLD_COUNT * 100" | bc | sed 's/-.*//' | cut -d. -f1)
-  if [ "${DIFF:-0}" -gt 50 ]; then
+  # Calculate percentage change using integer arithmetic
+  # DIFF = abs((NEW - OLD) * 100 / OLD)
+  DIFF_RAW=$(( (NEW_COUNT - OLD_COUNT) * 100 / OLD_COUNT ))
+  # Get absolute value
+  DIFF=${DIFF_RAW#-}
+  
+  if [ "$DIFF" -gt 50 ]; then
     echo "WARNING: Ban list size changed by ${DIFF}% (old: $OLD_COUNT, new: $NEW_COUNT)" >&2
     echo "Possible corruption or malicious update. Manual review required." >&2
     echo "Verify manually: https://github.com/Boog900/monero-ban-list" >&2
