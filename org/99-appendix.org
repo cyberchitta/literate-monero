@@ -1,0 +1,416 @@
+** Quick Reference
+
+This appendix contains tool references, cheatsheets, and common operations.
+
+* Appendix A: Emacs Quick Reference
+
+** Essential Commands
+
+*** Most Used Commands
+
+| Command     | Action                          |
+|-------------|---------------------------------|
+| =C-c C-c=   | Execute code block at cursor    |
+| =C-c C-v t= | Tangle (generate all files)     |
+| =C-x C-s=   | Save file                       |
+| =C-x C-c=   | Quit Emacs                      |
+| =C-g=       | Cancel/abort command            |
+
+*** Navigation
+
+| Command   | Action                    |
+|-----------|---------------------------|
+| =C-n=     | Next line (or arrow down) |
+| =C-p=     | Previous line (or up)     |
+| =C-f=     | Forward char (or right)   |
+| =C-b=     | Backward char (or left)   |
+| =C-a=     | Beginning of line         |
+| =C-e=     | End of line               |
+| =M-<=     | Beginning of file         |
+| =M->=     | End of file               |
+| =C-v=     | Page down                 |
+| =M-v=     | Page up                   |
+
+*** Org-mode Navigation
+
+| Command     | Action                  |
+|-------------|-------------------------|
+| =TAB=       | Fold/unfold section     |
+| =S-TAB=     | Fold/unfold all         |
+| =C-c C-n=   | Next heading            |
+| =C-c C-p=   | Previous heading        |
+| =C-c C-u=   | Up to parent heading    |
+| =C-c C-o=   | Open link at cursor     |
+
+*** Search
+
+| Command | Action                                    |
+|---------|-------------------------------------------|
+| =C-s=   | Search forward (press again for next)     |
+| =C-r=   | Search backward                           |
+| =C-g=   | Cancel search                             |
+
+*** Editing
+
+| Command     | Action                        |
+|-------------|-------------------------------|
+| =C-d=       | Delete character              |
+| =M-d=       | Delete word                   |
+| =C-k=       | Kill (cut) to end of line     |
+| =C-y=       | Yank (paste)                  |
+| =C-/=       | Undo                          |
+| =C-Space=   | Set mark (start selection)    |
+| =C-w=       | Kill region (cut selection)   |
+| =M-w=       | Copy region                   |
+
+*** Windows/Buffers
+
+| Command | Action                              |
+|---------|-------------------------------------|
+| =C-x 2= | Split window horizontally           |
+| =C-x 3= | Split window vertically             |
+| =C-x 1= | Close other windows (keep current)  |
+| =C-x 0= | Close current window                |
+| =C-x o= | Switch to other window              |
+| =C-x b= | Switch buffer                       |
+
+*** Help
+
+| Command | Action                              |
+|---------|-------------------------------------|
+| =C-h t= | Emacs tutorial                      |
+| =C-h k= | Describe key (what does key do?)    |
+| =C-h f= | Describe function                   |
+| =C-h v= | Describe variable                   |
+
+** Working with This Document
+
+*** Typical Workflow
+
+1. Open: =emacs -nw install.org=
+2. Navigate: Use =C-c C-n= to jump between phases, =TAB= to expand sections
+3. Read: Understand what each phase does
+4. Customize: Edit Phase 0 configuration values
+5. Execute: Either:
+   - Run blocks individually: Place cursor in block, press =C-c C-c=
+   - Or generate everything: Press =C-c C-v t= to tangle
+6. Save: =C-x C-s=
+7. Exit: =C-x C-c=
+
+*** Testing Individual Blocks
+
+You can execute any code block without tangling:
+1. Place cursor inside the code block
+2. Press =C-c C-c=
+3. Output appears below (for shell blocks)
+
+Useful for testing before full deployment.
+
+*** Understanding Tangle Directives
+
+Code blocks have =:tangle= directives:
+
+#+begin_example
+#+begin_src yaml :tangle ../ansible/playbook.yml
+# This code will be extracted to ansible/playbook.yml
+#+end_src
+#+end_example
+
+When you press =C-c C-v t=, all blocks are extracted to their tangle destinations.
+
+*** Tips
+
+- Use =C-s= to search for specific topics
+- Use =TAB= generously to collapse sections you've read
+- Keep install.org open in tmux - it survives SSH disconnects
+- Source files (org/) are version controlled, generated files are not
+
+** Troubleshooting Emacs
+
+*** Can't Quit
+
+- Try =C-x C-c=
+- If stuck, press =C-g= first, then =C-x C-c=
+- If still stuck, close terminal window (work is auto-saved)
+
+*** Weird Characters Appearing
+
+- You might be in insert mode in a terminal that's intercepting keys
+- Press =ESC= then try commands again
+- Or use arrow keys instead of =C-n/C-p/C-f/C-b=
+
+*** Tangling Doesn't Work
+
+1. Save first: =C-x C-s=
+2. Check you're in install.org (not a sub-file)
+3. Try again: =C-c C-v t=
+4. Check messages at bottom of screen for errors
+
+*** Lost Your Place
+
+1. Press =M-<= to go to beginning
+2. Or press =C-s= and search for text you remember
+3. Or use =C-c C-n= to jump through headings
+
+* Appendix B: Ansible Quick Reference
+
+** Running Playbooks
+
+*** Basic Execution
+
+#+begin_example
+# Full installation
+cd ansible
+ansible-playbook playbook.yml
+
+# Verbose output
+ansible-playbook playbook.yml -v
+
+# Dry run (see what would change)
+ansible-playbook playbook.yml --check --diff
+#+end_example
+
+*** Running Specific Phases
+
+#+begin_example
+# Single phase
+ansible-playbook playbook.yml --tags monerod
+
+# Multiple phases
+ansible-playbook playbook.yml --tags "privacy,i2p,monerod"
+
+# List available tags
+ansible-playbook playbook.yml --list-tags
+#+end_example
+
+*** Available Tags
+
+| Tag          | Phase                       |
+|--------------|-----------------------------|
+| =base=       | Base system setup           |
+| =wireguard=  | WireGuard VPN               |
+| =privacy=    | Privacy (Tor, git)          |
+| =i2p=        | I2P network privacy         |
+| =monerod=    | Monero full node            |
+| =users=      | User accounts               |
+| =mining=     | Mining (P2Pool + XMRig)     |
+| =firewall=   | Firewall setup              |
+| =monitoring= | Monitoring                  |
+| =backup=     | Backup configuration        |
+| =verify=     | Verification                |
+
+** Troubleshooting Ansible
+
+#+begin_example
+# Check syntax
+ansible-playbook playbook.yml --syntax-check
+
+# Test connection
+ansible localhost -m ping
+
+# Re-run with max verbosity
+ansible-playbook playbook.yml -vvvv
+#+end_example
+
+** Updating After Changes
+
+#+begin_example
+# 1. Edit org files
+emacs -nw org/00-configuration.org
+
+# 2. Tangle (in Emacs: C-c C-v t)
+# Or from command line:
+cd ansible && ./tangle-all.sh
+
+# 3. Assemble playbook
+./assemble-playbook.sh
+
+# 4. Re-run Ansible
+ansible-playbook playbook.yml --tags <phase>
+#+end_example
+
+* Appendix C: Quick Operations Reference
+
+** Daily Commands
+
+#+begin_example
+# System status
+sudo system-check.sh
+sudo system-status.sh
+
+# Service status
+sudo monerod-status.sh
+sudo i2p-status.sh
+sudo mining-monitor.sh  # if mining enabled
+
+# Logs
+source /etc/profile.d/log-aliases.sh
+logs-all
+logs-mining
+#+end_example
+
+** Service Management
+
+#+begin_example
+sudo systemctl {start|stop|restart|status} <service>
+sudo journalctl -u <service> -f
+#+end_example
+
+Services: =monerod=, =i2pd=, =tor=, =p2pool=, =xmrig=, =wg-quick@wg0=
+
+** External Documentation
+
+All detailed troubleshooting, commands, and configuration:
+
+- **Monero:** https://monerodocs.org
+- **I2P:** https://geti2p.net/en/docs
+- **Tor:** https://support.torproject.org
+- **P2Pool:** https://github.com/SChernykh/p2pool
+- **Ansible:** https://docs.ansible.com
+- **systemd:** =man systemctl=, =man journalctl=
+
+* Appendix D: Emergency Procedures
+
+** System Won't Boot
+
+1. Boot from Omarchy USB
+2. Unlock encrypted partition  
+3. Mount root and check logs
+4. Restore from backup if needed
+
+** Complete Data Loss
+
+1. Reinstall Omarchy (INSTALL-OMARCHY.md)
+2. Clone repository
+3. =./bootstrap.sh=
+4. =sudo restore.sh <backup-file>=
+5. =cd ansible && ansible-playbook playbook.yml=
+
+** Forgot Encryption Password
+
+No recovery possible. Encryption is unbreakable by design.
+Restore from off-site backup on new installation.
+
+* Appendix E: Rollback Procedures
+
+** General Rollback Pattern
+
+All phases can be rolled back by:
+1. Stop affected services
+2. Remove installed packages/files
+3. Remove systemd services
+4. Remove configuration files
+5. Reload systemd
+
+#+begin_example
+# Stop service
+sudo systemctl stop <service>
+sudo systemctl disable <service>
+
+# Remove service file
+sudo rm /etc/systemd/system/<service>.service
+sudo systemctl daemon-reload
+
+# Remove data/configs
+sudo rm -rf /opt/<service>
+sudo rm /etc/<service>.conf
+
+# Remove firewall rules
+sudo ufw delete allow <port>
+#+end_example
+
+** Phase-Specific Rollback
+
+*** Phase 5: Monerod
+
+#+begin_example
+sudo systemctl stop monerod
+sudo systemctl disable monerod
+sudo rm /etc/systemd/system/monerod.service
+sudo rm /etc/monerod.conf
+sudo rm -rf /opt/monerod  # WARNING: Deletes 160GB blockchain
+sudo systemctl daemon-reload
+#+end_example
+
+*** Phase 7: Mining
+
+#+begin_example
+sudo systemctl stop xmrig p2pool
+sudo systemctl disable xmrig p2pool
+sudo rm /etc/systemd/system/{xmrig,p2pool}.service
+sudo rm -rf /opt/xmrig /opt/p2pool
+sudo systemctl daemon-reload
+#+end_example
+
+*** Phase 3: Privacy (Tor)
+
+#+begin_example
+sudo systemctl stop tor
+sudo systemctl disable tor
+sudo rm /etc/tor/torrc
+sudo rm -rf /opt/tor-browser
+sudo rm /usr/local/bin/tor-browser
+#+end_example
+
+*** Phase 4: I2P
+
+#+begin_example
+sudo systemctl stop i2pd
+sudo systemctl disable i2pd
+sudo rm -rf /etc/i2pd/tunnels.conf.d/monero-mainnet.conf
+#+end_example
+
+** Complete System Rollback
+
+To undo entire installation:
+
+#+begin_example
+# Stop all services
+sudo systemctl stop xmrig p2pool monerod tor i2pd wg-quick@wg0
+
+# Remove systemd services
+sudo rm /etc/systemd/system/{xmrig,p2pool,monerod}.service
+sudo systemctl daemon-reload
+
+# Remove users
+sudo userdel -r mining
+
+# Remove data directories
+sudo rm -rf /opt/{xmrig,p2pool,monerod,tor-browser}
+
+# Remove configs
+sudo rm /etc/{monerod,tor/torrc}.conf
+sudo rm -rf /etc/wireguard
+
+# Reset firewall
+sudo ufw --force reset
+
+# Remove scripts
+sudo rm /usr/local/bin/{monerod,i2p,mining,system,wireguard,tails}-*.sh
+#+end_example
+
+** Recovery After Failed Rollback
+
+If rollback fails, restore from backup:
+
+#+begin_example
+sudo restore.sh /srv/backups/backup_<date>.tar.gz
+#+end_example
+
+** Using Git History
+
+For specific file changes:
+
+#+begin_example
+# See what changed
+git log --oneline org/05-monerod.org
+
+# Revert to specific commit
+git checkout <commit-hash> org/05-monerod.org
+
+# Re-tangle and deploy
+cd ansible
+./tangle-all.sh
+./assemble-playbook.sh
+ansible-playbook playbook.yml --tags monerod
+#+end_example

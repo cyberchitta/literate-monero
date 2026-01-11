@@ -1,0 +1,218 @@
+#+TITLE: Literate Sovereign Installation
+#+AUTHOR: claude-4.5-sonnet
+#+DATE: 2025-11-27
+#+STARTUP: overview
+
+* Introduction
+
+This is a literate infrastructure-as-code installation for sovereign cryptocurrency node infrastructure.
+
+**Purpose:** Demonstrate trustless validation and privacy-preserving participation in cryptocurrency networks without institutional intermediaries.
+
+The installation is split into modular phases, each in its own file under =org/=.
+
+** System Overview
+
+#+begin_example
+Physical Server (Beelink AMD Ryzen)
+├─ Omarchy Linux (Arch-based, encrypted)
+│  ├─ dev (primary user: desktop + privacy-first operations)
+│  ├─ mining (Monero mining, headless)
+│  ├─ monerod (Monero full node, I2P privacy)
+│  └─ Services:
+│     ├─ Tor (git operations, web browsing)
+│     ├─ I2P (Monero P2P network privacy)
+│     ├─ P2Pool (decentralized mining pool)
+│     └─ XMRig (CPU mining)
+#+end_example
+
+** How to Use This Document
+
+1. *Read through* each included phase to understand the system
+2. *Customize* the configuration in Phase 0
+3. *Tangle* all org files to generate Ansible playbooks
+4. *Validate* configuration: =cd ansible && ansible-playbook validate.yml=
+5. *Run* the installation: =cd ansible && ansible-playbook playbook.yml=
+
+** Tangling
+
+** Running Validation
+
+Before installation, validate your configuration:
+
+#+begin_example
+cd ansible
+ansible-playbook validate.yml
+#+end_example
+
+This checks:
+- System prerequisites (RAM, CPU, disk)
+- Ansible collections installed
+- Configuration values (wallet address, etc.)
+- Security settings (SSH keys, firewall)
+- Network connectivity
+
+** Running Installation
+
+#+begin_example
+# Run everything
+ansible-playbook playbook.yml
+
+# Run specific phase
+ansible-playbook playbook.yml --tags firewall
+
+# Dry run
+ansible-playbook playbook.yml --check --diff
+#+end_example
+
+** Development/Debugging Workflow
+
+If you need to modify or fix a specific phase:
+
+1. *Edit* the phase file: =emacs -nw 04-users.org=
+2. *Tangle* just that phase: =C-c C-v t= (in that file)
+3. *Test* changes: =cd ansible && ansible-playbook playbook.yml --tags users --check=
+4. *Apply* changes: =ansible-playbook playbook.yml --tags users=
+5. *Verify*: Check logs and run phase verification
+
+Each phase can be worked on independently without re-running the entire installation.
+
+Available tags correspond to phases:
+- =base= - Phase 1: Base system
+- =wireguard= - Phase 2: WireGuard VPN
+- =monerod= - Phase 3: Monero full node (optional)
+- =users= - Phase 4: User accounts  
+- =mining= - Phase 5: Monero mining
+- =privacy= - Phase 6: Privacy configuration (Tor, git)
+- =tails= - Phase 7: Tails VM
+- =firewall= - Phase 8: Firewall setup
+- =monitoring= - Phase 9: Monitoring
+- =backup= - Phase 10: Backup & recovery
+- =verify= - Phase 11: Verification
+
+* Pre-flight Validation
+#+INCLUDE: "00a-validation.org"
+
+* Phase 0: Configuration
+#+INCLUDE: "00-configuration.org"
+
+* Phase 1: Base System Setup
+#+INCLUDE: "01-base-system.org"
+
+* Phase 2: WireGuard Secure Access
+#+INCLUDE: "02-wireguard.org"
+
+* Phase 3: Privacy Configuration
+#+INCLUDE: "03-privacy.org"
+
+* Phase 4: I2P Network Privacy
+#+INCLUDE: "04-i2p.org"
+
+* Phase 5: Monero Full Node
+#+INCLUDE: "05-monerod.org"
+
+* Phase 6: User Account Setup
+#+INCLUDE: "06-users.org"
+
+* Phase 7: Monero Mining Setup
+#+INCLUDE: "07-mining.org"
+
+* Phase 8: Firewall Setup
+#+INCLUDE: "08-firewall.org"
+
+* Phase 9: Monitoring
+#+INCLUDE: "09-monitoring.org"
+
+* Phase 10: Backup & Recovery
+#+INCLUDE: "10-backup.org"
+
+* Phase 11: Verification & Testing
+#+INCLUDE: "11-verification.org"
+
+* Appendix: Quick Reference
+#+INCLUDE: "99-appendix.org"
+
+* Build System
+
+** Tangle All Script
+
+This script tangles all org files to generate Ansible fragments and configuration.
+
+#+begin_src bash :tangle ../ansible/tangle-all.sh :shebang "#!/bin/bash"
+# Tangle all org files with indentation preserved
+# Generated from install.org
+
+echo "=== Setting up directory structure ==="
+mkdir -p fragments
+mkdir -p group_vars
+mkdir -p ../configs/templates
+
+echo ""
+echo "=== Tangling all org files with preserved indentation ==="
+echo ""
+
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Tangle each phase file
+for f in "$PROJECT_ROOT"/org/*.org; do
+  if [ -f "$f" ]; then
+    echo "Tangling: $(basename $f)"
+    emacs --batch \
+      --eval "(setq org-src-preserve-indentation t)" \
+      --eval "(require 'org)" \
+      --eval "(find-file \"$f\")" \
+      --eval "(org-babel-tangle)"
+  fi
+done
+
+echo ""
+echo "=== Tangling complete ==="
+echo "Run ./assemble-playbook.sh to create final playbook.yml"
+#+end_src
+
+** Playbook Assembly Script
+
+This script concatenates all phase fragments into the final playbook.yml.
+
+#+begin_src bash :tangle ../ansible/assemble-playbook.sh :shebang "#!/bin/bash"
+# Concatenate all fragment files into playbook.yml
+# Generated from install.org
+
+FRAGMENTS_DIR="ansible/fragments"
+OUTPUT="ansible/playbook.yml"
+
+echo "=== Assembling playbook.yml from fragments ==="
+echo ""
+
+# Ensure fragments directory exists
+if [ ! -d "$FRAGMENTS_DIR" ]; then
+  echo "Error: $FRAGMENTS_DIR does not exist"
+  echo "Run tangle-all.sh first"
+  exit 1
+fi
+
+# Check if we have any fragments
+if ! ls "$FRAGMENTS_DIR"/*.yml >/dev/null 2>&1; then
+  echo "Error: No .yml files found in $FRAGMENTS_DIR"
+  echo "Run tangle-all.sh first"
+  exit 1
+fi
+
+# Clear output file
+> "$OUTPUT"
+
+# Concatenate in order (sorts naturally: 00, 00a, 01, 02, ...)
+for f in $(ls "$FRAGMENTS_DIR"/*.yml | sort); do
+  echo "Adding: $(basename "$f")"
+  cat "$f" >> "$OUTPUT"
+done
+
+echo ""
+echo "=== Assembly complete ==="
+echo "Created: $OUTPUT"
+echo ""
+echo "Verify with:"
+echo "  ansible-playbook $OUTPUT --syntax-check"
+#+end_src

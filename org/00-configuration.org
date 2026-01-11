@@ -1,0 +1,209 @@
+** Overview
+
+This file contains all configuration variables used throughout the installation.
+
+*IMPORTANT*: Customize these values before tangling!
+
+All other phases will reference these variables.
+
+** Ansible Inventory
+
+#+begin_src yaml :tangle ../ansible/inventory.yml
+---
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+#+end_src
+
+** Ansible Configuration
+
+#+begin_src ini :tangle ../ansible/ansible.cfg
+[defaults]
+inventory = inventory.yml
+host_key_checking = False
+retry_files_enabled = False
+gathering = smart
+fact_caching = jsonfile
+fact_caching_connection = /tmp/ansible_facts
+fact_caching_timeout = 86400
+stdout_callback = default
+interpreter_python = auto_silent
+roles_path = roles
+
+[privilege_escalation]
+become = True
+become_method = sudo
+become_user = root
+become_ask_pass = False
+#+end_src
+
+** Global Variables
+
+#+begin_src yaml :tangle ../ansible/group_vars/all.yml
+---
+# ============================================================================
+# Global Configuration Variables (System Defaults)
+# ============================================================================
+# Generated from org/00-configuration.org
+# 
+# User-editable values are in config.yml (project root)
+# These are system defaults that rarely need changing
+
+# ----------------------------------------------------------------------------
+# Network Ports
+# ----------------------------------------------------------------------------
+
+# Tor SOCKS proxy port
+tor_socks_port: 9050
+
+# Tor control port
+tor_control_port: 9051
+
+# DNS port for Tor
+tor_dns_port: 5353
+
+# P2Pool port mapping
+p2pool_port_map:
+  normal: 37889
+  mini: 37888
+  nano: 37890
+
+# P2Pool P2P port (derived from type)
+p2pool_p2p_port: "{{ p2pool_port_map[p2pool_type] }}"
+
+# P2Pool host and stratum port
+p2pool_host: "127.0.0.1"
+p2pool_stratum_port: 3333
+
+# ----------------------------------------------------------------------------
+# WireGuard Configuration
+# ----------------------------------------------------------------------------
+
+wireguard_network: 10.8.0.0/24
+wireguard_server_ip: 10.8.0.1
+wireguard_port: 51820
+wireguard_only: false
+
+# ----------------------------------------------------------------------------
+# Firewall Rules
+# ----------------------------------------------------------------------------
+
+# Service-specific firewall rules
+# SSH rules handled separately based on wireguard_only flag
+firewall_service_rules:
+  - { port: "{{ wireguard_port }}", proto: "udp", comment: "WireGuard VPN" }
+  - { port: "{{ p2pool_p2p_port }}", proto: "tcp", comment: "P2Pool P2P" }
+  - { port: "{{ p2pool_p2p_port }}", proto: "udp", comment: "P2Pool P2P" }
+  - { port: "18080", proto: "tcp", comment: "Monero P2P", condition: "{{ monerod_enabled | default(false) }}" }
+
+# ----------------------------------------------------------------------------
+# Storage Configuration
+# ----------------------------------------------------------------------------
+
+# Mining data directory
+mining_data_dir: /opt/mining
+
+# P2Pool data directory
+p2pool_data_dir: /opt/p2pool
+
+# Backup directory
+backup_dir: /srv/backups
+
+# VM storage location
+libvirt_images_path: /var/lib/libvirt/images
+
+# ----------------------------------------------------------------------------
+# Resource Limits
+# ----------------------------------------------------------------------------
+
+# Memory limits (MB per user)
+memory_limit_mining: 4096
+
+# ----------------------------------------------------------------------------
+# System Configuration
+# ----------------------------------------------------------------------------
+
+# Kernel parameters for mining optimization
+kernel_params:
+  - { name: "vm.nr_hugepages", value: "1280" }  # For huge pages
+
+# Swap configuration
+swap_size_mb: 8192
+swappiness: 10  # Low swappiness for server workload
+
+# ----------------------------------------------------------------------------
+# Backup Configuration
+# ----------------------------------------------------------------------------
+
+# Backup exclusions (still used by rsync)
+backup_exclude_patterns:
+  - "*.tmp"
+  - "*.log"
+  - "*.cache"
+  - ".git"
+
+# ----------------------------------------------------------------------------
+# Monero Full Node Configuration (Optional)
+# ----------------------------------------------------------------------------
+
+monerod_enabled: true
+monerod_out_peers: 8
+monerod_in_peers: 8
+monerod_limit_rate_up: 2048
+monerod_limit_rate_down: 8192
+monerod_rpc_bind_ip: 127.0.0.1
+monerod_rpc_port: 18081
+monerod_restricted_rpc: true
+monerod_data_dir: /opt/monerod
+#+end_src
+
+** Configuration Notes
+
+*** Monero Wallet Address
+
+Get a Monero wallet address from:
+- Official Monero GUI/CLI wallet
+- MyMonero (web wallet)
+- Cake Wallet (mobile)
+- Monerujo (mobile)
+
+The address should start with =4= (mainnet) and be 95 characters long.
+
+*** Mining Threads
+
+- =0= - Use all CPU cores
+- =N= - Use N specific cores
+- ={{ ansible_processor_vcpus - 2 }}= - Leave 2 cores for other work
+
+*** P2Pool Mini vs Main
+
+- *P2Pool Mini*: For hashrates < 100 kH/s (most home systems)
+- *P2Pool Main*: For hashrates > 100 kH/s (large miners)
+
+Use mini pool unless you have high-end hardware.
+
+*** P2Pool Version
+
+Check https://github.com/SChernykh/p2pool/releases for latest version.
+
+Set to ="latest"= to always download the most recent release, or pin to specific version like ="v4.1"= for stability.
+
+*** Firewall Ports
+
+Only open ports you actually need. Default is SSH only.
+
+Add application ports as needed (80, 443, etc.)
+
+P2Pool P2P port (37889) will be automatically opened during mining setup.
+
+*** Resource Limits
+
+Adjust based on your hardware. Current settings assume:
+- 8+ CPU cores
+- 16+ GB RAM
+- Privacy-focused work runs concurrently with mining
+
+Mining service has dedicated resource limits to prevent
+interference with other system operations.

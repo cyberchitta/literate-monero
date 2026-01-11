@@ -1,0 +1,289 @@
+** Overview
+
+This phase installs I2P (Invisible Internet Project) for peer-to-peer network privacy.
+
+I2P provides anonymity for long-lived P2P connections. Monero uses I2P for node-to-node
+communication (block propagation, peer discovery) while using clearnet for blockchain sync.
+
+**Why I2P for Monero:**
+- Designed for P2P networks (vs Tor's client-server model)
+- No exit nodes needed (all traffic stays within I2P network)
+- Better for long-lived connections (nodes connected hours/days)
+- Garlic routing optimized for P2P traffic patterns
+
+**Network privacy model:**
+- Blockchain sync: Clearnet (sybil attack protection)
+- Transaction broadcast: I2P primary, Tor fallback
+- P2P inbound: I2P hidden service
+
+Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+
+** Install i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    # ------------------------------------------------------------------------
+    # I2P Network Privacy
+    # ------------------------------------------------------------------------
+
+    - name: Install i2pd
+      community.general.pacman:
+        name:
+          - i2pd
+        state: present
+      tags: [i2p]
+#+end_src
+
+** Configure i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Create i2pd tunnels config directory
+      file:
+        path: /etc/i2pd/tunnels.d
+        state: directory
+        owner: i2pd
+        group: i2pd
+        mode: '0755'
+      tags: [i2p, config]
+#+end_src
+
+** Monero I2P Server Tunnels
+
+#+begin_src conf :tangle ../configs/templates/monero-i2p.conf.j2
+# I2P Server Tunnels for Monero
+# Generated from org/04-i2p.org
+
+[monero-node]
+type = server
+host = 127.0.0.1
+# Anonymous inbound port (P2P)
+port = 18085
+inport = 0
+keys = monero-mainnet.dat
+
+[monero-rpc]
+type = server
+host = 127.0.0.1
+# Restricted RPC port (for wallet connections)
+port = 18089
+keys = monero-mainnet.dat
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Deploy Monero I2P tunnel configuration
+      template:
+        src: ../configs/templates/monero-i2p.conf.j2
+        dest: /etc/i2pd/tunnels.d/monero-mainnet.conf
+        owner: i2pd
+        group: i2pd
+        mode: '0644'
+      notify: restart i2pd
+      tags: [i2p, config]
+#+end_src
+
+** Enable and Start i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Enable and start i2pd service
+      systemd:
+        name: i2pd
+        enabled: yes
+        state: started
+      tags: [i2p]
+
+    - name: Wait for i2pd to generate tunnel address
+      pause:
+        seconds: 15
+      tags: [i2p]
+#+end_src
+
+** Retrieve I2P Address
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Check I2P web console accessibility
+      uri:
+        url: http://127.0.0.1:7070
+        method: GET
+        timeout: 5
+      register: i2p_console_check
+      failed_when: false
+      tags: [i2p, verify]
+
+    - name: Retrieve I2P tunnel address from web console
+      shell: |
+        curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | \
+        grep -oP '[a-z0-9]{52}\.b32\.i2p' | \
+        head -1
+      register: i2p_address_raw
+      changed_when: false
+      failed_when: false
+      when: i2p_console_check.status == 200
+      tags: [i2p, verify]
+
+    - name: Create monero config directory
+      file:
+        path: /etc/monero
+        state: directory
+        mode: '0755'
+      tags: [i2p, config]
+
+    - name: Save I2P address to file for monerod
+      copy:
+        content: "{{ i2p_address_raw.stdout | default('') }}"
+        dest: /etc/monero/i2p-address.txt
+        mode: '0644'
+      when: 
+        - i2p_address_raw.stdout is defined
+        - i2p_address_raw.stdout != ""
+      tags: [i2p, config]
+#+end_src
+
+** I2P Status Script
+
+#+begin_src bash :tangle ../configs/templates/i2p-status.sh.j2
+#!/bin/bash
+# I2P Status Script
+# Generated from org/04-i2p.org
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}=== I2P Status ===${NC}"
+echo ""
+
+# Service status
+if systemctl is-active --quiet i2pd; then
+  echo -e "${GREEN}✓ i2pd service running${NC}"
+else
+  echo -e "${YELLOW}✗ i2pd service NOT running${NC}"
+  exit 1
+fi
+
+echo ""
+
+# I2P address
+if [ -f /etc/monero/i2p-address.txt ]; then
+  I2P_ADDR=$(cat /etc/monero/i2p-address.txt)
+  if [ -n "$I2P_ADDR" ]; then
+    echo "--- Monero I2P Address ---"
+    echo "  $I2P_ADDR"
+  else
+    echo -e "${YELLOW}⚠ I2P address file exists but is empty${NC}"
+    echo "  Tunnels may still be initializing"
+  fi
+else
+  echo -e "${YELLOW}⚠ I2P address not yet generated${NC}"
+  echo "  Check web console: http://127.0.0.1:7070/?page=i2p_tunnels"
+fi
+
+echo ""
+
+# Tunnel status via web console
+echo "--- I2P Tunnel Status ---"
+if curl -s --max-time 3 http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -q "monero-node"; then
+  echo -e "${GREEN}✓ Monero tunnels configured${NC}"
+  TUNNELS=$(curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -c "monero")
+  echo "  Found $TUNNELS monero tunnel(s)"
+  # Extract I2P address
+  I2P_ADDR=$(curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -oP '[a-z0-9]{52}\.b32\.i2p' | head -1)
+  if [ -n "$I2P_ADDR" ]; then
+    echo "  Address: $I2P_ADDR"
+  fi
+else
+  echo -e "${YELLOW}⚠ Could not verify tunnel status${NC}"
+fi
+
+echo ""
+echo "--- Commands ---"
+echo "  Web console: http://127.0.0.1:7070"
+echo "  Tunnels page: http://127.0.0.1:7070/?page=i2p_tunnels"
+echo "  Logs: journalctl -u i2pd -f"
+echo "  Restart: systemctl restart i2pd"
+echo ""
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Deploy I2P status script
+      template:
+        src: ../configs/templates/i2p-status.sh.j2
+        dest: /usr/local/bin/i2p-status.sh
+        mode: '0755'
+      tags: [i2p, scripts]
+#+end_src
+
+** Verification
+
+#+begin_src yaml :tangle ../ansible/fragments/04-i2p.yml
+    - name: Verify i2pd service status
+      systemd:
+        name: i2pd
+      register: i2pd_status
+      tags: [i2p, verify]
+
+    - name: Display I2P setup summary
+      debug:
+        msg:
+          - "=== I2P Setup Complete ==="
+          - ""
+          - "Service: {{ i2pd_status.status.ActiveState }}"
+          - "Web console: http://127.0.0.1:7070"
+          - "SAM bridge: 127.0.0.1:7656"
+          - ""
+          - "{% if i2p_address_raw.stdout is defined and i2p_address_raw.stdout != '' %}Monero I2P address: {{ i2p_address_raw.stdout }}{% else %}I2P address: Generating (check i2p-status.sh in ~1 minute){% endif %}"
+          - ""
+          - "This provides network privacy for monerod:"
+          - "  - Transaction broadcasts via I2P (IP privacy)"
+          - "  - P2P connections via I2P hidden service"
+          - "  - Blockchain sync still uses clearnet (sybil protection)"
+          - ""
+          - "Status: sudo i2p-status.sh"
+          - "Next: monerod will be configured to use I2P in Phase 5"
+          - ""
+      tags: [i2p, verify]
+#+end_src
+
+** Notes
+
+*** I2P vs Tor
+
+Monero recommends I2P for P2P connections:
+- Designed for peer-to-peer networks (not client-server)
+- No exit nodes (all traffic within I2P network)
+- Garlic routing (better for long-lived P2P connections)
+- Lower latency for P2P traffic patterns
+
+Tor is better for client-server (browsing, APIs). I2P is better for node-to-node.
+
+*** SAM Bridge
+
+i2pd provides a SAM (Simple Anonymous Messaging) bridge on port 7656.
+monerod uses this to create I2P connections via `tx-proxy` option.
+
+*** Web Console
+
+Access i2pd web console: http://127.0.0.1:7070
+
+View tunnels: http://127.0.0.1:7070/?page=i2p_tunnels
+
+*** Address Generation
+
+I2P address (*.b32.i2p) is generated when i2pd starts with tunnel config.
+Takes ~30-60 seconds after i2pd start.
+
+If not immediately available:
+#+begin_example
+sudo i2p-status.sh
+# Or check web console
+#+end_example
+
+*** Resource Usage
+
+i2pd is lightweight:
+- RAM: ~50-100MB
+- CPU: <5% ongoing
+- Bandwidth: Depends on tunnel usage
+
+*** Firewall
+
+I2P doesn't require inbound firewall rules (uses outbound connections only).
+All traffic routes through I2P network via SAM bridge.

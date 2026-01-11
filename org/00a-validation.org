@@ -1,0 +1,470 @@
+** Overview
+
+This validation playbook runs pre-flight checks before installation.
+
+Run this BEFORE the main playbook to catch configuration errors early.
+
+** Validation Playbook
+
+#+begin_src yaml :tangle ../ansible/validate.yml
+---
+# ============================================================================
+# Pre-flight Validation Playbook
+# ============================================================================
+# Run this before playbook.yml to validate configuration and prerequisites
+# Usage: ansible-playbook validate.yml
+
+- name: Pre-flight Configuration Validation
+  hosts: localhost
+  gather_facts: yes
+  vars_files:
+    - group_vars/all.yml
+    - ../config.yml
+
+  tasks:
+    - name: Display validation banner
+      debug:
+        msg:
+          - "========================================"
+          - "  Pre-flight Validation"
+          - "========================================"
+          - ""
+          - "Checking prerequisites and configuration..."
+          - ""
+
+    # ========================================================================
+    # System Prerequisites
+    # ========================================================================
+
+    - name: Check if running on Arch-based system
+      assert:
+        that:
+          - ansible_facts['os_family'] == "Archlinux"
+        fail_msg: "This playbook requires Arch Linux (or Arch-based like Omarchy)"
+        success_msg: "✓ Running on {{ ansible_facts['distribution'] }}"
+
+    - name: Check minimum RAM
+      assert:
+        that:
+          - ansible_facts['memtotal_mb'] >= 8192
+        fail_msg: "Insufficient RAM: {{ ansible_facts['memtotal_mb'] }}MB (minimum 8GB required)"
+        success_msg: "✓ RAM: {{ ansible_facts['memtotal_mb'] }}MB"
+
+    - name: Check minimum CPU cores
+      assert:
+        that:
+          - ansible_facts['processor_vcpus'] >= 4
+        fail_msg: "Insufficient CPUs: {{ ansible_facts['processor_vcpus'] }} (minimum 4 required)"
+        success_msg: "✓ CPUs: {{ ansible_facts['processor_vcpus'] }}"
+
+    - name: Check disk space on root
+      shell: df / | tail -1 | awk '{print $4}'
+      register: root_space_kb
+      changed_when: false
+
+    - name: Verify minimum disk space
+      assert:
+        that:
+          - root_space_kb.stdout|int > 102400000  # 100GB in KB
+        fail_msg: "Insufficient disk space: {{ (root_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB (minimum 100GB required)"
+        success_msg: "✓ Disk space: {{ (root_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB available"
+
+    # ========================================================================
+    # Ansible Prerequisites
+    # ========================================================================
+
+    - name: Check for required Ansible collections
+      command: ansible-galaxy collection list
+      register: collection_list
+      changed_when: false
+      failed_when: false
+
+    - name: Verify community.general collection
+      assert:
+        that:
+          - "'community.general' in collection_list.stdout"
+        fail_msg: "Missing collection: community.general (run: ansible-galaxy collection install community.general)"
+        success_msg: "✓ Ansible collection: community.general"
+
+    - name: Verify community.libvirt collection
+      assert:
+        that:
+          - "'community.libvirt' in collection_list.stdout"
+        fail_msg: "Missing collection: community.libvirt (run: ansible-galaxy collection install community.libvirt)"
+        success_msg: "✓ Ansible collection: community.libvirt"
+
+    # ========================================================================
+    # WireGuard Prerequisites (if enabled)
+    # ========================================================================
+
+    - name: WireGuard port forwarding notice
+      debug:
+        msg:
+          - "ℹ INFO: WireGuard requires network configuration"
+          - ""
+          - "If server is behind NAT/router:"
+          - "  - Forward UDP port {{ wireguard_port | default(51820) }} to server"
+          - "  - Or configure router UPnP (less secure)"
+          - ""
+          - "If server has public IP:"
+          - "  - No port forwarding needed"
+          - "  - Firewall rule will be added automatically"
+          - ""
+      tags: [validation, wireguard]
+
+    - name: Check wireguard_only setting
+      debug:
+        msg:
+          - "ℹ INFO: wireguard_only is {{ wireguard_only | default(false) }}"
+          - ""
+          - "{% if wireguard_only | default(false) %}WARNING: SSH port {{ ssh_port }} will be closed after WireGuard setup{% endif %}"
+          - "{% if wireguard_only | default(false) %}Ensure WireGuard is working before enabling this!{% endif %}"
+          - "{% if not (wireguard_only | default(false)) %}SSH will remain on port {{ ssh_port }} until you verify WireGuard works{% endif %}"
+          - "{% if not (wireguard_only | default(false)) %}This is the recommended initial configuration{% endif %}"
+          - ""
+      tags: [validation, wireguard]
+
+    # ========================================================================
+    # I2P Prerequisites
+    # ========================================================================
+
+    - name: Check I2P installation
+      command: pacman -Qi i2pd
+      register: i2pd_check
+      changed_when: false
+      failed_when: false
+      tags: [validation, i2p]
+
+    - name: Verify I2P will be installed
+      debug:
+        msg:
+          - "ℹ INFO: I2P daemon (i2pd) will be installed in Phase 4"
+          - ""
+          - "I2P provides network privacy for Monero:"
+          - "  - Transaction broadcast via I2P (IP unlinkability)"
+          - "  - P2P hidden service (anonymous node-to-node)"
+          - ""
+          - "Resource usage: ~50-100MB RAM, <5% CPU"
+          - ""
+      when: i2pd_check.rc != 0
+      tags: [validation, i2p]
+      
+    # ========================================================================
+    # Monero Full Node Validation
+    # ========================================================================
+
+    - name: Validate monerod configuration
+      block:
+        - name: Check monerod data directory configured
+          assert:
+            that:
+              - monerod_data_dir is defined
+              - monerod_data_dir != ""
+            fail_msg: "monerod_data_dir not configured"
+            success_msg: "✓ monerod data directory: {{ monerod_data_dir }}"
+
+        - name: Check available disk space for blockchain
+          shell: df {{ monerod_data_dir | dirname }} | tail -1 | awk '{print $4}'
+          register: monerod_space_kb
+          changed_when: false
+
+        - name: Verify sufficient disk space for blockchain
+          assert:
+            that:
+              - monerod_space_kb.stdout|int > 167772160  # 160GB in KB
+            fail_msg: "Insufficient disk space for monerod blockchain: need 160GB+, have {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB"
+            success_msg: "✓ Disk space for blockchain: {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB available"
+
+        - name: Warn about bandwidth requirements
+          debug:
+            msg:
+              - "ℹ INFO: monerod bandwidth requirements"
+              - ""
+              - "Initial sync: ~160GB download (one-time, 6-24 hours)"
+              - "Daily ongoing: ~{{ (monerod_limit_rate_down / 1024 * 86400 / 1024)|round(0) }}MB/day (based on download limit)"
+              - ""
+              - "Configured limits:"
+              - "  Upload: {{ monerod_limit_rate_up }} KB/s"
+              - "  Download: {{ monerod_limit_rate_down }} KB/s"
+              - "  Outgoing peers: {{ monerod_out_peers }}"
+              - "  Incoming peers: {{ monerod_in_peers }}"
+              - ""
+              - "Adjust in config.yml if needed"
+              - ""
+
+      tags: [validation, monerod]
+
+    # ========================================================================
+    # P2Pool Configuration Validation
+    # ========================================================================
+
+    - name: Validate P2Pool type
+      assert:
+        that:
+          - p2pool_type is defined
+          - p2pool_type in ['normal', 'mini', 'nano']
+        fail_msg: |
+          Invalid p2pool_type: {{ p2pool_type | default('undefined') }}
+          
+          Must be one of: 'normal', 'mini', 'nano'
+          
+          - normal: Main pool (for hashrate > 100 kH/s)
+          - mini: For hashrate < 100 kH/s (most home systems)
+          - nano: For very low hashrate (experimental)
+          
+          Edit config.yml and set p2pool_type to a valid value
+        success_msg: "✓ P2Pool type: {{ p2pool_type }} (port: {{ p2pool_port_map[p2pool_type] }})"
+      tags: [validation, mining]
+
+    # ========================================================================
+    # Configuration Validation
+    # ========================================================================
+
+    - name: Check Monero wallet address
+      assert:
+        that:
+          - monero_wallet_address is defined
+          - monero_wallet_address != ""
+          - monero_wallet_address != "YOUR_WALLET_ADDRESS_HERE"
+          - monero_wallet_address | length == 95
+          - monero_wallet_address[0] == '4'
+        fail_msg: |
+          Monero wallet address not configured or invalid!
+          Current value: {{ monero_wallet_address }}
+          
+          A valid Monero mainnet address:
+          - Starts with '4'
+          - Is exactly 95 characters long
+          
+          Get a wallet from:
+          - Official GUI/CLI: https://www.getmonero.org
+          - MyMonero: https://mymonero.com
+          - Cake Wallet (mobile)
+          
+          Edit config.yml in the project root and update monero_wallet_address
+        success_msg: "✓ Monero wallet address configured"
+
+    - name: Check user accounts are defined
+      assert:
+        that:
+          - dev_user is defined
+          - dev_user != ""
+          - mining_user is defined
+        fail_msg: "User account variables not properly configured in group_vars/all.yml"
+        success_msg: "✓ User accounts configured"
+
+    - name: Check data directories are defined
+      assert:
+        that:
+          - mining_data_dir is defined
+          - backup_dir is defined
+        fail_msg: "Data directory paths not configured"
+        success_msg: "✓ Data directories configured"
+
+    - name: Validate backup retention
+      assert:
+        that:
+          - backup_retention_days is defined
+          - backup_retention_days | int > 0
+          - backup_retention_days | int <= 365
+        fail_msg: "backup_retention_days must be between 1 and 365"
+        success_msg: "✓ Backup retention: {{ backup_retention_days }} days"
+
+    - name: Validate resource limits
+      assert:
+        that:
+          - memory_limit_mining | int > 0
+        fail_msg: "Memory limits must be positive integers"
+        success_msg: "✓ Resource limits configured"
+
+    # ========================================================================
+    # Security Configuration
+    # ========================================================================
+
+    - name: Check SSH port configuration
+      assert:
+        that:
+          - ssh_port is defined
+          - ssh_port | int > 0
+        fail_msg: "SSH port not configured"
+        success_msg: "✓ SSH port configured: {{ ssh_port }}"
+
+    - name: Check if SSH keys exist for dev user (if password auth disabled)
+      stat:
+        path: "/home/{{ dev_user }}/.ssh/authorized_keys"
+      register: ssh_keys
+
+    - name: Check if SSH key is configured
+      assert:
+        that:
+          - dev_user_ssh_public_key is defined
+          - dev_user_ssh_public_key != ""
+          - dev_user_ssh_public_key | length > 50  # SSH keys are typically 200+ chars
+        fail_msg: |
+          SSH public key not configured!
+          
+          Get your public key from your client machine:
+            cat ~/.ssh/id_rsa.pub
+          
+          Then add it to config.yml:
+            dev_user_ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB... user@laptop"
+        success_msg: "✓ SSH public key configured"
+      tags: [validation, security, ssh]
+
+    - name: Check firewall ports are defined
+      assert:
+        that:
+          - firewall_allowed_ports is defined
+          - firewall_allowed_ports | length > 0
+        fail_msg: "No firewall ports configured (you'll lock yourself out!)"
+        success_msg: "✓ Firewall ports: {{ firewall_allowed_ports | join(', ') }}"
+
+    # ========================================================================
+    # Network Connectivity
+    # ========================================================================
+
+    - name: Check internet connectivity
+      uri:
+        url: https://www.google.com
+        timeout: 10
+      register: internet_check
+      failed_when: false
+
+    - name: Verify internet connection
+      assert:
+        that:
+          - internet_check.status == 200
+        fail_msg: "No internet connectivity detected"
+        success_msg: "✓ Internet connectivity"
+
+    - name: Test DNS resolution
+      command: host google.com
+      register: dns_check
+      changed_when: false
+      failed_when: false
+
+    - name: Verify DNS is working
+      assert:
+        that:
+          - dns_check.rc == 0
+        fail_msg: "DNS resolution not working"
+        success_msg: "✓ DNS resolution"
+
+    # ========================================================================
+    # Optional Warnings
+    # ========================================================================
+
+    - name: Warn about P2Pool firewall requirements
+      debug:
+        msg:
+          - "⚠ NOTICE: P2Pool requires incoming connections"
+          - "If behind a router, forward port {{ p2pool_p2p_port }} (TCP+UDP)"
+          - "Mining will work without this, but you won't contribute to pool decentralization"
+      when: p2pool_p2p_port is defined
+
+    - name: Suggest mining thread optimization
+      debug:
+        msg:
+          - "ℹ INFO: Mining threads set to auto ({{ ansible_facts['processor_vcpus'] }} cores)"
+          - "Consider leaving 2 cores free: set mining_threads to {{ ansible_facts['processor_vcpus'] - 2 }}"
+      when: 
+        - mining_threads == 0
+        - ansible_facts['processor_vcpus'] > 4
+
+    # ========================================================================
+    # Summary
+    # ========================================================================
+
+    - name: Display validation summary
+      debug:
+        msg:
+          - ""
+          - "========================================"
+          - "  Validation Complete ✓"
+          - "========================================"
+          - ""
+          - "System:"
+          - "  OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          - "  CPUs: {{ ansible_facts['processor_vcpus'] }}"
+          - "  RAM: {{ ansible_facts['memtotal_mb'] }}MB"
+          - "  Disk: {{ (root_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB available"
+          - ""
+          - "Configuration:"
+          - "  Wallet: {{ monero_wallet_address[:8] }}...{{ monero_wallet_address[-8:] }}"
+          - "  Users: {{ dev_user }}, {{ mining_user }}"
+          - ""
+          - "Ready to proceed with installation:"
+          - "  cd ansible && ansible-playbook playbook.yml"
+          - ""
+#+end_src
+
+** Installing Ansible Collections
+
+** If Validation Fails
+
+If collections are missing, re-run bootstrap:
+#+begin_example
+./bootstrap.sh
+#+end_example
+
+Or install manually:
+#+begin_example
+ansible-galaxy collection install community.general community.libvirt
+#+end_example
+
+** Notes
+
+*** Running Validation
+
+#+begin_example
+# Before first installation
+cd ansible
+ansible-playbook validate.yml
+
+# If collections are missing
+cd scripts
+./install-collections.sh
+#+end_example
+
+*** What Gets Checked
+
+*System Prerequisites:*
+- Arch Linux (or derivative)
+- Minimum 8GB RAM
+- Minimum 4 CPU cores
+- Minimum 100GB disk space
+
+*Configuration:*
+- Valid Monero wallet address (95 chars, starts with '4')
+- User accounts defined
+- Data directories specified
+- Resource limits valid
+
+*Security:*
+- SSH keys exist (if password auth disabled)
+- Firewall ports configured
+- SSH security settings valid
+
+*Network:*
+- Internet connectivity
+- DNS resolution
+
+*** Common Validation Failures
+
+*Wallet address not configured:*
+#+begin_example
+Edit org/00-configuration.org:
+  monero_wallet_address: "4..."  # Your 95-character address
+Then re-tangle: C-c C-v t
+#+end_example
+
+*Missing Ansible collections:*
+#+begin_example
+./scripts/install-collections.sh
+#+end_example
+
+*SSH keys missing with password auth disabled:*
+#+begin_example
+ssh-copy-id user@server
+# Or enable password auth temporarily
+#+end_example

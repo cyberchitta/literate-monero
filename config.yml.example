@@ -1,0 +1,167 @@
+---
+# ============================================================================
+# Literate Monero User Configuration
+# ============================================================================
+#
+# Edit these values BEFORE running the installation.
+# This file is loaded by Ansible and should NOT be committed to git if you
+# add sensitive information.
+#
+# After editing, run:
+#   cd ansible
+#   ansible-playbook validate.yml    # Check configuration
+#   ansible-playbook playbook.yml    # Run installation
+
+# ----------------------------------------------------------------------------
+# Required Configuration
+# ----------------------------------------------------------------------------
+
+# Your Monero wallet address (REQUIRED)
+# Get from: getmonero.org, mymonero.com, Cake Wallet, etc.
+# Must be 95 characters, starting with '4'
+monero_wallet_address: "YOUR_WALLET_ADDRESS_HERE"
+
+# ----------------------------------------------------------------------------
+# User Accounts
+# ----------------------------------------------------------------------------
+
+# Your primary user account (created during Omarchy install as "dev")
+# This user has desktop GUI access and operates anonymously by default
+dev_user: dev
+
+# SSH public key for remote access (paste your ~/.ssh/id_rsa.pub from client machine)
+# Example: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB... user@laptop"
+dev_user_ssh_public_key: ""
+
+mining_user: mining
+
+# Git identity (anonymous/pseudonymous by default)
+# Used for all git commits on this system
+anon_git_name: "Your Pseudonym"
+anon_git_email: "pseudo@protonmail.com"
+
+# ----------------------------------------------------------------------------
+# System Identity
+# ----------------------------------------------------------------------------
+
+system_hostname: anon-server
+system_timezone: America/New_York
+system_locale: en_US.UTF-8
+
+# ----------------------------------------------------------------------------
+# Mining Configuration
+# ----------------------------------------------------------------------------
+
+# Number of CPU threads for mining
+# 0 = use all cores (recommended for dedicated mining)
+# N = use N specific cores
+# For mixed workload, consider: ansible_processor_vcpus - 2
+mining_threads: 0
+
+# P2Pool configuration
+# Options: "normal", "mini", "nano"
+# - normal: Main pool (for hashrate > 100 kH/s)
+# - mini: For hashrate < 100 kH/s (most home systems)
+# - nano: For very low hashrate (experimental)
+p2pool_type: mini
+
+# P2Pool version (check github.com/SChernykh/p2pool/releases)
+# Use "latest" for most recent, or pin to version like "v4.1"
+p2pool_version: "v4.12"
+
+# XMRig version
+# Use "master" for latest, or pin to version like "v6.21.0"
+xmrig_version: "master"
+
+# Mining priority (19 = lowest, won't interfere with other work)
+mining_nice_priority: 19
+
+# Enable huge pages for better performance
+mining_huge_pages: true
+
+# XMRig donation level (1 = 1%, 0 = 0%)
+xmrig_donate_level: 5
+
+# ----------------------------------------------------------------------------
+# Tor Browser version (check https://www.torproject.org/download/)
+# ----------------------------------------------------------------------------
+tor_browser_version: "15.0.3"
+
+# ----------------------------------------------------------------------------
+# Backup Configuration
+# ----------------------------------------------------------------------------
+
+# Backup schedule (cron format: minute hour day month weekday)
+backup_schedule: "0 3 * * *" # 3 AM daily
+
+# How long to keep backups
+backup_retention_days: 30
+
+# ----------------------------------------------------------------------------
+# Security Configuration
+# ----------------------------------------------------------------------------
+
+# SSH configuration
+ssh_port: 22
+
+# Firewall ports to allow (in addition to SSH)
+firewall_allowed_ports:
+  - 22/tcp # SSH (always required)
+  # Uncomment as needed:
+  # - 80/tcp   # HTTP
+  # - 443/tcp  # HTTPS
+  # - 8080/tcp # Custom app
+
+# ----------------------------------------------------------------------------
+# Optional: Advanced Configuration
+# ----------------------------------------------------------------------------
+
+# Automatic security updates (recommended)
+auto_security_updates: true
+
+# Automatic package updates (use with caution)
+auto_package_updates: false
+
+# Disk space alert threshold (percentage)
+disk_alert_threshold: 90
+
+# Log retention (days)
+log_retention_days: 30
+
+# ----------------------------------------------------------------------------
+# WireGuard Configuration
+# ----------------------------------------------------------------------------
+
+# WireGuard network configuration
+wireguard_network: 10.8.0.0/24
+wireguard_server_ip: 10.8.0.1
+wireguard_port: 51820
+
+# Close SSH port 22 after WireGuard is verified working
+# IMPORTANT: Set to false initially, test WireGuard first, then set to true
+# With wireguard_only=true, SSH only accessible via WireGuard tunnel
+wireguard_only: false  # Change to true after testing WireGuard connectivity
+
+# ----------------------------------------------------------------------------
+# Monero Full Node Configuration
+# ----------------------------------------------------------------------------
+
+# Run full monerod node (vs. P2Pool light client only)
+# Benefits: Maximum wallet privacy, network contribution, self-verification
+# Cost: ~160GB disk, ~500MB-1GB/day bandwidth, 2-4GB RAM
+# See: docs/monerod-setup.md for decision guide
+monerod_enabled: true
+
+# monerod bandwidth limits (if enabled)
+monerod_out_peers: 8        # Outgoing connections (4-8 recommended)
+monerod_in_peers: 8         # Incoming connections (0 to disable, 4-8 to contribute)
+monerod_limit_rate_up: 2048      # KB/s upload (0 = unlimited)
+monerod_limit_rate_down: 8192    # KB/s download (0 = unlimited)
+
+# monerod RPC configuration
+monerod_rpc_bind_ip: 127.0.0.1  # Localhost only (security)
+monerod_rpc_port: 18081         # Standard Monero RPC port
+monerod_restricted_rpc: true    # Restrict RPC commands (security)
+
+# Data directory for blockchain
+monerod_data_dir: /opt/monerod

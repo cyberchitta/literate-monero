@@ -1,0 +1,615 @@
+** Overview
+
+This phase sets up Monero mining to demonstrate the full sovereign node stack:
+- Build XMRig from source
+- Configure P2Pool (decentralized mining pool)
+- Deploy systemd services
+- Configure mining to run 24/7 with low priority
+
+**Why mine:**
+- Demonstrates trustless participation in Monero network
+- P2Pool integration shows decentralized pool architecture
+- Contributes to network security
+- Same infrastructure works for validation-only (mining can be disabled later)
+
+**Resource impact:**
+- CPU: Configurable threads (default: use all cores at low priority)
+- RAM: ~2GB for XMRig + P2Pool
+- Bandwidth: Minimal additional (P2Pool P2P)
+
+Mining runs at lowest priority (nice=19, idle scheduling) - won't interfere with other services.
+
+** XMRig Configuration Template
+
+This Jinja2 template configures XMRig with variables from configuration.org.
+
+#+begin_src jinja2 :tangle ../configs/templates/xmrig-config.json.j2
+{
+    "api": {
+        "id": null,
+        "worker-id": "{{ ansible_facts['hostname'] }}"
+    },
+    "http": {
+        "enabled": false,
+        "host": "127.0.0.1",
+        "port": 0,
+        "access-token": null,
+        "restricted": true
+    },
+    "autosave": true,
+    "background": false,
+    "colors": true,
+    "title": true,
+    "randomx": {
+        "init": -1,
+        "init-avx2": -1,
+        "mode": "auto",
+        "1gb-pages": false,
+        "rdmsr": true,
+        "wrmsr": true,
+        "cache_qos": false,
+        "numa": true,
+        "scratchpad_prefetch_mode": 1
+    },
+    "cpu": {
+        "enabled": true,
+        "huge-pages": {{ mining_huge_pages | lower }},
+        "huge-pages-jit": false,
+        "hw-aes": null,
+        "priority": null,
+        "memory-pool": false,
+        "yield": true,
+        {% if mining_threads == 0 %}
+        "max-threads-hint": 100,
+        {% else %}
+        "max-threads-hint": {{ mining_threads }},
+        {% endif %}
+        "asm": true,
+        "argon2-impl": null
+    },
+    "opencl": {
+        "enabled": false
+    },
+    "cuda": {
+        "enabled": false
+    },
+    "donate-level": {{ xmrig_donate_level }},
+    "donate-over-proxy": 1,
+    "log-file": "{{ mining_data_dir }}/xmrig.log",
+    "pools": [
+        {
+            "algo": null,
+            "coin": "monero",
+            "url": "{{ p2pool_host }}:{{ p2pool_stratum_port }}",
+            "user": "{{ monero_wallet_address }}",
+            "pass": "x",
+            "rig-id": "{{ ansible_facts['hostname'] }}",
+            "nicehash": false,
+            "keepalive": true,
+            "enabled": true,
+            "tls": false,
+            "daemon": false
+        }
+    ],
+    "print-time": 60,
+    "health-print-time": 60,
+    "dmi": true,
+    "retries": 5,
+    "retry-pause": 5,
+    "syslog": false,
+    "user-agent": null,
+    "verbose": 0,
+    "watch": true,
+    "pause-on-battery": false,
+    "pause-on-active": false
+}
+#+end_src
+
+** Install Build Dependencies
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    # ------------------------------------------------------------------------
+    # Monero Mining Setup
+    # ------------------------------------------------------------------------
+
+    - name: Install XMRig build dependencies
+      community.general.pacman:
+        name:
+          - git
+          - cmake
+          - gcc
+          - make
+          - automake
+          - autoconf
+          - pkg-config
+          - libuv
+          - openssl
+          - hwloc
+          - msr-tools
+        state: present
+      tags: [mining]
+
+    - name: Create udev rule for MSR device access
+      copy:
+        content: |
+          KERNEL=="msr[0-9]*", MODE="0660", GROUP="mining"
+        dest: /etc/udev/rules.d/99-msr.conf
+        mode: '0644'
+      tags: [mining]
+
+    - name: Reload udev rules
+      command: udevadm control --reload-rules
+      changed_when: false
+      tags: [mining]
+
+    - name: Trigger udev to apply MSR permissions
+      command: udevadm trigger
+      changed_when: false
+      tags: [mining]
+
+    - name: Load MSR kernel module
+      community.general.modprobe:
+        name: msr
+        state: present
+      tags: [mining]
+
+    - name: Make MSR module load on boot
+      copy:
+        content: "msr\n"
+        dest: /etc/modules-load.d/msr.conf
+        mode: '0644'
+      tags: [mining]
+#+end_src
+
+** Build XMRig
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    - name: Create XMRig directory
+      file:
+        path: /opt/xmrig
+        state: directory
+        owner: mining
+        group: mining
+        mode: '0755'
+      tags: [mining]
+
+    - name: Clone XMRig repository
+      git:
+        repo: https://github.com/xmrig/xmrig.git
+        dest: /opt/xmrig
+        version: "{{ xmrig_version }}"
+        force: yes
+      become_user: mining
+      tags: [mining]
+
+    - name: Create XMRig build directory
+      file:
+        path: /opt/xmrig/build
+        state: directory
+        mode: '0755'
+      tags: [mining]
+
+    - name: Configure XMRig build
+      command:
+        cmd: cmake .. -DWITH_HWLOC=ON
+        chdir: /opt/xmrig/build
+        creates: /opt/xmrig/build/Makefile
+      tags: [mining]
+
+    - name: Build XMRig
+      command:
+        cmd: make -j{{ ansible_facts['processor_vcpus'] }}
+        chdir: /opt/xmrig/build
+        creates: /opt/xmrig/build/xmrig
+      tags: [mining]
+
+    - name: Set XMRig capabilities for MSR access
+      capabilities:
+        path: /opt/xmrig/build/xmrig
+        capability: cap_sys_rawio=ep
+        state: present
+      tags: [mining]
+      
+    - name: Set XMRig ownership
+      file:
+        path: /opt/xmrig
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        recurse: yes
+      tags: [mining]
+#+end_src
+
+** Install P2Pool
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    - name: Install P2Pool dependencies
+      community.general.pacman:
+        name:
+          - curl
+          - tar
+        state: present
+      tags: [mining, p2pool]
+
+    - name: Download P2Pool
+      get_url:
+        url: "https://github.com/SChernykh/p2pool/releases/download/{{ p2pool_version }}/p2pool-{{ p2pool_version }}-linux-x64.tar.gz"
+        dest: /tmp/p2pool.tar.gz
+        mode: '0644'
+      register: p2pool_download
+      tags: [mining, p2pool]
+
+    - name: Extract P2Pool
+      unarchive:
+        src: /tmp/p2pool.tar.gz
+        dest: "{{ p2pool_data_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+      when: p2pool_download.changed
+      register: p2pool_extract
+      tags: [mining, p2pool]
+
+    - name: Check P2Pool binary exists
+      stat:
+        path: "{{ p2pool_data_dir }}/p2pool"
+      register: p2pool_binary
+      tags: [mining, p2pool]
+
+    - name: Fail if P2Pool not found
+      fail:
+        msg: |
+          P2Pool binary not found after extraction.
+          
+          Possible issues:
+          - Invalid version specified: {{ p2pool_version }}
+          - Download URL changed
+          - Archive structure changed
+          
+          Check https://github.com/SChernykh/p2pool/releases for valid versions.
+      when: not p2pool_binary.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Set P2Pool ownership
+      file:
+        path: "{{ p2pool_data_dir }}"
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        recurse: yes
+      tags: [mining, p2pool]
+#+end_src
+
+** Deploy XMRig Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    - name: Deploy XMRig configuration
+      template:
+        src: ../configs/templates/xmrig-config.json.j2
+        dest: /opt/xmrig/build/config.json
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        mode: '0644'
+      tags: [mining, config]
+#+end_src
+
+** P2Pool Systemd Service
+
+#+begin_src ini :tangle ../configs/templates/p2pool.service.j2
+[Unit]
+Description=P2Pool Monero Mining Pool
+After=network-online.target monerod.service
+Wants=network-online.target monerod.service
+
+[Service]
+Type=simple
+User={{ mining_user }}
+Group={{ mining_user }}
+WorkingDirectory={{ p2pool_data_dir }}
+
+# P2Pool always uses local monerod (core infrastructure)
+ExecStart={{ p2pool_data_dir }}/p2pool \
+  --host 127.0.0.1 \
+  --rpc-port {{ monerod_rpc_port }} \
+  {% if p2pool_type != 'normal' %}--{{ p2pool_type }}{% endif %} \
+  --wallet {{ monero_wallet_address }}
+
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
+#+end_src
+
+** XMRig Systemd Service
+
+#+begin_src ini :tangle ../configs/templates/xmrig.service.j2
+[Unit]
+Description=XMRig Monero Miner
+After=network-online.target p2pool.service
+Wants=network-online.target
+Requires=p2pool.service
+
+[Service]
+Type=simple
+User={{ mining_user }}
+Group={{ mining_user }}
+WorkingDirectory=/opt/xmrig/build
+ExecStart=/opt/xmrig/build/xmrig -c /opt/xmrig/build/config.json
+Restart=always
+RestartSec=10
+Nice={{ mining_nice_priority }}
+CPUSchedulingPolicy=idle
+
+# Resource limits
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
+#+end_src
+
+** Deploy Systemd Services
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    - name: Deploy P2Pool systemd service
+      template:
+        src: ../configs/templates/p2pool.service.j2
+        dest: /etc/systemd/system/p2pool.service
+        mode: '0644'
+      notify: reload systemd
+      tags: [mining, systemd]
+
+    - name: Deploy XMRig systemd service
+      template:
+        src: ../configs/templates/xmrig.service.j2
+        dest: /etc/systemd/system/xmrig.service
+        mode: '0644'
+      notify: reload systemd
+      tags: [mining, systemd]
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      tags: [mining, systemd]
+
+    - name: Enable P2Pool service
+      systemd:
+        name: p2pool
+        enabled: yes
+        state: started
+      tags: [mining, systemd]
+
+    - name: Enable XMRig service
+      systemd:
+        name: xmrig
+        enabled: yes
+        state: started
+      tags: [mining, systemd]
+
+    - name: Wait for P2Pool to start
+      pause:
+        seconds: 10
+      tags: [mining, verify]
+
+    - name: Check P2Pool mode
+      shell: |
+        if systemctl cat p2pool | grep -q '\--host 127.0.0.1'; then
+          echo "full_node"
+        else
+          echo "light_client"
+        fi
+      register: p2pool_mode
+      changed_when: false
+      tags: [mining, verify]
+
+    - name: Verify P2Pool mode matches monerod setting
+      assert:
+        that:
+          - (monerod_enabled | default(false) and p2pool_mode.stdout == "full_node") or (not (monerod_enabled | default(false)) and p2pool_mode.stdout == "light_client")
+        fail_msg: |
+          P2Pool configuration mismatch!
+          monerod_enabled: {{ monerod_enabled | default(false) }}
+          P2Pool mode: {{ p2pool_mode.stdout }}
+          Expected: {{ 'full_node' if monerod_enabled | default(false) else 'light_client' }}
+        success_msg: "✓ P2Pool using correct mode: {{ p2pool_mode.stdout }}"
+      tags: [mining, verify]
+
+    - name: Test monerod is responsive (if full node mode)
+      uri:
+        url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          id: "0"
+          method: "get_info"
+        timeout: 10
+      register: monerod_test
+      failed_when: false
+      when: monerod_enabled | default(false)
+      tags: [mining, verify]
+
+    - name: Warn if monerod not responding
+      debug:
+        msg:
+          - "⚠ WARNING: monerod RPC not responding"
+          - "P2Pool is configured for full node but can't reach monerod"
+          - "P2Pool will wait for monerod to sync before starting mining"
+          - "Check: sudo journalctl -u monerod -f"
+      when:
+        - monerod_enabled | default(false)
+        - monerod_test.status != 200
+      tags: [mining, verify]
+
+    - name: Check P2Pool is running
+      systemd:
+        name: p2pool
+      register: p2pool_status
+      failed_when: p2pool_status.status.ActiveState != "active"
+      tags: [mining, verify]
+#+end_src
+
+** Verify Mining
+
+#+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
+    - name: Wait for mining to start
+      pause:
+        seconds: 10
+      tags: [mining, verify]
+
+    - name: Get P2Pool mode
+      shell: |
+        if systemctl cat p2pool | grep -q '\--host 127.0.0.1'; then
+          echo "full node (via monerod)"
+        else
+          echo "light client (built-in)"
+        fi
+      register: p2pool_mode
+      changed_when: false
+      tags: [mining, verify]
+      
+    - name: Check P2Pool status
+      systemd:
+        name: p2pool
+      register: p2pool_status
+      tags: [mining, verify]
+
+    - name: Check XMRig status
+      systemd:
+        name: xmrig
+      register: xmrig_status
+      tags: [mining, verify]
+
+    - name: Display mining status
+      debug:
+        msg:
+          - "=== Mining Setup Complete ==="
+          - ""
+          - "P2Pool: {{ p2pool_status.status.ActiveState }}"
+          - "P2Pool mode: {{ p2pool_mode.stdout }}"
+          - "XMRig: {{ xmrig_status.status.ActiveState }}"
+          - ""
+          - "{% if monerod_enabled | default(false) %}P2Pool using local monerod (maximum privacy){% else %}P2Pool using light client (minimal resources){% endif %}"
+          - ""
+          - "Monitor mining:"
+          - "  sudo journalctl -u xmrig -f"
+          - "  sudo mining-monitor.sh"
+          - ""
+          - "{% if monerod_enabled | default(false) %}Monitor monerod sync:{% endif %}"
+          - "{% if monerod_enabled | default(false) %}  sudo monerod-status.sh{% endif %}"
+          - "{% if monerod_enabled | default(false) %}  sudo journalctl -u monerod -f{% endif %}"
+      tags: [mining, verify]
+#+end_src
+
+** Notes
+
+*** P2Pool vs Traditional Pools
+
+*P2Pool* is a decentralized mining pool:
+- No central server
+- Payouts directly from blockchain
+- No pool fees (except miner donation)
+- More resistant to censorship
+- Requires running monerod (which we do)
+
+*P2Pool Types*:
+- normal: Main pool (hashrate > 100 kH/s)
+- mini: For smaller miners (< 100 kH/s) - recommended for most home systems
+- nano: For very low hashrate (experimental)
+
+Set `p2pool_type` in config.yml.
+
+*** P2Pool and Monerod Sync
+
+**During monerod's initial sync (6-24 hours):**
+
+P2Pool and XMRig will start successfully, but:
+- XMRig shows "connected" to P2Pool ✓
+- Hashrate appears in logs ✓
+- **No shares found/accepted** (expected)
+
+This is normal. P2Pool waits for monerod to finish syncing before participating in mining.
+
+Monitor sync progress:
+#+begin_example
+# Check if monerod is still syncing
+sudo monerod-status.sh
+
+# Watch for: "✓ Blockchain synced"
+# Once synced, you'll see "share found" in P2Pool logs
+
+# Monitor P2Pool
+sudo journalctl -u p2pool -f
+#+end_example
+
+**Making mining optional later:**
+
+If you want validation-only (no mining), this can be made conditional:
+1. Add `mining_enabled: false` to config.yml
+2. Add `when:` guards to mining phase tasks
+3. Re-run playbook
+
+For now, mining is enabled to demonstrate the full stack.
+
+*** P2Pool Network Requirements
+
+P2Pool requires port {{ p2pool_p2p_port }} open for incoming connections:
+- Allows peer-to-peer pool communication
+- Contributes to pool decentralization
+- Mining works without this, but you won't help other miners
+
+The port depends on pool type:
+- normal: 37889
+- mini: 37888  
+- nano: 37890
+
+If behind a router, forward this port (TCP+UDP) to your server.
+
+The firewall rules are configured in the firewall phase when UFW is enabled.
+
+*** Mining Performance
+
+Check mining performance:
+#+begin_example
+sudo journalctl -u xmrig -f
+#+end_example
+
+Expected hashrate depends on CPU:
+- AMD Ryzen 5 5600: ~6-8 kH/s
+- AMD Ryzen 7 5800X: ~10-12 kH/s
+- AMD Ryzen 9 5950X: ~18-20 kH/s
+
+*** Huge Pages
+
+Huge pages improve performance by ~20-30%.
+
+Verify they're enabled:
+#+begin_example
+cat /proc/meminfo | grep Huge
+#+end_example
+
+Should see:
+- HugePages_Total: 1280
+- HugePages_Free: (some number)
+
+*** CPU Priority
+
+Mining runs with =Nice=19= and =CPUSchedulingPolicy=idle=:
+- Lowest priority
+- Won't interfere with other services
+- Uses spare CPU cycles
+
+*** Wallet Address
+
+**IMPORTANT**: Change =monero_wallet_address= in =org/00-configuration.org= before running!
+
+Get a wallet from:
+- getmonero.org (official)
+- mymonero.com (web wallet)
+- Cake Wallet (mobile)
+
+*** P2Pool Version
+
+The configuration uses =p2pool_version= from configuration.org.
+
+Check https://github.com/SChernykh/p2pool/releases for available versions.
+
+Set to ="latest"= to always download the most recent release, or pin to specific version like ="v4.1"= for stability.

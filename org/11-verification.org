@@ -1,0 +1,779 @@
+** Overview
+
+This phase provides comprehensive verification and testing:
+- System health checks
+- Service verification
+- Network connectivity tests
+- Security validation
+- Performance benchmarks
+- Final checklist
+
+This ensures everything is working correctly after installation.
+
+** Comprehensive System Check
+
+#+begin_src bash :tangle ../configs/templates/system-check.sh.j2
+#!/bin/bash
+# Comprehensive system verification script
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+PASS=0
+FAIL=0
+WARN=0
+
+check_pass() {
+  echo -e "${GREEN}✓${NC} $1"
+  : $((PASS++))
+}
+
+check_fail() {
+  echo -e "${RED}✗${NC} $1"
+  : $((FAIL++))
+}
+
+check_warn() {
+  echo -e "${YELLOW}⚠${NC} $1"
+  : $((WARN++))
+}
+
+echo "========================================"
+echo "  Literate Monero Verification"
+echo "  $(date)"
+echo "========================================"
+echo ""
+
+# ============================================================================
+# System Checks
+# ============================================================================
+echo "=== System Checks ==="
+
+# Hostname
+if [ "$(hostname)" = "{{ system_hostname }}" ]; then
+  check_pass "Hostname: {{ system_hostname }}"
+else
+  check_warn "Hostname mismatch: $(hostname) != {{ system_hostname }}"
+fi
+
+# Timezone
+if [ "$(timedatectl show -p Timezone --value)" = "{{ system_timezone }}" ]; then
+  check_pass "Timezone: {{ system_timezone }}"
+else
+  check_fail "Timezone incorrect: $(timedatectl show -p Timezone --value)"
+fi
+
+# Disk encryption
+if lsblk -f | grep -q crypto_LUKS; then
+  check_pass "Disk encryption: LUKS enabled"
+else
+  check_fail "Disk encryption: NOT FOUND"
+fi
+
+# Huge pages
+HUGEPAGES=$(cat /proc/meminfo | grep HugePages_Total | awk '{print $2}')
+if [ "$HUGEPAGES" -gt 0 ]; then
+  check_pass "Huge pages: $HUGEPAGES allocated"
+else
+  check_warn "Huge pages: Not configured (mining performance affected)"
+fi
+
+# Available disk space
+ROOT_USAGE=$(df / | tail -n 1 | awk '{print $5}' | sed 's/%//')
+if [ "$ROOT_USAGE" -lt {{ disk_alert_threshold }} ]; then
+  check_pass "Disk space: ${ROOT_USAGE}% used"
+else
+  check_warn "Disk space: ${ROOT_USAGE}% used (high usage)"
+fi
+
+echo ""
+
+# ============================================================================
+# User Account Checks
+# ============================================================================
+echo "=== User Account Checks ==="
+
+for user in {{ mining_user }}; do
+  if id "$user" &>/dev/null; then
+    check_pass "User $user exists"
+  else
+    check_fail "User $user does not exist"
+  fi
+done
+
+# Data directories
+for dir in {{ mining_data_dir }} {{ p2pool_data_dir }}; do
+  if [ -d "$dir" ]; then
+    check_pass "Directory exists: $dir"
+  else
+    check_fail "Directory missing: $dir"
+  fi
+done
+
+echo ""
+
+# ============================================================================
+# Service Checks
+# ============================================================================
+echo "=== Service Checks ==="
+
+SERVICES=(
+  "tor:Tor"
+  "p2pool:P2Pool"
+  "xmrig:XMRig"
+  "sshd:SSH"
+  "ufw:Firewall"
+)
+
+for service_pair in "${SERVICES[@]}"; do
+  IFS=':' read -r service name <<< "$service_pair"
+  if systemctl is-active --quiet "$service"; then
+    check_pass "$name service running"
+  else
+    check_fail "$name service NOT running"
+  fi
+done
+
+echo ""
+
+# ============================================================================
+# Network Checks
+# ============================================================================
+echo "=== Network Checks ==="
+
+# Internet connectivity
+if ping -c 1 -W 5 8.8.8.8 &>/dev/null; then
+  check_pass "Internet connectivity"
+else
+  check_fail "No internet connectivity"
+fi
+
+# DNS resolution
+if host google.com &>/dev/null; then
+  check_pass "DNS resolution"
+else
+  check_fail "DNS resolution failed"
+fi
+
+# Tor SOCKS proxy
+if timeout 10 curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip 2>/dev/null | grep -q '"IsTor":true'; then
+  check_pass "Tor SOCKS proxy working"
+else
+  check_fail "Tor SOCKS proxy not working"
+fi
+
+# Firewall status
+if ufw status | grep -q "Status: active"; then
+  check_pass "Firewall (ufw) active"
+else
+  check_fail "Firewall (ufw) not active"
+fi
+
+echo ""
+
+# ============================================================================
+# I2P Checks
+# ============================================================================
+echo "=== I2P Checks ==="
+
+# I2P service
+if systemctl is-active --quiet i2pd; then
+  check_pass "I2P service running"
+else
+  check_fail "I2P service NOT running"
+fi
+
+# I2P SAM bridge (for monerod)
+if timeout 5 bash -c "echo -e 'HELLO VERSION\n' | nc 127.0.0.1 7656" 2>/dev/null | grep -q "HELLO REPLY"; then
+  check_pass "I2P SAM bridge responding"
+else
+  check_fail "I2P SAM bridge not responding"
+fi
+
+# I2P address file
+if [ -f /etc/monero/i2p-address.txt ]; then
+  I2P_ADDR=$(cat /etc/monero/i2p-address.txt)
+  if [ -n "$I2P_ADDR" ]; then
+    check_pass "I2P address configured: ${I2P_ADDR:0:20}...${I2P_ADDR: -10}"
+  else
+    check_warn "I2P address file empty (may still be generating)"
+  fi
+else
+  check_fail "I2P address file not found"
+fi
+
+echo ""
+
+# ============================================================================
+# Monerod Checks
+# ============================================================================
+echo "=== Monerod Checks ==="
+
+# Monerod service
+if systemctl is-active --quiet monerod; then
+  check_pass "Monerod service running"
+else
+  check_fail "Monerod service NOT running"
+fi
+
+# Check I2P integration
+if grep -q "tx-proxy=i2p" /etc/monerod.conf; then
+  check_pass "Monerod configured for I2P"
+else
+  check_warn "Monerod missing I2P configuration"
+fi
+
+# Check anonymous-inbound
+if grep -q "anonymous-inbound=" /etc/monerod.conf; then
+  check_pass "Monerod I2P inbound configured"
+else
+  check_warn "Monerod missing I2P inbound configuration"
+fi
+
+echo ""
+
+# ============================================================================
+# WireGuard Checks (if enabled)
+# ============================================================================
+if systemctl is-enabled --quiet wg-quick@wg0 2>/dev/null; then
+  echo "=== WireGuard Checks ==="
+
+  # WireGuard service
+  if systemctl is-active --quiet wg-quick@wg0; then
+    check_pass "WireGuard service running"
+  else
+    check_fail "WireGuard service NOT running"
+  fi
+
+  # WireGuard interface
+  if ip link show wg0 &>/dev/null; then
+    check_pass "WireGuard interface wg0 exists"
+  else
+    check_fail "WireGuard interface wg0 missing"
+  fi
+
+  # WireGuard configuration
+  if [ -f /etc/wireguard/wg0.conf ]; then
+    check_pass "WireGuard config exists"
+  else
+    check_fail "WireGuard config missing"
+  fi
+
+  # WireGuard keys
+  if [ -f /etc/wireguard/server-private.key ] && [ -f /etc/wireguard/server-public.key ]; then
+    check_pass "WireGuard keys exist"
+  else
+    check_fail "WireGuard keys missing"
+  fi
+
+  # Peer count
+  PEER_COUNT=$(wg show wg0 peers 2>/dev/null | wc -l)
+  if [ $PEER_COUNT -gt 0 ]; then
+    check_pass "WireGuard peers configured: $PEER_COUNT"
+  else
+    check_warn "No WireGuard peers configured yet"
+  fi
+
+  # Firewall rule
+  if ufw status | grep -q "{{ wireguard_port }}/udp"; then
+    check_pass "WireGuard port {{ wireguard_port }}/udp allowed"
+  else
+    check_fail "WireGuard port not allowed in firewall"
+  fi
+
+  echo ""
+fi
+
+# ============================================================================
+# Mining Checks
+# ============================================================================
+echo "=== Mining Checks ==="
+
+# XMRig binary
+if [ -f /opt/xmrig/build/xmrig ]; then
+  check_pass "XMRig binary exists"
+else
+  check_fail "XMRig binary not found"
+fi
+
+# XMRig config
+if [ -f /opt/xmrig/build/config.json ]; then
+  check_pass "XMRig config exists"
+  
+  # Check wallet address
+  if grep -q "YOUR_WALLET_ADDRESS_HERE" /opt/xmrig/build/config.json; then
+    check_fail "XMRig wallet address NOT CONFIGURED"
+  else
+    check_pass "XMRig wallet address configured"
+  fi
+else
+  check_fail "XMRig config not found"
+fi
+
+# Mining performance (recent)
+if journalctl -u xmrig --since "10 minutes ago" --no-pager | grep -q "speed"; then
+  HASHRATE=$(journalctl -u xmrig --since "10 minutes ago" --no-pager | grep "speed" | tail -n 1 | grep -oP '\d+\.\d+\s+H/s')
+  check_pass "XMRig producing hashrate: $HASHRATE"
+else
+  check_warn "No recent hashrate data (may still be starting)"
+fi
+
+echo ""
+
+# ============================================================================
+# Virtualization Checks
+# ============================================================================
+echo "=== Virtualization Checks ==="
+
+# KVM/QEMU
+if command -v virsh &>/dev/null; then
+  check_pass "libvirt installed"
+  
+  # Tails VM
+  if virsh list --all | grep -q "{{ tails_vm_name }}"; then
+    check_pass "Tails VM defined"
+  else
+    check_warn "Tails VM not defined"
+  fi
+else
+  check_warn "libvirt not installed"
+fi
+
+echo ""
+
+# ============================================================================
+# Security Checks
+# ============================================================================
+echo "=== Security Checks ==="
+
+# SSH password authentication
+if grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config; then
+  check_pass "SSH password auth disabled"
+else
+  check_warn "SSH password auth may be enabled"
+fi
+
+# SSH root login
+if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config; then
+  check_pass "SSH root login disabled"
+else
+  check_warn "SSH root login may be enabled"
+fi
+
+echo ""
+
+# ============================================================================
+# Backup Checks
+# ============================================================================
+echo "=== Backup Checks ==="
+
+# Backup directory
+if [ -d "{{ backup_dir }}" ]; then
+  check_pass "Backup directory exists"
+  
+  # Recent backup
+  LATEST_BACKUP=$(find {{ backup_dir }} -name "backup_*.tar.gz" -type f -mtime -2 | wc -l)
+  if [ "$LATEST_BACKUP" -gt 0 ]; then
+    check_pass "Recent backup found (< 2 days old)"
+  else
+    check_warn "No recent backups (> 2 days old)"
+  fi
+else
+  check_fail "Backup directory not found"
+fi
+
+# Backup script
+if [ -x /usr/local/bin/backup.sh ]; then
+  check_pass "Backup script installed"
+else
+  check_fail "Backup script not found"
+fi
+
+echo ""
+
+# ============================================================================
+# Monitoring Checks
+# ============================================================================
+echo "=== Monitoring Checks ==="
+
+# Monitoring scripts
+for script in system-status.sh mining-monitor.sh service-health.sh disk-monitor.sh; do
+  if [ -x "/usr/local/bin/$script" ]; then
+    check_pass "Script installed: $script"
+  else
+    check_fail "Script missing: $script"
+  fi
+done
+
+# Cron jobs
+if crontab -l 2>/dev/null | grep -q backup.sh; then
+  check_pass "Backup cron job configured"
+else
+  check_warn "Backup cron job not found"
+fi
+
+if crontab -l 2>/dev/null | grep -q service-health.sh; then
+  check_pass "Health check cron job configured"
+else
+  check_warn "Health check cron job not found"
+fi
+
+echo ""
+
+# ============================================================================
+# Summary
+# ============================================================================
+echo "========================================"
+echo "  Verification Summary"
+echo "========================================"
+echo -e "${GREEN}Passed:${NC}  $PASS"
+echo -e "${YELLOW}Warnings:${NC} $WARN"
+echo -e "${RED}Failed:${NC}  $FAIL"
+echo ""
+
+if [ $FAIL -eq 0 ]; then
+  echo -e "${GREEN}✓ System verification completed successfully!${NC}"
+  exit 0
+else
+  echo -e "${RED}✗ System verification found $FAIL critical issues${NC}"
+  echo "Review the failures above and fix them"
+  exit 1
+fi
+#+end_src
+
+** Performance Benchmark
+
+#+begin_src bash :tangle ../configs/templates/benchmark.sh.j2
+#!/bin/bash
+# System performance benchmark
+
+echo "=== System Performance Benchmark ==="
+echo "Started: $(date)"
+echo ""
+
+# CPU info
+echo "--- CPU Information ---"
+lscpu | grep -E "Model name|CPU\(s\)|Thread|Core|MHz"
+echo ""
+
+# Memory info
+echo "--- Memory Information ---"
+free -h
+echo ""
+
+# Disk performance
+echo "--- Disk Performance ---"
+echo "Testing write speed..."
+dd if=/dev/zero of=/tmp/testfile bs=1M count=1024 oflag=direct 2>&1 | grep -oP '\d+\.?\d*\s+MB/s'
+rm -f /tmp/testfile
+
+echo "Testing read speed..."
+echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+dd if=/dev/nvme0n1 of=/dev/null bs=1M count=1024 iflag=direct 2>&1 | grep -oP '\d+\.?\d*\s+MB/s'
+echo ""
+
+# Mining performance
+echo "--- Mining Performance ---"
+if systemctl is-active --quiet xmrig; then
+  echo "Collecting 30 seconds of hashrate data..."
+  journalctl -u xmrig --since "30 seconds ago" --no-pager | grep "speed" | tail -n 1
+else
+  echo "XMRig not running"
+fi
+echo ""
+
+# Network performance
+echo "--- Network Performance ---"
+echo "Testing latency to 8.8.8.8..."
+ping -c 10 8.8.8.8 | tail -n 1
+echo ""
+
+echo "Benchmark completed: $(date)"
+#+end_src
+
+** Security Audit
+
+#+begin_src bash :tangle ../configs/templates/security-audit.sh.j2
+#!/bin/bash
+# Security audit script
+
+echo "=== Security Audit ==="
+echo "Date: $(date)"
+echo ""
+
+# Check for updates
+echo "--- System Updates ---"
+checkupdates 2>/dev/null | wc -l | xargs echo "Available updates:"
+echo ""
+
+# Open ports
+echo "--- Open Ports ---"
+sudo ss -tulpn | grep LISTEN
+echo ""
+
+# SSH configuration
+echo "--- SSH Configuration ---"
+echo "PasswordAuthentication: $(grep ^PasswordAuthentication /etc/ssh/sshd_config || echo 'default')"
+echo "PermitRootLogin: $(grep ^PermitRootLogin /etc/ssh/sshd_config || echo 'default')"
+echo "PubkeyAuthentication: $(grep ^PubkeyAuthentication /etc/ssh/sshd_config || echo 'default')"
+echo ""
+
+# Firewall rules
+echo "--- Firewall Rules ---"
+sudo ufw status numbered
+echo ""
+
+# File permissions on sensitive files
+echo "--- Sensitive File Permissions ---"
+ls -l /etc/shadow /etc/gshadow /etc/ssh/sshd_config
+echo ""
+
+# Check for world-writable files in critical directories
+echo "--- World-Writable Files ---"
+find /etc /opt /srv -type f -perm -002 2>/dev/null | head -n 10
+echo ""
+
+# Active users
+echo "--- Active Users ---"
+who
+echo ""
+
+# Recent login attempts
+echo "--- Recent Login Attempts (last 20) ---"
+sudo journalctl -u sshd --since "24 hours ago" | grep -i "accepted\|failed" | tail -n 20
+echo ""
+
+echo "Security audit completed"
+#+end_src
+
+** Deploy Verification Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+    # ------------------------------------------------------------------------
+    # Verification & Testing
+    # ------------------------------------------------------------------------
+
+    - name: Deploy verification scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - system-check.sh
+        - benchmark.sh
+        - security-audit.sh
+      tags: [verify, scripts]
+#+end_src
+
+** Run System Verification
+
+#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+    - name: Run comprehensive system check
+      command: /usr/local/bin/system-check.sh
+      register: system_check
+      changed_when: false
+      failed_when: false
+      tags: [verify, check]
+
+    - name: Display system check results
+      debug:
+        var: system_check.stdout_lines
+      tags: [verify, check]
+
+    - name: Fail if critical issues found
+      fail:
+        msg: "System verification failed. Review output above."
+      when: system_check.rc != 0
+      tags: [verify, check]
+#+end_src
+
+** Final Installation Summary
+
+#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+    - name: Display final installation summary
+      debug:
+        msg:
+          - "========================================"
+          - "  Literate Monero Installation Complete!"
+          - "========================================"
+          - ""
+          - "System: {{ system_hostname }}"
+          - "CPUs: {{ ansible_facts['processor_vcpus'] }}"
+          - "Memory: {{ ansible_facts['memtotal_mb'] }} MB"
+          - ""
+          - "=== Services ==="
+          - "Mining: P2Pool + XMRig"
+          - "Tor: SOCKS proxy on port {{ tor_socks_port }}"
+          - "Tails VM: {{ tails_vm_name }}"
+          - ""
+          - "=== Useful Commands ==="
+          - "System status: sudo system-status.sh"
+          - "System check: sudo system-check.sh"
+          - "Mining stats: sudo mining-monitor.sh"
+          - "Backup: sudo backup.sh"
+          - "Security audit: sudo security-audit.sh"
+          - ""
+          - "=== Service Management ==="
+          - "Mining: sudo systemctl {start|stop|status} xmrig"
+          - "P2Pool: sudo systemctl {start|stop|status} p2pool"
+          - "Tor: sudo systemctl {start|stop|status} tor"
+          - "Tails VM: sudo tails-start.sh"
+          - ""
+          - "=== Monitoring ==="
+          - "Load aliases: source /etc/profile.d/log-aliases.sh"
+          - "View logs: logs-mining, logs-tor, logs-all"
+          - "Check services: sudo service-health.sh"
+          - ""
+          - "=== Next Steps ==="
+          - "1. Configure Monero wallet address in configuration.org"
+          - "2. Set up Tails VM persistent storage"
+          - "3. Test backup and restore procedures"
+          - ""
+          - "Documentation: docs/"
+          - "Source files: org/"
+          - ""
+          - "Happy mining and stay private! 🚀"
+          - "========================================"
+      tags: [verify, summary]
+#+end_src
+
+** Notes
+
+*** Post-Installation Checklist
+
+After installation completes, verify:
+
+1. ☐ Run system check: =sudo system-check.sh=
+2. ☐ All services running (check output above)
+3. ☐ Configure Monero wallet address
+4. ☐ Start Tails VM: =sudo tails-start.sh=
+5. ☐ Configure Tails persistent storage
+6. ☐ Test backup: =sudo backup.sh=
+7. ☐ Test restore: =sudo restore.sh <backup-file>=
+8. ☐ Review firewall rules: =sudo ufw status=
+9. ☐ Check monitoring: =sudo system-status.sh=
+
+*** Verification Commands
+
+Run these to verify everything:
+
+#+begin_example
+# Full system check
+sudo system-check.sh
+
+# Service health
+sudo service-health.sh
+
+# Mining performance
+sudo mining-monitor.sh
+
+# System status
+sudo system-status.sh
+
+# Security audit
+sudo security-audit.sh
+
+# Performance benchmark
+sudo benchmark.sh
+
+# Backup verification
+sudo verify-backup.sh
+#+end_example
+
+*** Common Issues
+
+*Mining not starting:*
+#+begin_example
+# Check wallet address
+grep wallet /opt/xmrig/build/config.json
+
+# Check service status
+sudo systemctl status xmrig
+sudo journalctl -u xmrig -n 50
+
+# Restart services
+sudo systemctl restart p2pool
+sudo systemctl restart xmrig
+#+end_example
+
+*Tor not routing:*
+#+begin_example
+# Check Tor status
+sudo systemctl status tor
+
+# Test Tor manually
+curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip
+
+# Restart Tor
+sudo systemctl restart tor
+#+end_example
+
+*** Performance Tuning
+
+If system is slow:
+
+1. Check resource usage: =htop=
+2. Reduce mining threads in configuration.org
+3. Adjust CPU limits in configuration.org
+4. Check disk I/O: =iotop=
+5. Review huge pages: =cat /proc/meminfo | grep Huge=
+
+*** Security Hardening
+
+Additional security measures:
+
+1. Enable automatic security updates
+2. Set up email notifications
+3. Configure SSH key-based auth only
+4. Use strong passwords for encryption
+5. Regular security audits: =sudo security-audit.sh=
+6. Keep backups off-site
+7. Monitor logs regularly
+
+*** Maintenance Schedule
+
+Regular maintenance tasks:
+
+*Daily:*
+- Check service status: =sudo system-status.sh=
+- Review error logs: =logs-errors=
+
+*Weekly:*
+- Run system check: =sudo system-check.sh=
+- Review mining performance: =sudo mining-monitor.sh=
+- Verify backups: =sudo verify-backup.sh=
+
+*Monthly:*
+- System updates: =sudo pacman -Syu=
+- Security audit: =sudo security-audit.sh=
+- Test restore from backup
+- Review and clean old logs
+
+*** Getting Help
+
+Resources:
+
+- Monero mining: https://www.getmonero.org
+- P2Pool: https://github.com/SChernykh/p2pool
+- Tails: https://tails.net/doc/
+- Tor: https://support.torproject.org
+- Emacs tutorial: =C-h t= (inside Emacs)
+- Ansible docs: https://docs.ansible.com/ansible/latest/
+
+*** Success Metrics
+
+Your installation is successful when:
+
+✓ All services show "running" in system-check.sh
+✓ Mining produces consistent hashrate
+✓ Tor routing verification passes
+✓ Backups run automatically
+✓ No critical errors in logs
+✓ System uptime > 99%
+✓ Tails VM boots and persists data
+
+Congratulations on completing the setup! 🎉

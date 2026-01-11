@@ -1,0 +1,508 @@
+** Overview
+
+This phase sets up the Monero full node (monerod) - core infrastructure for sovereign cryptocurrency validation.
+
+**Why run monerod:**
+- Trustless validation: Verify the entire blockchain yourself
+- Network privacy: Transactions broadcast via I2P (IP unlinkability)
+- No intermediaries: Direct P2P participation, no reliance on third parties
+- Agent-ready: Same infrastructure works for humans and autonomous agents
+
+**Network privacy model:**
+- Blockchain sync: Clearnet (intentional - sybil attack protection)
+- Transaction broadcast: I2P primary, Tor fallback (IP privacy)
+- P2P inbound: I2P hidden service (anonymous node-to-node)
+
+**Resource requirements:**
+- Disk: 160GB+ (blockchain size, grows ~40GB/year)
+- RAM: 2-4GB
+- Bandwidth: 500MB-1GB/day ongoing
+- Initial sync: 6-24 hours
+
+Reference: https://monerodocs.org/interacting/monero-network-ports/
+
+** Quick Decision Guide
+
+**Run monerod if:**
+- Want maximum wallet privacy (queries stay local)
+- Have 160GB+ disk space available
+- Can accept 500MB-1GB/day bandwidth  
+- Can wait 6-24 hours for initial sync
+- Want to contribute to Monero network
+
+**Skip monerod if:**
+- Limited disk/bandwidth
+- Want immediate mining
+- P2Pool light client is "good enough"
+- Resource minimalism is priority
+
+**Resource requirements:**
+- Disk: 160GB+ (blockchain size, grows ~40GB/year)
+- RAM: 2-4GB
+- Bandwidth: 500MB-1GB/day ongoing
+- Initial sync: 6-24 hours
+
+** Install monerod
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    # ------------------------------------------------------------------------
+    # Monero Full Node
+    # ------------------------------------------------------------------------
+
+    - name: Install monerod
+      community.general.pacman:
+        name:
+          - monero
+        state: present
+      tags: [monerod]
+#+end_src
+
+** Create Data Directory
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Create monerod data directory
+      file:
+        path: "{{ monerod_data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: [monerod]
+
+    - name: Create monerod log directory
+      file:
+        path: "{{ monerod_data_dir }}/logs"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: [monerod]
+#+end_src
+
+** Load I2P Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Wait for I2P address file to exist
+      wait_for:
+        path: /etc/monero/i2p-address.txt
+        timeout: 60
+      tags: [monerod, config]
+
+    - name: Load I2P address for monerod
+      slurp:
+        src: /etc/monero/i2p-address.txt
+      register: i2p_address_file
+      tags: [monerod, config, verify]
+
+    - name: Set monero_i2p_address fact
+      set_fact:
+        monero_i2p_address: "{{ i2p_address_file['content'] | b64decode | trim }}"
+      when: i2p_address_file['content'] | b64decode | trim != ""
+      tags: [monerod, config, verify]
+
+    - name: Verify I2P address is valid
+      assert:
+        that:
+          - monero_i2p_address is defined
+          - monero_i2p_address | length == 60  # .b32.i2p addresses are 52 chars + 8 for suffix
+        fail_msg: "Invalid I2P address: {{ monero_i2p_address | default('undefined') }}"
+        success_msg: "✓ I2P address loaded: {{ monero_i2p_address }}"
+      tags: [monerod, config]
+#+end_src
+
+** monerod Configuration
+
+#+begin_src ini :tangle ../configs/templates/monerod.conf.j2
+# Monero Full Node Configuration
+# Generated from org/03-monerod.org
+
+# ============================================================================
+# Data Storage
+# ============================================================================
+
+data-dir={{ monerod_data_dir }}
+log-file={{ monerod_data_dir }}/logs/monerod.log
+log-level=0
+max-log-file-size=104857600  # 100MB
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+
+# P2P network
+p2p-bind-ip=0.0.0.0
+p2p-bind-port=18080
+
+# Peer connections
+out-peers={{ monerod_out_peers }}
+in-peers={{ monerod_in_peers }}
+
+# Bandwidth limits (KB/s, 0 = unlimited)
+limit-rate-up={{ monerod_limit_rate_up }}
+limit-rate-down={{ monerod_limit_rate_down }}
+
+# ============================================================================
+# Privacy: I2P Network
+# ============================================================================
+
+# Transaction broadcast via I2P (primary) + Tor (fallback)
+# Prevents IP leaking when sending transactions
+tx-proxy=i2p,127.0.0.1:7656,disable_noise
+
+# P2P inbound via I2P hidden service
+# Allows other I2P users to connect anonymously
+anonymous-inbound={{ monero_i2p_address }},127.0.0.1:18085,128
+
+# Note: Blockchain sync uses clearnet (intentional - sybil protection)
+# See: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+
+# ============================================================================
+# RPC Configuration (Localhost Only)
+# ============================================================================
+
+rpc-bind-ip={{ monerod_rpc_bind_ip }}
+rpc-bind-port={{ monerod_rpc_port }}
+confirm-external-bind=1
+
+# ZMQ notifications (required by P2Pool)
+zmq-pub=tcp://127.0.0.1:18083
+
+# Restricted RPC (security - no wallet operations, mining control, etc.)
+{% if monerod_restricted_rpc %}
+restricted-rpc=1
+{% endif %}
+
+# ============================================================================
+# Mining: DISABLED (XMRig handles mining)
+# ============================================================================
+
+# monerod's built-in miner is disabled
+# Mining is done by XMRig (much faster, optimized)
+
+# ============================================================================
+# Performance
+# ============================================================================
+
+# Database sync mode (safe for SSD)
+db-sync-mode=safe
+
+# Use multiple threads for verification
+prep-blocks-threads={{ ansible_facts['processor_vcpus'] | default(4) }}
+
+# Block verification threads
+block-sync-size=10
+
+# ============================================================================
+# Privacy
+# ============================================================================
+
+# Don't reveal your node version
+hide-my-port=0
+no-igd=1
+enable-dns-blocklist=1
+
+# ============================================================================
+# Maintenance
+# ============================================================================
+
+# Prune blockchain (keeps last 3 months, saves ~130GB)
+# Uncomment to enable pruning:
+# prune-blockchain=1
+
+# Check for updates (doesn't auto-update)
+check-updates=disabled
+#+end_src
+
+** Deploy Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Deploy monerod configuration
+      template:
+        src: ../configs/templates/monerod.conf.j2
+        dest: /etc/monerod.conf
+        mode: '0644'
+        owner: root
+        group: root
+      notify: restart monerod
+      tags: [monerod, config]
+#+end_src
+
+** monerod Systemd Service
+
+#+begin_src ini :tangle ../configs/templates/monerod.service.j2
+[Unit]
+Description=Monero Full Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory={{ monerod_data_dir }}
+
+ExecStart=/usr/bin/monerod \
+    --config-file /etc/monerod.conf \
+    --non-interactive
+
+Restart=always
+RestartSec=10
+Nice=5
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=100%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+#+end_src
+
+** Deploy Service
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Deploy monerod systemd service
+      template:
+        src: ../configs/templates/monerod.service.j2
+        dest: /etc/systemd/system/monerod.service
+        mode: '0644'
+      notify: reload systemd
+      tags: [monerod, systemd]
+
+    - name: Reload systemd daemon for monerod
+      systemd:
+        daemon_reload: yes
+      tags: [monerod, systemd]
+
+    - name: Enable and start monerod
+      systemd:
+        name: monerod
+        enabled: yes
+        state: started
+      tags: [monerod, systemd]
+#+end_src
+
+** Firewall Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Allow Monero P2P port through firewall
+      community.general.ufw:
+        rule: allow
+        port: 18080
+        proto: tcp
+        comment: "Monero P2P"
+      tags: [monerod, firewall]
+#+end_src
+
+** monerod Status Script
+
+#+begin_src bash :tangle ../configs/templates/monerod-status.sh.j2
+#!/bin/bash
+# Monero Full Node Status Script
+# Generated from org/03-monerod.org
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}=== Monero Full Node Status ===${NC}"
+echo ""
+
+# Service status
+if systemctl is-active --quiet monerod; then
+  echo -e "${GREEN}✓ monerod service running${NC}"
+else
+  echo -e "${YELLOW}✗ monerod service NOT running${NC}"
+  exit 1
+fi
+
+echo ""
+
+# Sync status via RPC
+SYNC_INFO=$(curl -s --max-time 5 http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"sync_info"}' \
+  -H 'Content-Type: application/json' | jq -r '.result')
+
+if [ -n "$SYNC_INFO" ] && [ "$SYNC_INFO" != "null" ]; then
+  HEIGHT=$(echo "$SYNC_INFO" | jq -r '.height')
+  TARGET_HEIGHT=$(echo "$SYNC_INFO" | jq -r '.target_height')
+  
+  if [ "$HEIGHT" -eq "$TARGET_HEIGHT" ]; then
+    echo -e "${GREEN}✓ Blockchain synced${NC}"
+    echo "  Current height: $HEIGHT"
+  else
+    REMAINING=$((TARGET_HEIGHT - HEIGHT))
+    PERCENT=$(awk "BEGIN {printf \"%.2f\", ($HEIGHT / $TARGET_HEIGHT) * 100}")
+    echo -e "${YELLOW}⚠ Syncing blockchain${NC}"
+    echo "  Current: $HEIGHT"
+    echo "  Target: $TARGET_HEIGHT"
+    echo "  Remaining: $REMAINING blocks ($PERCENT% complete)"
+  fi
+else
+  echo -e "${YELLOW}⚠ Could not fetch sync status${NC}"
+  echo "  (monerod may still be starting)"
+fi
+
+echo ""
+
+# Connection info
+INFO=$(curl -s --max-time 5 http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
+  -H 'Content-Type: application/json' | jq -r '.result')
+
+if [ -n "$INFO" ] && [ "$INFO" != "null" ]; then
+  INCOMING=$(echo "$INFO" | jq -r '.incoming_connections_count')
+  OUTGOING=$(echo "$INFO" | jq -r '.outgoing_connections_count')
+  TX_POOL=$(echo "$INFO" | jq -r '.tx_pool_size')
+  
+  echo "--- Network Connections ---"
+  echo "  Incoming: $INCOMING"
+  echo "  Outgoing: $OUTGOING"
+  echo "  TX pool: $TX_POOL transactions"
+fi
+
+echo ""
+
+# Disk usage
+DISK_USAGE=$(du -sh {{ monerod_data_dir }} 2>/dev/null | cut -f1)
+echo "--- Storage ---"
+echo "  Blockchain size: ${DISK_USAGE:-calculating...}"
+
+echo ""
+echo "--- Commands ---"
+echo "  Logs: journalctl -u monerod -f"
+echo "  Restart: systemctl restart monerod"
+echo "  Status: systemctl status monerod"
+echo ""
+#+end_src
+
+** Deploy Status Script
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Deploy monerod status script
+      template:
+        src: ../configs/templates/monerod-status.sh.j2
+        dest: /usr/local/bin/monerod-status.sh
+        mode: '0755'
+      tags: [monerod, scripts]
+#+end_src
+
+** Verification
+
+#+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
+    - name: Wait for monerod to start
+      pause:
+        seconds: 10
+      tags: [monerod, verify]
+
+    - name: Check monerod service status
+      systemd:
+        name: monerod
+      register: monerod_status
+      tags: [monerod, verify]
+
+    - name: Test monerod RPC connectivity
+      uri:
+        url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          id: "0"
+          method: "get_info"
+        timeout: 10
+      register: monerod_rpc_test
+      failed_when: false
+      tags: [monerod, verify]
+
+    - name: Display monerod setup summary
+      debug:
+        msg:
+          - "=== Monero Full Node Setup Complete ==="
+          - ""
+          - "Service: {{ monerod_status.status.ActiveState }}"
+          - "Data directory: {{ monerod_data_dir }}"
+          - "RPC endpoint: http://127.0.0.1:{{ monerod_rpc_port }}"
+          - "P2P port: 18080"
+          - ""
+          - "Privacy configuration:"
+          - "  I2P address: {{ monero_i2p_address }}"
+          - "  Transaction broadcast: I2P (primary) + Tor (fallback)"
+          - "  Blockchain sync: Clearnet (sybil protection)"
+          - ""
+          - "Bandwidth limits:"
+          - "  Upload: {{ monerod_limit_rate_up }} KB/s"
+          - "  Download: {{ monerod_limit_rate_down }} KB/s"
+          - ""
+          - "Peer connections:"
+          - "  Outgoing: {{ monerod_out_peers }}"
+          - "  Incoming: {{ monerod_in_peers }}"
+          - ""
+          - "=== Initial Sync ==="
+          - "Blockchain sync will take 6-24 hours depending on:"
+          - "  - Internet speed"
+          - "  - CPU performance"
+          - "  - Disk I/O"
+          - ""
+          - "Monitor sync progress:"
+          - "  sudo monerod-status.sh"
+          - "  journalctl -u monerod -f"
+          - ""
+          - "P2Pool will automatically use this node once sync completes"
+          - ""
+      tags: [monerod, verify]
+#+end_src
+
+** Notes
+
+*** Quick Operations
+
+#+begin_example
+# Status and monitoring
+sudo monerod-status.sh
+journalctl -u monerod -f
+
+# Maintenance
+systemctl restart monerod
+du -sh /opt/monerod  # Check disk usage
+#+end_example
+
+*** Network Privacy
+
+Monerod uses a defense-in-depth approach:
+
+1. **Blockchain sync:** Clearnet (IPv4/IPv6)
+   - Intentional design (sybil attack protection)
+   - Downloading blocks doesn't reveal your transactions
+
+2. **Transaction broadcast:** I2P primary, Tor fallback
+   - Prevents IP leaking when sending transactions
+   - Double anonymity layer
+
+3. **P2P connections:** I2P hidden service
+   - Other I2P users can connect to you anonymously
+   - Contributes to network decentralization
+
+Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+
+*** Troubleshooting
+
+For detailed troubleshooting, see:
+- Official monerod docs: https://monerodocs.org
+- Blockchain sync: https://monerodocs.org/interacting/monero-blockchain-syncing/
+- Network ports: https://monerodocs.org/interacting/monero-network-ports/
+
+**Common issues:**
+
+*Slow sync:* Expected (6-24 hours). Adjust bandwidth limits in config.yml if needed.
+
+*I2P not working:* Check `sudo i2p-status.sh`. Ensure I2P phase (04) completed successfully.
+
+*High disk usage:* Blockchain is ~160GB and grows ~40GB/year. Monitor with `du -sh /opt/monerod`.
+
+*RPC not responding:* Wait for initial sync to progress. Check `journalctl -u monerod -f`.

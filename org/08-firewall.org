@@ -1,0 +1,125 @@
+** Overview
+
+This phase sets up the firewall:
+- UFW (Uncomplicated Firewall) configuration
+- Port access control
+- P2Pool peer connectivity
+
+SSH rules are managed by WireGuard phase and re-applied via the 'firewall' tag.
+
+** Firewall Setup
+
+#+begin_src yaml :tangle ../ansible/fragments/08-firewall.yml
+    # ------------------------------------------------------------------------
+    # Firewall Setup
+    # ------------------------------------------------------------------------
+
+    - name: Reset ufw to default
+      community.general.ufw:
+        state: reset
+      tags: [security, firewall]
+
+    - name: Set ufw default policies
+      community.general.ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: 'incoming', policy: 'deny' }
+        - { direction: 'outgoing', policy: 'allow' }
+        - { direction: 'routed', policy: 'deny' }
+      tags: [security, firewall]
+
+    - name: Allow service ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+        comment: "{{ item.comment | default(omit) }}"
+      loop: "{{ firewall_service_rules | rejectattr('condition', 'defined') | list + (firewall_service_rules | selectattr('condition', 'defined') | selectattr('condition', 'true') | list) }}"
+      tags: [security, firewall]
+
+    - name: Allow configured ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.split('/')[0] }}"
+        proto: "{{ item.split('/')[1] }}"
+      loop: "{{ firewall_allowed_ports }}"
+      tags: [security, firewall]
+  
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+      tags: [security, firewall]
+#+end_src
+
+** Verify Security Setup
+
+#+begin_src yaml :tangle ../ansible/fragments/08-firewall.yml
+    - name: Check firewall status
+      command: ufw status verbose
+      register: ufw_status
+      changed_when: false
+      tags: [security, verify]
+
+    - name: Verify UFW is active
+      assert:
+        that:
+          - "'Status: active' in ufw_status.stdout"
+        fail_msg: "UFW is not active!"
+        success_msg: "✓ UFW firewall is active"
+      tags: [security, verify]
+
+    - name: Display security setup status
+      debug:
+        msg:
+          - "=== Firewall Setup Complete ==="
+          - "Firewall: {{ ufw_status.stdout_lines[0] }}"
+          - ""
+          - "Allowed services:"
+          - "  - WireGuard VPN ({{ wireguard_port }}/udp)"
+          - "  - Monero P2P (18080/tcp)"
+          - "  - P2Pool P2P ({{ p2pool_p2p_port }}/tcp+udp)"
+          - ""
+          - "SSH access managed by WireGuard phase"
+          - "I2P uses outbound only (no firewall rules needed)"
+          - ""
+          - "To update: ansible-playbook playbook.yml --tags firewall"
+      tags: [security, verify]
+#+end_src
+
+** Notes
+
+*** Firewall Management
+
+#+begin_example
+# Check status
+sudo ufw status verbose
+
+# Allow new port
+sudo ufw allow 8080/tcp
+
+# Delete rule
+sudo ufw delete allow 8080/tcp
+
+# Reload
+sudo ufw reload
+#+end_example
+
+*** Security Best Practices
+
+1. *Limit exposed ports* - only open what's needed
+2. *Regular updates* - keep system updated
+3. *Monitor logs* - check for suspicious activity
+4. *Backup data* - automate backups (see backup)
+
+*** Native Services
+
+Applications run as native systemd services (not containers):
+- XMRig: Mining
+- P2Pool: Mining
+- monerod: Full node (optional)
+- Tor: Privacy proxy (privacy phase)
+
+*** SSH Access Control
+
+SSH firewall rules are configured in WireGuard phase since they depend on WireGuard configuration.

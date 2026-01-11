@@ -1,0 +1,195 @@
+** Overview
+
+This phase configures the mining user account:
+- =dev= - Already exists from Omarchy install, has desktop access (primary user)
+- =mining= - Runs Monero mining (no login shell)
+
+** Create Service User Accounts
+
+#+begin_src yaml :tangle ../ansible/fragments/06-users.yml
+    - name: Create mining user (no login shell)
+      user:
+        name: "{{ mining_user }}"
+        comment: "Monero Mining Account"
+        shell: /usr/sbin/nologin
+        create_home: yes
+      tags: [users]
+
+    - name: Get mining group GID
+      command: getent group {{ mining_user }}
+      register: mining_group_info
+      changed_when: false
+      tags: [users, mining]
+
+    - name: Extract mining group GID
+      set_fact:
+        mining_gid: "{{ mining_group_info.stdout.split(':')[2] }}"
+      tags: [users, mining]
+
+    - name: Configure huge pages for mining group
+      sysctl:
+        name: vm.hugetlb_shm_group
+        value: "{{ mining_gid }}"
+        state: present
+        reload: yes
+      tags: [users, mining]
+
+    - name: Make huge pages group persistent
+      lineinfile:
+        path: /etc/sysctl.d/99-mining.conf
+        line: "vm.hugetlb_shm_group = {{ mining_gid }}"
+        create: yes
+        mode: '0644'
+      tags: [users, mining]
+#+end_src
+
+** Create Data Directories
+
+Each service gets its own data directory with appropriate permissions.
+
+#+begin_src yaml :tangle ../ansible/fragments/06-users.yml
+    - name: Create mining data directory
+      file:
+        path: "{{ mining_data_dir }}"
+        state: directory
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        mode: '0755'
+      tags: [users, directories]
+
+    - name: Create P2Pool data directory
+      file:
+        path: "{{ p2pool_data_dir }}"
+        state: directory
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        mode: '0755'
+      tags: [users, directories]
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [users, directories]
+#+end_src
+
+** Configure Resource Limits
+
+Set CPU and memory limits using systemd cgroups.
+
+#+begin_src yaml :tangle ../ansible/fragments/06-users.yml
+    - name: Create systemd user slice for mining
+      copy:
+        content: |
+          [Unit]
+          Description=Mining User Slice
+          Before=slices.target
+
+          [Slice]
+          MemoryMax={{ memory_limit_mining }}M
+        dest: /etc/systemd/system/user-{{ mining_user }}.slice
+        mode: '0644'
+      tags: [users, limits]
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      tags: [users, limits]
+#+end_src
+
+** Verify User Creation
+
+#+begin_src yaml :tangle ../ansible/fragments/06-users.yml
+    - name: Verify users exist
+      shell: |
+        id {{ item }} 2>/dev/null && echo "exists" || echo "missing"
+      loop:
+        - "{{ dev_user }}"
+        - "{{ mining_user }}"
+      register: user_check
+      changed_when: false
+      tags: [users, verify]
+
+    - name: Display user verification
+      debug:
+        msg: "User {{ item.item }}: {{ item.stdout }}"
+      loop: "{{ user_check.results }}"
+      tags: [users, verify]
+
+    - name: Verify group membership
+      shell: groups {{ item }}
+      loop:
+        - "{{ dev_user }}"
+        - "{{ mining_user }}"
+      register: group_check
+      changed_when: false
+      tags: [users, verify]
+
+    - name: Display group membership
+      debug:
+        msg: "{{ item.item }}: {{ item.stdout }}"
+      loop: "{{ group_check.results }}"
+      tags: [users, verify]
+#+end_src
+
+** Notes
+
+*** Why Separate Users?
+
+- *Security*: Isolation between services
+- *Resource Management*: Control CPU/memory per service
+- *Auditing*: Clear separation of logs and processes
+- *Permissions*: Each service only accesses its own data
+
+*** Primary User (dev)
+
+The primary user was created during Omarchy installation and already has:
+- Desktop access (video, input, audio groups)
+- sudo privileges (wheel group)
+- Login shell and home directory
+
+*** Resource Limits
+
+Systemd slices enforce limits at the cgroup level:
+- Mining gets 80% CPU, 2GB RAM (can use more when idle)
+
+Adjust these in =org/00-configuration.org= based on your hardware.
+
+*** How Resource Limits Work
+
+**Two-level limit system:**
+
+1. **Slice level** (user-mining.slice): Applies to ALL processes run by mining user
+   - CPUQuota: 80%
+   - MemoryMax: 2048M
+
+2. **Service level** (xmrig.service, p2pool.service): Applies to specific service
+   - XMRig: CPUQuota per config, MemoryMax 2048M
+   - P2Pool: No additional limits (inherits from slice)
+
+**How they interact:**
+
+The **most restrictive** limit applies:
+- If slice says 80% CPU and service says 100% CPU → 80% wins
+- If slice says 2GB RAM and service says 4GB RAM → 2GB wins
+
+**In practice:**
+- Slice limit (80% CPU, 2GB RAM) is the effective ceiling
+- Service limits are redundant safety bounds
+- Both mining services combined cannot exceed slice limits
+
+**Why two levels?**
+- Slice: Prevents mining user from consuming entire system
+- Service: Additional per-process safety (defense in depth)
+
+*** No Login Shell for Mining
+
+The mining user has =/usr/sbin/nologin= as its shell, meaning:
+- Cannot SSH as this user
+- Cannot =su - mining=
+- Can only run processes via systemd
+
+This is a security best practice for service accounts.

@@ -1,0 +1,618 @@
+** Overview
+
+This phase configures privacy infrastructure for sovereign operations:
+- Install and configure Tor for network anonymity
+- Install Tor Browser for web browsing
+- Configure git for anonymous/pseudonymous commits
+- Set up Tor-routed SSH for GitHub/GitLab
+- Generate SSH keys for git hosting
+
+All git operations route through Tor automatically. Tor Browser provides fingerprint resistance for web research.
+
+**Network privacy model:**
+- Git operations: Tor (hide IP from GitHub/GitLab)
+- Web browsing: Tor Browser (fingerprint resistance)
+- Monero node: I2P + Tor (configured in monerod phase)
+
+**Note on account management:** For high-security operations (crypto wallets, account registration), use hardware wallet + Tor Browser. Future documentation will cover hardware wallet setup.
+
+** Threat Model
+
+This system provides network-level privacy for git operations and web research:
+
+**What's protected:**
+- ✓ Your real IP hidden from GitHub/GitLab (Tor routing)
+- ✓ Browser fingerprinting minimized (Tor Browser)
+- ✓ Git commit metadata doesn't leak location
+
+**Pragmatic trade-offs:**
+- AI services may know your real identity (if using paid accounts)
+- Package managers reveal technology stack (public downloads)
+- Focus is operational privacy, not theoretical anonymity
+
+For detailed threat modeling, see:
+- Tor Browser design: https://2019.www.torproject.org/projects/torbrowser/design/
+- Git over Tor: https://github.com/git/git/blob/master/Documentation/git-config.txt#L1862
+
+** Configuration Variables
+
+Tor Browser version is configurable in config.yml. Check https://www.torproject.org/download/ for latest version.
+
+** Install Tor
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    # ------------------------------------------------------------------------
+    # Privacy Configuration
+    # ------------------------------------------------------------------------
+
+    - name: Install Tor
+      community.general.pacman:
+        name:
+          - tor
+          - torsocks
+        state: present
+      tags: [privacy, tor]
+#+end_src
+
+** Install Tor Browser
+
+Tor Browser provides better fingerprint resistance than regular browsers, even when not using Tor network.
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    - name: Check if Tor Browser is installed
+      stat:
+        path: /opt/tor-browser
+      register: tor_browser_check
+      tags: [privacy, browser]
+
+    - name: Create Tor Browser directory
+      file:
+        path: /opt/tor-browser
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Download Tor Browser checksums
+      get_url:
+        url: "https://dist.torproject.org/torbrowser/{{ tor_browser_version }}/sha256sums-signed-build.txt"
+        dest: /tmp/tor-browser-checksums.txt
+        mode: '0644'
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Extract checksum for our file
+      shell: |
+        grep "tor-browser-linux-x86_64-{{ tor_browser_version }}.tar.xz$" /tmp/tor-browser-checksums.txt | awk '{print $1}'
+      register: tor_browser_checksum
+      changed_when: false
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Download Tor Browser
+      get_url:
+        url: "https://www.torproject.org/dist/torbrowser/{{ tor_browser_version }}/tor-browser-linux-x86_64-{{ tor_browser_version }}.tar.xz"
+        dest: /tmp/tor-browser.tar.xz
+        mode: '0644'
+        checksum: "sha256:{{ tor_browser_checksum.stdout }}"
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+      register: tails_download
+
+    - name: Extract Tor Browser
+      unarchive:
+        src: /tmp/tor-browser.tar.xz
+        dest: /opt/tor-browser
+        remote_src: yes
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        extra_opts: [--strip-components=1]
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Create Tor Browser launcher script
+      copy:
+        content: |
+          #!/bin/bash
+          cd /opt/tor-browser
+          ./start-tor-browser.desktop "$@"
+        dest: /usr/local/bin/tor-browser
+        mode: '0755'
+      tags: [privacy, browser]
+
+    - name: Create Tor Browser desktop entry
+      copy:
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Tor Browser
+          GenericName=Web Browser
+          Comment=Browse the web anonymously through Tor
+          Exec=/usr/local/bin/tor-browser
+          Icon=/opt/tor-browser/Browser/browser/chrome/icons/default/default128.png
+          Terminal=false
+          Categories=Network;WebBrowser;Security;
+          Keywords=internet;web;browser;privacy;anonymous;tor;
+          StartupNotify=true
+        dest: /usr/share/applications/tor-browser.desktop
+        mode: '0644'
+      tags: [privacy, browser]
+
+    - name: Clean up Tor Browser download
+      file:
+        path: /tmp/tor-browser.tar.xz
+        state: absent
+      tags: [privacy, browser]
+#+end_src
+
+** Tor Configuration
+
+#+begin_src conf :tangle ../configs/templates/torrc.j2
+## Tor Configuration for Privacy-First Operation
+## Generated from org/05-privacy.org
+
+# SOCKS proxy for git/SSH operations
+SOCKSPort {{ tor_socks_port }}
+SOCKSPolicy accept 127.0.0.1
+
+# DNS
+DNSPort {{ tor_dns_port }}
+
+# Control port (for monitoring)
+ControlPort {{ tor_control_port }}
+CookieAuthentication 1
+
+# Data directory
+DataDirectory /var/lib/tor
+
+# Logging
+Log notice file /var/log/tor/notices.log
+
+# Client only (not a relay)
+ClientOnly 1
+
+# Use entry guards
+UseEntryGuards 1
+
+# Circuits
+CircuitBuildTimeout 60
+LearnCircuitBuildTimeout 1
+NewCircuitPeriod 30
+
+# Don't write to disk immediately (privacy)
+AvoidDiskWrites 1
+
+# Disable geolocation
+GeoIPFile /dev/null
+GeoIPv6File /dev/null
+
+# Strict exit node policy
+ExitPolicyRejectPrivate 1
+#+end_src
+
+** Deploy Tor Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    - name: Deploy Tor configuration
+      template:
+        src: ../configs/templates/torrc.j2
+        dest: /etc/tor/torrc
+        mode: '0644'
+        owner: root
+        group: root
+      notify: restart tor
+      tags: [privacy, tor, config]
+
+    - name: Create Tor log directory
+      file:
+        path: /var/log/tor
+        state: directory
+        owner: tor
+        group: tor
+        mode: '0755'
+      tags: [privacy, tor]
+
+    - name: Create Tor data directory with proper ownership
+      file:
+        path: /var/lib/tor
+        state: directory
+        owner: tor
+        group: tor
+        mode: '0700'
+      tags: [privacy, tor]
+
+    - name: Create systemd override directory for Tor
+      file:
+        path: /etc/systemd/system/tor.service.d
+        state: directory
+        mode: '0755'
+      tags: [privacy, tor]
+
+    - name: Configure Tor to run as tor user
+      copy:
+        content: |
+          [Service]
+          User=tor
+          Group=tor
+        dest: /etc/systemd/system/tor.service.d/user.conf
+        mode: '0644'
+      notify: reload systemd
+      tags: [privacy, tor]      
+
+    - name: Reload systemd daemon for Tor
+      systemd:
+        daemon_reload: yes
+      tags: [privacy, tor]
+
+    - name: Enable and start Tor service
+      systemd:
+        name: tor
+        enabled: yes
+        state: started
+      tags: [privacy, tor]
+#+end_src
+
+** Git Configuration for Privacy
+
+Configure git identity for anonymous/pseudonymous work.
+
+#+begin_src gitconfig :tangle ../configs/templates/anon-gitconfig.j2
+[user]
+	name = {{ anon_git_name }}
+	email = {{ anon_git_email }}
+
+[core]
+	editor = vim
+	autocrlf = input
+
+[init]
+	defaultBranch = main
+
+[pull]
+	rebase = false
+
+[push]
+	default = simple
+
+[commit]
+	gpgsign = false
+
+# Avoid leaking system information
+[advice]
+	detachedHead = false
+#+end_src
+
+** SSH Configuration for Tor-Routed Git
+
+Configure SSH to route GitHub/GitLab connections through Tor.
+
+#+begin_src sshconfig :tangle ../configs/templates/anon-ssh-config.j2
+# SSH configuration for privacy-first git operations
+# Routes all git traffic through Tor SOCKS proxy
+
+Host github.com
+    HostName github.com
+    User git
+    Port 22
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    IdentityFile ~/.ssh/id_ed25519_github
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 10
+
+Host gitlab.com
+    HostName gitlab.com
+    User git
+    Port 22
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    IdentityFile ~/.ssh/id_ed25519_gitlab
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 10
+
+# Catch-all for other git hosts
+Host *.github.com *.gitlab.com
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+#+end_src
+
+** Deploy Privacy Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    - name: Ensure primary user .ssh directory exists
+      file:
+        path: "/home/{{ dev_user }}/.ssh"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0700'
+      tags: [privacy, config]
+
+    - name: Deploy git configuration for privacy
+      template:
+        src: ../configs/templates/anon-gitconfig.j2
+        dest: "/home/{{ dev_user }}/.gitconfig"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0644'
+      tags: [privacy, config]
+
+    - name: Deploy SSH configuration for Tor routing
+      template:
+        src: ../configs/templates/anon-ssh-config.j2
+        dest: "/home/{{ dev_user }}/.ssh/config"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0600'
+      tags: [privacy, config]
+
+    - name: Create workspace directory
+      file:
+        path: "/home/{{ dev_user }}/projects"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      tags: [privacy, config]
+#+end_src
+
+** SSH Key Generation Script
+
+Helper script to generate SSH keys for GitHub/GitLab accounts.
+
+*** Git Hosting SSH Keys
+
+These keys are for **git operations** (server → GitHub/GitLab via Tor), separate from 
+server access keys provisioned in the wireguard phase.
+
+#+begin_src bash :tangle ../configs/templates/generate-git-keys.sh.j2
+#!/bin/bash
+# Generate SSH keys for git hosting services
+# Run as primary user ({{ dev_user }})
+
+set -euo pipefail
+
+if [ "$(whoami)" != "{{ dev_user }}" ]; then
+    echo "ERROR: This script must be run as {{ dev_user }} user"
+    echo "Usage: /usr/local/bin/generate-git-keys.sh <service>"
+    exit 1
+fi
+
+SERVICE="${1:-}"
+
+if [ -z "$SERVICE" ]; then
+    echo "Usage: $0 <service>"
+    echo ""
+    echo "Examples:"
+    echo "  $0 github    # Generate key for GitHub"
+    echo "  $0 gitlab    # Generate key for GitLab"
+    echo ""
+    echo "Keys will be saved in ~/.ssh/id_ed25519_<service>"
+    exit 1
+fi
+
+KEY_FILE="$HOME/.ssh/id_ed25519_$SERVICE"
+
+if [ -f "$KEY_FILE" ]; then
+    echo "Key already exists: $KEY_FILE"
+    read -p "Overwrite? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted"
+        exit 1
+    fi
+fi
+
+echo "Generating SSH key for $SERVICE..."
+ssh-keygen -t ed25519 -C "{{ anon_git_email }}" -f "$KEY_FILE" -N ""
+
+echo ""
+echo "=== Key Generated ==="
+echo "Private key: $KEY_FILE"
+echo "Public key: ${KEY_FILE}.pub"
+echo ""
+echo "=== Public Key (add this to $SERVICE) ==="
+cat "${KEY_FILE}.pub"
+echo ""
+echo "=== Next Steps ==="
+echo "1. Copy the public key above"
+echo "2. In Tails VM phase, login to $SERVICE"
+echo "3. Go to Settings → SSH Keys"
+echo "4. Add the public key"
+echo "5. Test: ssh -T git@${SERVICE}.com"
+echo ""
+#+end_src
+
+** Privacy Verification Script
+
+#+begin_src bash :tangle ../configs/templates/check-privacy.sh.j2
+#!/bin/bash
+# Verify privacy configuration
+
+echo "=== Privacy Configuration Check ==="
+echo ""
+
+# Check Tor is running
+echo "--- Tor Service ---"
+if systemctl is-active --quiet tor; then
+    echo "✓ Tor service running"
+else
+    echo "✗ Tor service NOT running"
+fi
+
+# Test Tor SOCKS proxy
+echo ""
+echo "--- Tor SOCKS Proxy ---"
+if timeout 10 curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip 2>/dev/null | grep -q '"IsTor":true'; then
+    echo "✓ Tor SOCKS proxy working"
+    IP=$(curl --socks5 127.0.0.1:{{ tor_socks_port }} -s https://api.ipify.org 2>/dev/null)
+    echo "  Exit IP: $IP"
+else
+    echo "✗ Tor SOCKS proxy not working"
+fi
+
+# Check Tor Browser
+echo ""
+echo "--- Tor Browser ---"
+if [ -x /usr/local/bin/tor-browser ]; then
+    echo "✓ Tor Browser installed"
+    echo "  Launch: tor-browser"
+else
+    echo "✗ Tor Browser not found"
+fi
+
+# Check git configuration
+echo ""
+echo "--- Git Configuration ---"
+if [ -f "/home/{{ dev_user }}/.gitconfig" ]; then
+    echo "✓ Git config exists"
+    echo "  Name: $(sudo -u {{ dev_user }} git config user.name)"
+    echo "  Email: $(sudo -u {{ dev_user }} git config user.email)"
+else
+    echo "✗ Git config not found"
+fi
+
+# Check SSH config
+if [ -f "/home/{{ dev_user }}/.ssh/config" ]; then
+    echo "✓ SSH config exists (Tor routing enabled)"
+else
+    echo "✗ SSH config not found"
+fi
+
+# Check SSH keys
+echo ""
+echo "--- SSH Keys ---"
+if ls /home/{{ dev_user }}/.ssh/id_ed25519_* 2>/dev/null | grep -q .; then
+    echo "✓ SSH keys found:"
+    ls -1 /home/{{ dev_user }}/.ssh/id_ed25519_* | grep -v ".pub$"
+else
+    echo "⚠ No SSH keys generated yet"
+    echo "  Run: /usr/local/bin/generate-git-keys.sh github"
+fi
+
+# Test git over Tor
+echo ""
+echo "--- Git over Tor Test ---"
+if sudo -u {{ dev_user }} timeout 30 ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    echo "✓ GitHub SSH working through Tor"
+else
+    echo "⚠ GitHub SSH not configured or not working"
+    echo "  (Normal if you haven't added SSH keys to GitHub yet)"
+fi
+
+echo ""
+echo "Next: Configure monerod (Phase 5) for I2P network privacy"
+echo ""
+#+end_src
+
+** Deploy Helper Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    - name: Deploy privacy helper scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - generate-git-keys.sh
+        - check-privacy.sh
+      tags: [privacy, scripts]
+#+end_src
+
+** Verify Privacy Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    - name: Wait for Tor to start
+      pause:
+        seconds: 5
+      tags: [privacy, verify]
+
+    - name: Check Tor service status
+      systemd:
+        name: tor
+      register: tor_status
+      tags: [privacy, verify]
+
+    - name: Test Tor SOCKS proxy
+      shell: |
+        curl --socks5 127.0.0.1:{{ tor_socks_port }} \
+             --max-time 30 \
+             https://check.torproject.org/api/ip 2>/dev/null || echo "failed"
+      register: tor_test
+      changed_when: false
+      tags: [privacy, verify]
+
+    - name: Verify Tor Browser installation
+      stat:
+        path: /usr/share/applications/tor-browser.desktop
+      register: tor_browser_desktop
+      tags: [privacy, verify]
+      
+    - name: Display privacy configuration status
+      debug:
+        msg:
+          - "=== Privacy Configuration Complete ==="
+          - "Tor Service: {{ tor_status.status.ActiveState }}"
+          - "SOCKS Proxy: 127.0.0.1:{{ tor_socks_port }}"
+          - "User: {{ dev_user }}"
+          - "Workspace: /home/{{ dev_user }}/projects"
+          - ""
+          - "Test result: {{ tor_test.stdout }}"
+          - ""
+          - "Tor Browser: {% if tor_browser_desktop.stat.exists %}Installed (launch: tor-browser){% else %}Not found{% endif %}"
+          - ""
+          - "Next steps:"
+          - "1. Generate SSH keys: /usr/local/bin/generate-git-keys.sh github"
+          - "2. Save public key for later (add to GitHub when ready)"
+          - "3. Verify: check-privacy.sh"
+          - ""
+          - "Git operations will route through Tor automatically"
+          - "Monerod will use I2P (configured in Phase 5)"
+      tags: [privacy, verify]
+#+end_src
+
+** Notes
+
+*** Quick Operations
+
+#+begin_example
+# Generate SSH keys for git hosting
+/usr/local/bin/generate-git-keys.sh github
+/usr/local/bin/generate-git-keys.sh gitlab
+
+# Verify privacy setup
+check-privacy.sh
+
+# Launch Tor Browser
+tor-browser
+#+end_example
+
+*** Network Routing
+
+**Git operations (clone, push, pull):**
+- Route through Tor automatically (via SSH config)
+- Hides your IP from GitHub/GitLab
+- Test: `ssh -T git@github.com`
+
+**Monero node:**
+- Uses I2P for transaction broadcast
+- Uses I2P hidden service for P2P
+- Configured in monerod phase (05)
+
+**Web browsing:**
+- Use Tor Browser for all technical research
+- Better fingerprint resistance than regular browsers
+- Launch: `tor-browser` or from app menu
+
+*** Tor Browser Updates
+
+Check for new versions: https://www.torproject.org/download/
+
+To update:
+1. Edit config.yml: `tor_browser_version: "X.Y.Z"`
+2. Remove old: `sudo rm -rf /opt/tor-browser`
+3. Re-run phase: `ansible-playbook playbook.yml --tags privacy`
+
+Checksums are verified automatically during download.

@@ -1,0 +1,525 @@
+** Overview
+
+This phase sets up automated backups:
+- Backup script for critical data
+- Automated daily backups via cron
+- Backup rotation (keep N days)
+- Easy restore procedure
+
+** Backup Script
+
+#+begin_src bash :tangle ../configs/templates/backup.sh.j2
+#!/bin/bash
+# Automated backup script
+# Backs up critical data to {{ backup_dir }}
+
+set -euo pipefail
+
+BACKUP_DIR="{{ backup_dir }}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="backup_${TIMESTAMP}"
+BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
+RETENTION_DAYS={{ backup_retention_days }}
+
+# Ensure backup directory exists
+mkdir -p "$BACKUP_DIR"
+
+echo "=== Starting backup at $(date) ==="
+echo "Backup destination: $BACKUP_PATH"
+
+# Create backup directory
+mkdir -p "$BACKUP_PATH"
+
+# Function to backup a path
+backup_path() {
+  local src="$1"
+  local dest="$2"
+  
+  if [ -e "$src" ]; then
+    echo "Backing up: $src"
+    mkdir -p "$(dirname "$dest")"
+    rsync -a "$src" "$dest/"
+  else
+    echo "Skipping (not found): $src"
+  fi
+}
+
+# System Configuration (selective, not all of /etc)
+echo "--- System Configuration ---"
+backup_path "/etc/wireguard" "$BACKUP_PATH/etc"
+backup_path "/etc/ssh/sshd_config" "$BACKUP_PATH/etc/ssh"
+backup_path "/etc/tor/torrc" "$BACKUP_PATH/etc/tor"
+backup_path "/etc/i2pd/tunnels.d" "$BACKUP_PATH/etc/i2pd"
+backup_path "/etc/monerod.conf" "$BACKUP_PATH/etc"
+
+# User Data
+echo "--- User Data ---"
+backup_path "/home/{{ dev_user }}/.ssh" "$BACKUP_PATH/home/{{ dev_user }}"
+backup_path "/home/{{ dev_user }}/.gnupg" "$BACKUP_PATH/home/{{ dev_user }}"
+backup_path "/home/{{ dev_user }}/.gitconfig" "$BACKUP_PATH/home/{{ dev_user }}"
+
+# Mining Configuration
+echo "--- Mining Configuration ---"
+mkdir -p "$BACKUP_PATH/mining"
+backup_path "/opt/xmrig/build/config.json" "$BACKUP_PATH/mining"
+
+# Create backup manifest
+echo "--- Creating Manifest ---"
+cat > "$BACKUP_PATH/manifest.txt" << EOF
+Backup created: $(date)
+Hostname: {{ system_hostname }}
+Backup name: $BACKUP_NAME
+
+Contents:
+$(find "$BACKUP_PATH" -type f | wc -l) files
+$(du -sh "$BACKUP_PATH" | cut -f1) total size
+
+Critical configs backed up:
+- WireGuard: /etc/wireguard (peers, keys)
+- SSH: /etc/ssh/sshd_config
+- Tor: /etc/tor/torrc
+- I2P: /etc/i2pd/tunnels.d
+- Monerod: /etc/monerod.conf
+- User SSH keys: /home/{{ dev_user }}/.ssh
+- User GPG keys: /home/{{ dev_user }}/.gnupg
+- Git config: /home/{{ dev_user }}/.gitconfig
+- XMRig config: /opt/xmrig/build/config.json
+
+NOT backed up (Ansible regenerates):
+- Systemd service files
+- Other /etc templates
+- XMRig/P2Pool binaries
+- Monerod blockchain (backup separately)
+EOF
+
+# Compress backup
+echo "--- Compressing Backup ---"
+cd "$BACKUP_DIR"
+tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+
+# Verify compression succeeded before cleaning up
+if [ $? -eq 0 ]; then
+  rm -rf "$BACKUP_NAME"
+  echo "Backup compressed: ${BACKUP_NAME}.tar.gz"
+  echo "Size: $(du -h "${BACKUP_NAME}.tar.gz" | cut -f1)"
+  
+  # Remove old backups only after successful new backup
+  echo "--- Cleaning Old Backups ---"
+  find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +$RETENTION_DAYS -delete
+  echo "Removed backups older than $RETENTION_DAYS days"
+else
+  echo "ERROR: Backup compression failed!"
+  rm -rf "$BACKUP_NAME"
+  exit 1
+fi
+
+# List remaining backups
+echo "--- Current Backups ---"
+ls -lh "$BACKUP_DIR"/backup_*.tar.gz 2>/dev/null || echo "No backups found"
+
+echo "=== Backup completed at $(date) ==="
+
+# Log to journal
+logger -t backup "Backup completed: ${BACKUP_NAME}.tar.gz"
+
+exit 0
+#+end_src
+
+** Restore Script
+
+#+begin_src bash :tangle ../configs/templates/restore.sh.j2
+#!/bin/bash
+# Restore from backup
+# Usage: restore.sh <backup-file.tar.gz> [path]
+
+set -euo pipefail
+
+if [ $# -lt 1 ]; then
+  echo "Usage: $0 <backup-file.tar.gz> [specific-path]"
+  echo ""
+  echo "Available backups:"
+  ls -lh {{ backup_dir }}/backup_*.tar.gz 2>/dev/null || echo "  No backups found"
+  echo ""
+  echo "Examples:"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz           # Show contents"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz etc       # Restore all configs"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz home      # Restore user data"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz mining    # Restore mining config"
+  exit 1
+fi
+
+BACKUP_FILE="$1"
+RESTORE_PATH="${2:-}"
+RESTORE_DIR="{{ backup_dir }}/restore_$(date +%Y%m%d_%H%M%S)"
+
+if [ ! -f "$BACKUP_FILE" ]; then
+  echo "Error: Backup file not found: $BACKUP_FILE"
+  exit 1
+fi
+
+echo "=== Starting restore at $(date) ==="
+echo "Backup file: $BACKUP_FILE"
+echo "Restore location: $RESTORE_DIR"
+
+# Extract backup
+echo "--- Extracting Backup ---"
+mkdir -p "$RESTORE_DIR"
+tar xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
+
+# Find the extracted directory
+EXTRACTED_DIR=$(find "$RESTORE_DIR" -maxdepth 1 -type d -name "backup_*" | head -n 1)
+
+if [ -z "$EXTRACTED_DIR" ]; then
+  echo "Error: Could not find extracted backup directory"
+  exit 1
+fi
+
+# Show manifest
+echo "--- Backup Manifest ---"
+cat "$EXTRACTED_DIR/manifest.txt"
+echo ""
+
+# Restore specific path or show contents
+if [ -n "$RESTORE_PATH" ]; then
+  echo "--- Restoring: $RESTORE_PATH ---"
+  
+  if [ -d "$EXTRACTED_DIR/$RESTORE_PATH" ]; then
+    # Restore to system
+    case "$RESTORE_PATH" in
+      etc)
+        echo "Restoring system configs..."
+        rsync -av "$EXTRACTED_DIR/etc/" /etc/
+        echo "✓ Restored configs to /etc"
+        echo "  Restart affected services:"
+        echo "    sudo systemctl restart wg-quick@wg0 tor i2pd monerod"
+        ;;
+      home)
+        echo "Restoring user data..."
+        rsync -av "$EXTRACTED_DIR/home/{{ dev_user }}/" "/home/{{ dev_user }}/"
+        chown -R {{ dev_user }}:{{ dev_user }} "/home/{{ dev_user }}/.ssh" "/home/{{ dev_user }}/.gnupg" "/home/{{ dev_user }}/.gitconfig"
+        echo "✓ Restored user data to /home/{{ dev_user }}"
+        ;;
+      mining)
+        echo "Restoring mining config..."
+        rsync -av "$EXTRACTED_DIR/mining/" /opt/xmrig/build/
+        echo "✓ Restored mining config"
+        echo "  Restart mining:"
+        echo "    sudo systemctl restart xmrig"
+        ;;
+      *)
+        echo "Restoring $RESTORE_PATH..."
+        rsync -av "$EXTRACTED_DIR/$RESTORE_PATH/" "/$RESTORE_PATH/"
+        echo "✓ Restored $RESTORE_PATH"
+        ;;
+    esac
+  else
+    echo "Error: Path not found in backup: $RESTORE_PATH"
+    echo "Available paths:"
+    ls -la "$EXTRACTED_DIR/"
+    exit 1
+  fi
+else
+  echo "--- Backup Contents ---"
+  tree -L 3 "$EXTRACTED_DIR" 2>/dev/null || find "$EXTRACTED_DIR" -maxdepth 3 -type d
+  echo ""
+  echo "To restore specific components:"
+  echo "  $0 $BACKUP_FILE etc       # System configs (WireGuard, SSH, Tor, I2P, monerod)"
+  echo "  $0 $BACKUP_FILE home      # User data (SSH keys, GPG, git config)"
+  echo "  $0 $BACKUP_FILE mining    # Mining config"
+  echo ""
+  echo "Extracted files available at:"
+  echo "  $EXTRACTED_DIR"
+  echo ""
+  echo "To restore everything:"
+  echo "  $0 $BACKUP_FILE etc && $0 $BACKUP_FILE home && $0 $BACKUP_FILE mining"
+fi
+
+echo "=== Restore completed at $(date) ==="
+
+# Log to journal
+logger -t restore "Restore completed from: $BACKUP_FILE ($RESTORE_PATH)"
+
+exit 0
+#+end_src
+
+** Backup Verification Script
+
+#+begin_src bash :tangle ../configs/templates/verify-backup.sh.j2
+#!/bin/bash
+# Verify backup integrity
+
+BACKUP_DIR="{{ backup_dir }}"
+
+echo "=== Backup Verification ==="
+
+if [ ! -d "$BACKUP_DIR" ]; then
+  echo "Error: Backup directory not found: $BACKUP_DIR"
+  exit 1
+fi
+
+# List all backups
+echo "--- Available Backups ---"
+BACKUPS=$(find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f | sort)
+
+if [ -z "$BACKUPS" ]; then
+  echo "No backups found in $BACKUP_DIR"
+  exit 1
+fi
+
+echo "$BACKUPS"
+echo ""
+
+# Test each backup
+echo "--- Testing Backup Integrity ---"
+for backup in $BACKUPS; do
+  echo -n "Testing: $(basename $backup)... "
+  if tar tzf "$backup" > /dev/null 2>&1; then
+    size=$(du -h "$backup" | cut -f1)
+    echo "OK (size: $size)"
+  else
+    echo "FAILED"
+  fi
+done
+
+echo ""
+echo "--- Backup Statistics ---"
+echo "Total backups: $(echo "$BACKUPS" | wc -l)"
+echo "Total size: $(du -sh $BACKUP_DIR | cut -f1)"
+echo "Oldest: $(basename $(echo "$BACKUPS" | head -n 1))"
+echo "Newest: $(basename $(echo "$BACKUPS" | tail -n 1))"
+
+exit 0
+#+end_src
+
+** Deploy Backup Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/10-backup.yml
+    # ------------------------------------------------------------------------
+    # Backup & Recovery
+    # ------------------------------------------------------------------------
+
+    - name: Deploy backup scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - backup.sh
+        - restore.sh
+        - verify-backup.sh
+      tags: [backup, scripts]
+
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [backup]
+#+end_src
+
+** Automated Backup Cron Job
+
+#+begin_src yaml :tangle ../ansible/fragments/10-backup.yml
+    - name: Create automated backup cron job
+      cron:
+        name: "Daily automated backup"
+        minute: "{{ backup_schedule.split()[0] }}"
+        hour: "{{ backup_schedule.split()[1] }}"
+        job: "/usr/local/bin/backup.sh >> /var/log/backup.log 2>&1"
+        user: root
+      tags: [backup, cron]
+
+    - name: Create backup verification cron job
+      cron:
+        name: "Weekly backup verification"
+        minute: "0"
+        hour: "4"
+        weekday: "0"
+        job: "/usr/local/bin/verify-backup.sh >> /var/log/backup-verify.log 2>&1"
+        user: root
+      tags: [backup, cron]
+#+end_src
+
+** Initial Backup
+
+#+begin_src yaml :tangle ../ansible/fragments/10-backup.yml
+    - name: Run initial backup
+      command: /usr/local/bin/backup.sh
+      register: initial_backup
+      tags: [backup, initial]
+
+    - name: Display initial backup result
+      debug:
+        var: initial_backup.stdout_lines
+      tags: [backup, initial]
+#+end_src
+
+** Verify Backup Setup
+
+#+begin_src yaml :tangle ../ansible/fragments/10-backup.yml
+    - name: Verify backup setup
+      command: /usr/local/bin/verify-backup.sh
+      register: backup_verify
+      changed_when: false
+      tags: [backup, verify]
+
+    - name: Display backup status
+      debug:
+        msg:
+          - "=== Backup Setup Complete ==="
+          - ""
+          - "Backup directory: {{ backup_dir }}"
+          - "Schedule: {{ backup_schedule }} ({{ backup_schedule.split()[1] }}:{{ backup_schedule.split()[0] }})"
+          - "Retention: {{ backup_retention_days }} days"
+          - ""
+          - "Manual backup: sudo backup.sh"
+          - "Verify backups: sudo verify-backup.sh"
+          - "Restore: sudo restore.sh <backup-file>"
+          - ""
+          - "Logs: /var/log/backup.log"
+      tags: [backup, verify]
+#+end_src
+
+** Notes
+
+*** Running Backups
+
+#+begin_example
+# Manual backup
+sudo backup.sh
+
+# Verify backups
+sudo verify-backup.sh
+
+# List backups
+ls -lh {{ backup_dir }}
+
+# View backup log
+sudo tail -f /var/log/backup.log
+#+end_example
+
+*** Restoring from Backup
+
+#+begin_example
+# List available backups
+sudo restore.sh
+
+# View backup contents
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz
+
+# Restore all configs
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz etc
+
+# Restore user data
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz home
+
+# Restore mining config
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz mining
+
+# Restore everything
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz etc
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz home
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz mining
+
+# Restart services after restore
+sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
+#+end_example
+
+*** What Gets Backed Up - Complete List
+
+**SSH Keys (from wireguard and privacy phases):**
+- Server access keys: `/home/dev/.ssh/authorized_keys`
+- Git hosting keys: `/home/dev/.ssh/id_ed25519_github`, `id_ed25519_gitlab`
+- SSH config for Tor routing: `/home/dev/.ssh/config`
+
+**Note:** All SSH keys in `/home/dev/.ssh` are backed up, including both server access and git hosting keys.
+
+**GPG Keys:**
+- `/home/dev/.gnupg` - All GPG keys and configuration
+
+**Mining Configuration:**
+- XMRig config: `/opt/xmrig/build/config.json`
+- Mining data: `/opt/mining`
+
+**Tails VM:**
+- Persistent storage disk: `/var/lib/libvirt/images/tails-fortress-persistent.qcow2` (~8GB)
+- Contains: crypto wallets, KeePassXC database, browser bookmarks, GnuPG keys
+
+**System Configuration:**
+- All of `/etc` (systemd services, configs, etc.)
+
+**What is NOT backed up:**
+- XMRig binary (rebuilt from source during restore)
+- P2Pool binary (re-downloaded during restore)
+- Tails ISO (re-downloaded during restore)
+- monerod blockchain (~160GB - too large, re-syncs during restore)
+- Temporary files matching patterns: {{ backup_exclude_patterns | join(', ') }}
+
+*** Backup Safety
+
+The backup process now:
+1. Creates backup in temporary directory
+2. Compresses backup
+3. Verifies compression succeeded
+4. Only then deletes old backups
+
+This prevents data loss if backup fails partway through.
+
+*** Backup to External Drive
+
+#+begin_example
+# Mount external drive
+sudo mount /dev/sdX1 /mnt/backup
+
+# Copy backups
+sudo cp {{ backup_dir }}/backup_*.tar.gz /mnt/backup/
+
+# Or rsync
+sudo rsync -av {{ backup_dir }}/ /mnt/backup/
+
+# Unmount
+sudo umount /mnt/backup
+#+end_example
+
+*** Disaster Recovery
+
+If you need to rebuild from scratch:
+
+1. Fresh Omarchy install
+2. Clone this repo
+3. Run bootstrap
+4. Copy backup to {{ backup_dir }}
+5. Run restore: =sudo restore.sh <backup-file>=
+6. Re-run Ansible: =ansible-playbook playbook.yml=
+
+*** Backup Size
+
+Expected backup sizes:
+- Mining: < 100 MB
+- Tails VM: ~8 GB (persistent storage)
+- System config: < 100 MB
+
+Total: 10-15 GB per backup
+
+*** Backup Security
+
+Backups are stored unencrypted in {{ backup_dir }}.
+
+For additional security:
+1. Encrypt backup directory (LUKS)
+2. Store backups on encrypted external drive
+3. Use rclone to encrypted cloud storage
+
+*** Testing Restores
+
+Test restores periodically:
+
+#+begin_example
+# Test restore to temporary location
+sudo restore.sh $(ls -t {{ backup_dir }}/backup_*.tar.gz | head -n 1)
+
+# Verify restored data
+# Clean up test restore
+#+end_example

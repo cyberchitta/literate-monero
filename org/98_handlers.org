@@ -1,0 +1,41 @@
+** Handlers
+
+All service restart handlers collected here.
+
+#+begin_src yaml :tangle ../ansible/fragments/98-handlers.yml
+  handlers:
+    - name: restart sshd
+      systemd:
+        name: sshd
+        state: restarted
+      listen: restart sshd
+
+    - name: restart tor
+      systemd:
+        name: tor
+        state: restarted
+      listen: restart tor
+
+    - name: restart i2pd
+      systemd:
+        name: i2pd
+        state: restarted
+      listen: restart i2pd
+      
+    - name: restart monerod
+      systemd:
+        name: monerod
+        state: restarted
+      listen: restart monerod
+
+    - name: restart journald
+      systemd:
+        name: systemd-journald
+        state: restarted
+      listen: restart journald
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+      listen: reload systemd
+#+end_src

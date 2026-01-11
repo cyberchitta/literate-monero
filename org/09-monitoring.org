@@ -1,0 +1,414 @@
+** Overview
+
+This phase sets up monitoring and logging:
+- Centralized logging with journald
+- Log rotation
+- Disk space monitoring
+- Service health checks
+
+** Log Rotation Configuration
+
+#+begin_src conf :tangle ../configs/templates/journald.conf.j2
+# Journald configuration
+# Generated from org/08-monitoring.org
+
+[Journal]
+# Store logs on disk
+Storage=persistent
+
+# Maximum disk usage for logs
+SystemMaxUse=1G
+SystemKeepFree=2G
+
+# Retention
+MaxRetentionSec={{ log_retention_days }}d
+
+# Compression
+Compress=yes
+
+# Forward to syslog
+ForwardToSyslog=no
+ForwardToKMsg=no
+ForwardToConsole=no
+ForwardToWall=yes
+
+# Rate limiting
+RateLimitIntervalSec=30s
+RateLimitBurst=10000
+
+# Seal logs (tamper detection)
+Seal=yes
+#+end_src
+
+** Deploy Journald Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+    # ------------------------------------------------------------------------
+    # Monitoring
+    # ------------------------------------------------------------------------
+
+    - name: Deploy journald configuration
+      template:
+        src: ../configs/templates/journald.conf.j2
+        dest: /etc/systemd/journald.conf
+        mode: '0644'
+      notify: restart journald
+      tags: [monitoring, logging]
+#+end_src
+
+** Disk Space Monitoring Script
+
+#+begin_src bash :tangle ../configs/templates/disk-monitor.sh.j2
+#!/bin/bash
+# Disk space monitoring script
+# Alerts when usage exceeds threshold
+
+THRESHOLD={{ disk_alert_threshold }}
+
+# Check each mount point
+df -h | grep -vE '^Filesystem|tmpfs|cdrom|boot' | awk '{ print $5 " " $6 }' | while read output;
+do
+  usage=$(echo $output | awk '{print $1}' | sed 's/%//g')
+  partition=$(echo $output | awk '{print $2}')
+  
+  if [ $usage -ge $THRESHOLD ]; then
+    echo "ALERT: Disk space on $partition is at ${usage}%"
+    
+    # Log to journal
+    logger -t disk-monitor -p user.warning "Disk space on $partition is at ${usage}%"
+  fi
+done
+#+end_src
+
+** Service Health Check Script
+
+#+begin_src bash :tangle ../configs/templates/service-health.sh.j2
+#!/bin/bash
+# Service health check script
+# Checks if critical services are running
+
+SERVICES=(
+  "tor"
+  "i2pd"
+  "monerod"
+  "p2pool"
+  "xmrig"
+  "sshd"
+  "ufw"
+)
+
+FAILED_SERVICES=()
+
+for service in "${SERVICES[@]}"; do
+  if ! systemctl is-active --quiet "$service"; then
+    echo "WARNING: Service $service is not running"
+    FAILED_SERVICES+=("$service")
+    
+    # Log to journal
+    logger -t service-health -p user.warning "Service $service is not running"
+  fi
+done
+
+# Exit with error if services are still down
+if [ {% raw %}${#FAILED_SERVICES[@]}{% endraw %} -gt 0 ]; then
+  exit 1
+fi
+
+exit 0
+#+end_src
+
+** Mining Performance Monitor
+
+#+begin_src bash :tangle ../configs/templates/mining-monitor.sh.j2
+#!/bin/bash
+# Mining performance monitoring script
+
+echo "=== Mining Performance Report ==="
+echo "Generated: $(date)"
+echo ""
+
+# P2Pool status
+echo "--- P2Pool Status ---"
+systemctl status p2pool --no-pager -l | head -n 5
+echo ""
+
+# XMRig status
+echo "--- XMRig Status ---"
+systemctl status xmrig --no-pager -l | head -n 5
+echo ""
+
+# Recent hashrate from logs
+echo "--- Recent Hashrate ---"
+journalctl -u xmrig --no-pager -n 50 | grep -i "speed" | tail -n 5
+echo ""
+
+# CPU usage
+echo "--- CPU Usage ---"
+top -b -n 1 | grep xmrig | head -n 1
+echo ""
+
+# Memory usage
+echo "--- Memory Usage ---"
+ps aux | grep xmrig | grep -v grep | awk '{print "XMRig: " $4 "% memory (" $6 " KB)"}'
+echo ""
+
+# Huge pages
+echo "--- Huge Pages ---"
+cat /proc/meminfo | grep Huge
+echo ""
+
+# Uptime
+echo "--- Mining Uptime ---"
+systemctl show xmrig -p ActiveEnterTimestamp --value
+#+end_src
+
+** System Status Dashboard
+
+#+begin_src bash :tangle ../configs/templates/system-status.sh.j2
+#!/bin/bash
+# System status dashboard
+
+echo "========================================"
+echo "  Literate Monero Status Dashboard"
+echo "  $(date)"
+echo "========================================"
+echo ""
+
+# System info
+echo "--- System ---"
+echo "Hostname: {{ system_hostname }}"
+echo "Uptime: $(uptime -p)"
+echo "Load: $(uptime | awk -F'load average:' '{print $2}')"
+echo ""
+
+# Disk usage
+echo "--- Disk Usage ---"
+df -h / | tail -n 1 | awk '{print "Root: " $3 " used / " $2 " total (" $5 " full)"}'
+df -h {{ mining_data_dir }} 2>/dev/null | tail -n 1 | awk '{print "Mining: " $3 " used / " $2 " total (" $5 " full)"}'
+echo ""
+
+# Memory usage
+echo "--- Memory ---"
+free -h | grep Mem | awk '{print $3 " used / " $2 " total"}'
+echo ""
+
+# Services status
+echo "--- Critical Services ---"
+for service in tor i2pd monerod p2pool xmrig sshd ufw; do
+  if systemctl is-active --quiet $service; then
+    echo "✓ $service: running"
+  else
+    echo "✗ $service: NOT RUNNING"
+  fi
+done
+echo ""
+
+# Mining stats (brief)
+echo "--- Mining (last hour) ---"
+journalctl -u xmrig --since "1 hour ago" --no-pager | grep -i "speed" | tail -n 1
+echo ""
+
+echo "========================================"
+echo "For detailed info:"
+echo "  Mining: mining-monitor.sh"
+echo "  Services: service-health.sh"
+echo "  Disk: disk-monitor.sh"
+echo "========================================"
+#+end_src
+
+** Deploy Monitoring Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+    - name: Deploy monitoring scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - disk-monitor.sh
+        - service-health.sh
+        - mining-monitor.sh
+        - system-status.sh
+      tags: [monitoring, scripts]
+#+end_src
+
+** Cron Jobs for Monitoring
+
+#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+    - name: Create cron job for disk monitoring
+      cron:
+        name: "Disk space monitoring"
+        minute: "*/30"
+        job: "/usr/local/bin/disk-monitor.sh"
+        user: root
+      tags: [monitoring, cron]
+
+    - name: Create cron job for service health check
+      cron:
+        name: "Service health check"
+        minute: "*/15"
+        job: "/usr/local/bin/service-health.sh"
+        user: root
+      tags: [monitoring, cron]
+
+    - name: Create cron job for mining performance
+      cron:
+        name: "Mining performance log"
+        hour: "*/6"
+        minute: "0"
+        job: "/usr/local/bin/mining-monitor.sh >> {{ mining_data_dir }}/performance.log"
+        user: root
+      tags: [monitoring, cron]
+#+end_src
+
+** Log Viewing Aliases
+
+Create helpful aliases for log viewing.
+
+#+begin_src bash :tangle ../configs/templates/log-aliases.sh.j2
+#!/bin/bash
+# Log viewing aliases
+# Source this in .bashrc or run directly
+
+alias logs-mining='journalctl -u xmrig -u p2pool -f'
+alias logs-tor='journalctl -u tor -f'
+alias logs-all='journalctl -f'
+alias logs-errors='journalctl -p err -f'
+
+# Functions
+logs-service() {
+  if [ -z "$1" ]; then
+    echo "Usage: logs-service <service-name>"
+    echo "Common services: xmrig, p2pool, tor"
+  else
+    journalctl -u "$1" -f
+  fi
+}
+
+echo "Log aliases loaded:"
+echo "  logs-mining      - Mining services (XMRig + P2Pool)"
+echo "  logs-tor         - Tor service"
+echo "  logs-all         - All system logs"
+echo "  logs-errors      - Error logs only"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+    - name: Deploy log aliases
+      template:
+        src: ../configs/templates/log-aliases.sh.j2
+        dest: /etc/profile.d/log-aliases.sh
+        mode: '0644'
+      tags: [monitoring, scripts]
+#+end_src
+
+** Verify Monitoring Setup
+
+#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+    - name: Test monitoring scripts
+      command: "/usr/local/bin/{{ item }}"
+      loop:
+        - disk-monitor.sh
+        - service-health.sh
+        - system-status.sh
+      register: monitoring_test
+      changed_when: false
+      failed_when: false
+      tags: [monitoring, verify]
+
+    - name: Display monitoring status
+      debug:
+        msg:
+          - "=== Monitoring Setup Complete ==="
+          - ""
+          - "Monitoring scripts:"
+          - "  system-status.sh     - Overall system status"
+          - "  mining-monitor.sh    - Mining performance"
+          - "  service-health.sh    - Service health check"
+          - "  disk-monitor.sh      - Disk space monitoring"
+          - ""
+          - "Automated checks:"
+          - "  Disk space: Every 30 minutes"
+          - "  Service health: Every 15 minutes"
+          - "  Mining performance: Every 6 hours"
+          - ""
+          - "View logs:"
+          - "  source /etc/profile.d/log-aliases.sh"
+          - "  logs-mining, logs-tor, logs-all, etc."
+      tags: [monitoring, verify]
+#+end_src
+
+** Notes
+
+*** Viewing Logs
+
+#+begin_example
+# Load aliases
+source /etc/profile.d/log-aliases.sh
+
+# View mining logs
+logs-mining
+
+# View all logs
+logs-all
+
+# View errors only
+logs-errors
+
+# View specific service
+journalctl -u xmrig -f
+
+# View logs since boot
+journalctl -b
+
+# View logs for last hour
+journalctl --since "1 hour ago"
+
+# View logs with priority
+journalctl -p err
+#+end_example
+
+*** Manual Monitoring
+
+#+begin_example
+# System status dashboard
+sudo system-status.sh
+
+# Mining performance
+sudo mining-monitor.sh
+
+# Check disk space
+sudo disk-monitor.sh
+
+# Check service health
+sudo service-health.sh
+#+end_example
+
+*** Log Retention
+
+Logs are kept for {{ log_retention_days }} days and use max 1GB disk space.
+
+Adjust in =org/00-configuration.org= if needed.
+
+*** Performance Impact
+
+Monitoring has minimal impact:
+- Disk checks: Every 30 minutes (~1 second)
+- Service checks: Every 15 minutes (~2 seconds)
+- Mining logs: Every 6 hours (~5 seconds)
+
+Total CPU usage: < 0.1%
+
+*** Troubleshooting
+
+If monitoring isn't working:
+
+#+begin_example
+# Check cron jobs
+sudo crontab -l
+
+# Run script manually
+sudo /usr/local/bin/system-status.sh
+
+# Check journal
+journalctl -u cron -f
+#+end_example

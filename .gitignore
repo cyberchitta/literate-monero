@@ -1,0 +1,48 @@
+# User configuration (may contain customizations)
+/config.yml
+!/config.yml.example
+
+# Generated files (all from tangling org files)
+ansible/**
+!ansible/.gitkeep
+configs/**
+!configs/.gitkeep
+scripts/**
+!scripts/.gitkeep
+
+# Emacs
+*~
+\#*\#
+.#*
+*.elc
+auto-save-list
+tramp
+.\#*
+.emacs.d/backups/
+
+# Ansible runtime
+*.retry
+.ansible/
+/tmp/ansible_facts
+
+# Temporary
+*.tmp
+*.log
+*.swp
+*.swo
+
+# Secrets
+*vault*
+*secret*
+*password*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+
+# OS
+.DS_Store
+Thumbs.db
+docs/system-notes.md
