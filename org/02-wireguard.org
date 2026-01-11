@@ -240,7 +240,7 @@ SSH access has two phases:
           - ssh_rules.rc == 0
           - ssh_rules.stdout_lines | length >= 1
           - ssh_rules.stdout_lines | length <= 2  # IPv4 + optional IPv6
-          - (wireguard_only | default(false) and 'from 10.8.0.0/24' in ssh_rules.stdout) or (not (wireguard_only | default(false)) and ('Anywhere' in ssh_rules.stdout or '0.0.0.0' in ssh_rules.stdout))
+          - (wireguard_only | default(false) and '10.8.0.0/24' in ssh_rules.stdout) or (not (wireguard_only | default(false)) and ('Anywhere' in ssh_rules.stdout or '0.0.0.0' in ssh_rules.stdout))
         fail_msg: |
           SSH firewall configuration error!
           Found {{ ssh_rules.stdout_lines | length }} SSH rule(s)
