@@ -520,6 +520,23 @@ Deploy the script and set up weekly updates.
         seconds: 10
       tags: [monerod, verify]
 
+    - name: Verify ZMQ port is listening
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ monerod_zmq_port }}"
+        timeout: 30
+        msg: "ZMQ port {{ monerod_zmq_port }} not listening - P2Pool will not work"
+      tags: [monerod, verify]
+
+    - name: Display ZMQ status
+      debug:
+        msg:
+          - "✓ ZMQ pub-sub listening on port {{ monerod_zmq_port }}"
+          - ""
+          - "P2Pool will use this to detect new Monero blocks"
+          - "If P2Pool shows ZMQ errors, verify this port is accessible"
+      tags: [monerod, verify]
+      
     - name: Check monerod service status
       systemd:
         name: monerod
@@ -548,6 +565,7 @@ Deploy the script and set up weekly updates.
           - "Service: {{ monerod_status.status.ActiveState }}"
           - "Data directory: {{ monerod_data_dir }}"
           - "RPC endpoint: http://127.0.0.1:{{ monerod_rpc_port }}"
+          - "ZMQ pub-sub: tcp://127.0.0.1:{{ monerod_zmq_port }} (REQUIRED by P2Pool)"
           - "P2P port: 18080"
           - ""
           - "Privacy configuration:"

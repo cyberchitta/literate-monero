@@ -175,6 +175,26 @@ Run this BEFORE the main playbook to catch configuration errors early.
             fail_msg: "Insufficient disk space for monerod blockchain: need 160GB+, have {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB"
             success_msg: "✓ Disk space for blockchain: {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB available"
 
+        - name: Verify ZMQ port is configured
+          assert:
+            that:
+              - monerod_zmq_port is defined
+              - monerod_zmq_port | int == 18083
+            fail_msg: "monerod_zmq_port not configured (P2Pool requires ZMQ on port 18083)"
+            success_msg: "✓ ZMQ port configured: {{ monerod_zmq_port }}"
+
+        - name: Display ZMQ requirement notice
+          debug:
+            msg:
+              - "ℹ CRITICAL: P2Pool requires monerod ZMQ pub-sub"
+              - ""
+              - "The monerod configuration MUST include:"
+              - "  zmq-pub=tcp://127.0.0.1:{{ monerod_zmq_port }}"
+              - ""
+              - "Without this, P2Pool cannot detect new blocks for mining"
+              - "This is automatically configured in the monerod phase"
+              - ""
+
         - name: Display bandwidth requirements
           debug:
             msg:
