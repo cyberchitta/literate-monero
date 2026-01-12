@@ -64,6 +64,9 @@ tor_control_port: 9051
 # DNS port for Tor
 tor_dns_port: 5353
 
+# Monero ZMQ pub port (required by P2Pool)
+monerod_zmq_port: 18083
+
 # P2Pool port mapping
 p2pool_port_map:
   normal: 37889
@@ -96,7 +99,7 @@ firewall_service_rules:
   - { port: "{{ wireguard_port }}", proto: "udp", comment: "WireGuard VPN" }
   - { port: "{{ p2pool_p2p_port }}", proto: "tcp", comment: "P2Pool P2P" }
   - { port: "{{ p2pool_p2p_port }}", proto: "udp", comment: "P2Pool P2P" }
-  - { port: "18080", proto: "tcp", comment: "Monero P2P", condition: "{{ monerod_enabled | default(false) }}" }
+  - { port: "18080", proto: "tcp", comment: "Monero P2P" }
 
 # ----------------------------------------------------------------------------
 # Storage Configuration
@@ -143,20 +146,6 @@ backup_exclude_patterns:
   - "*.log"
   - "*.cache"
   - ".git"
-
-# ----------------------------------------------------------------------------
-# Monero Full Node Configuration (Optional)
-# ----------------------------------------------------------------------------
-
-monerod_enabled: true
-monerod_out_peers: 8
-monerod_in_peers: 8
-monerod_limit_rate_up: 2048
-monerod_limit_rate_down: 8192
-monerod_rpc_bind_ip: 127.0.0.1
-monerod_rpc_port: 18081
-monerod_restricted_rpc: true
-monerod_data_dir: /opt/monerod
 #+end_src
 
 ** Configuration Notes

@@ -10,7 +10,7 @@ This phase sets up Monero mining to demonstrate the full sovereign node stack:
 - Demonstrates trustless participation in Monero network
 - P2Pool integration shows decentralized pool architecture
 - Contributes to network security
-- Same infrastructure works for validation-only (mining can be disabled later)
+- Mining runs at low priority - can be disabled later if desired
 
 **Resource impact:**
 - CPU: Configurable threads (default: use all cores at low priority)
@@ -400,30 +400,7 @@ WantedBy=multi-user.target
         seconds: 10
       tags: [mining, verify]
 
-    - name: Check P2Pool mode
-      shell: |
-        if systemctl cat p2pool | grep -q '\--host 127.0.0.1'; then
-          echo "full_node"
-        else
-          echo "light_client"
-        fi
-      register: p2pool_mode
-      changed_when: false
-      tags: [mining, verify]
-
-    - name: Verify P2Pool mode matches monerod setting
-      assert:
-        that:
-          - (monerod_enabled | default(false) and p2pool_mode.stdout == "full_node") or (not (monerod_enabled | default(false)) and p2pool_mode.stdout == "light_client")
-        fail_msg: |
-          P2Pool configuration mismatch!
-          monerod_enabled: {{ monerod_enabled | default(false) }}
-          P2Pool mode: {{ p2pool_mode.stdout }}
-          Expected: {{ 'full_node' if monerod_enabled | default(false) else 'light_client' }}
-        success_msg: "✓ P2Pool using correct mode: {{ p2pool_mode.stdout }}"
-      tags: [mining, verify]
-
-    - name: Test monerod is responsive (if full node mode)
+    - name: Verify monerod is responsive
       uri:
         url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
         method: POST
@@ -435,19 +412,14 @@ WantedBy=multi-user.target
         timeout: 10
       register: monerod_test
       failed_when: false
-      when: monerod_enabled | default(false)
       tags: [mining, verify]
 
-    - name: Warn if monerod not responding
+    - name: Display monerod connectivity
       debug:
         msg:
-          - "⚠ WARNING: monerod RPC not responding"
-          - "P2Pool is configured for full node but can't reach monerod"
-          - "P2Pool will wait for monerod to sync before starting mining"
-          - "Check: sudo journalctl -u monerod -f"
-      when:
-        - monerod_enabled | default(false)
-        - monerod_test.status != 200
+          - "{% if monerod_test.status == 200 %}✓ P2Pool connected to monerod{% else %}⚠ WARNING: P2Pool cannot reach monerod{% endif %}"
+          - "{% if monerod_test.status != 200 %}P2Pool will wait for monerod to sync before starting mining{% endif %}"
+          - "{% if monerod_test.status != 200 %}Check: sudo journalctl -u monerod -f{% endif %}"
       tags: [mining, verify]
 
     - name: Check P2Pool is running
@@ -498,15 +470,15 @@ WantedBy=multi-user.target
           - "P2Pool mode: {{ p2pool_mode.stdout }}"
           - "XMRig: {{ xmrig_status.status.ActiveState }}"
           - ""
-          - "{% if monerod_enabled | default(false) %}P2Pool using local monerod (maximum privacy){% else %}P2Pool using light client (minimal resources){% endif %}"
+          - "P2Pool using local monerod (maximum privacy)"
           - ""
           - "Monitor mining:"
           - "  sudo journalctl -u xmrig -f"
           - "  sudo mining-monitor.sh"
           - ""
-          - "{% if monerod_enabled | default(false) %}Monitor monerod sync:{% endif %}"
-          - "{% if monerod_enabled | default(false) %}  sudo monerod-status.sh{% endif %}"
-          - "{% if monerod_enabled | default(false) %}  sudo journalctl -u monerod -f{% endif %}"
+          - "Monitor monerod sync:"
+          - "  sudo monerod-status.sh"
+          - "  sudo journalctl -u monerod -f"
       tags: [mining, verify]
 #+end_src
 

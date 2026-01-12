@@ -175,7 +175,7 @@ Run this BEFORE the main playbook to catch configuration errors early.
             fail_msg: "Insufficient disk space for monerod blockchain: need 160GB+, have {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB"
             success_msg: "✓ Disk space for blockchain: {{ (monerod_space_kb.stdout|int / 1024 / 1024)|round(1) }}GB available"
 
-        - name: Warn about bandwidth requirements
+        - name: Display bandwidth requirements
           debug:
             msg:
               - "ℹ INFO: monerod bandwidth requirements"

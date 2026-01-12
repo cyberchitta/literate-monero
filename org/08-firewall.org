@@ -42,7 +42,7 @@ SSH firewall rules are managed by the WireGuard phase because they depend on the
         port: "{{ item.port }}"
         proto: "{{ item.proto }}"
         comment: "{{ item.comment | default(omit) }}"
-      loop: "{{ firewall_service_rules | rejectattr('condition', 'defined') | list + (firewall_service_rules | selectattr('condition', 'defined') | selectattr('condition', 'true') | list) }}"
+      loop: "{{ firewall_service_rules }}"
       tags: [security, firewall]
 
     - name: Allow configured ports

@@ -146,12 +146,7 @@ wireguard_only: false  # Change to true after testing WireGuard connectivity
 # Monero Full Node Configuration
 # ----------------------------------------------------------------------------
 
-# Run full monerod node (vs. P2Pool light client only)
-# Benefits: Maximum wallet privacy, network contribution, self-verification
-# Cost: ~160GB disk, ~500MB-1GB/day bandwidth, 2-4GB RAM
-monerod_enabled: true
-
-# monerod bandwidth limits (if enabled)
+# monerod bandwidth limits
 monerod_out_peers: 8        # Outgoing connections (4-8 recommended)
 monerod_in_peers: 8         # Incoming connections (0 to disable, 4-8 to contribute)
 monerod_limit_rate_up: 2048      # KB/s upload (0 = unlimited)

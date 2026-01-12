@@ -200,7 +200,7 @@ confirm-external-bind=1
 # ZMQ notifications (REQUIRED by P2Pool)
 # P2Pool monitors block notifications via ZMQ pub-sub
 # Without this, P2Pool cannot detect new blocks for mining
-zmq-pub=tcp://127.0.0.1:18083
+zmq-pub=tcp://127.0.0.1:{{ monerod_zmq_port }}
 
 # Restricted RPC (security - no wallet operations, mining control, etc.)
 {% if monerod_restricted_rpc %}
