@@ -246,17 +246,6 @@ touch scripts/.gitkeep
 echo -e "${YELLOW}→${NC} Installing Ansible collections..."
 ansible-galaxy collection install community.general community.libvirt
 
-echo -e "${YELLOW}→${NC} Tangling org/install.org to generate build scripts..."
-cd org
-emacs --batch \
-  --eval "(setq org-src-preserve-indentation t)" \
-  --eval "(require 'org)" \
-  --eval "(find-file \"org/install.org\")" \
-  --eval "(org-babel-tangle)"
-cd ..
-
-echo -e "${GREEN}✓${NC} Generated ansible/tangle-all.sh from org/install.org"
-
 echo ""
 echo -e "${GREEN}✓ Bootstrap complete!${NC}"
 echo ""
