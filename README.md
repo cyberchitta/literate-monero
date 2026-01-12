@@ -4,6 +4,9 @@
 
 Infrastructure-as-documentation using literate programming. The org files ARE the source code—Ansible playbooks are extracted from narrative documentation. Change the docs, regenerate the system.
 
+> **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
+
+
 ## Why This Exists
 
 **For humans:** Maximum privacy + monetary sovereignty. Your own Monero full node, no trusted third parties, network-level anonymity via I2P + Tor.
