@@ -599,7 +599,6 @@ echo "Security audit completed"
           - "Mining: sudo systemctl {start|stop|status} xmrig"
           - "P2Pool: sudo systemctl {start|stop|status} p2pool"
           - "Tor: sudo systemctl {start|stop|status} tor"
-          - "Tails VM: sudo tails-start.sh"
           - ""
           - "=== Monitoring ==="
           - "Load aliases: source /etc/profile.d/log-aliases.sh"
@@ -627,12 +626,10 @@ After installation completes, verify:
 1. ☐ Run system check: =sudo system-check.sh=
 2. ☐ All services running (check output above)
 3. ☐ Configure Monero wallet address
-4. ☐ Start Tails VM: =sudo tails-start.sh=
-5. ☐ Configure Tails persistent storage
-6. ☐ Test backup: =sudo backup.sh=
-7. ☐ Test restore: =sudo restore.sh <backup-file>=
-8. ☐ Review firewall rules: =sudo ufw status=
-9. ☐ Check monitoring: =sudo system-status.sh=
+4. ☐ Test backup: =sudo backup.sh=
+5. ☐ Test restore: =sudo restore.sh <backup-file>=
+6. ☐ Review firewall rules: =sudo ufw status=
+7. ☐ Check monitoring: =sudo system-status.sh=
 
 *** Verification Commands
 

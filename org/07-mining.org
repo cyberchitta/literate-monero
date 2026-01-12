@@ -219,6 +219,17 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       tags: [mining]
 #+end_src
 
+** XMRig MSR Access Configuration
+
+XMRig requires access to Model-Specific Registers (MSR) for optimal RandomX mining performance.
+
+**What MSR access enables:**
+- Hardware-level CPU cache optimizations
+- Reduced memory latency for RandomX algorithm
+- 5-15% hashrate improvement
+
+**Security consideration:** MSR access allows low-level CPU control. The mining user is granted this via udev rules and Linux capabilities, not via sudo/root access.
+
 ** Install P2Pool
 
 #+begin_src yaml :tangle ../ansible/fragments/07-mining.yml

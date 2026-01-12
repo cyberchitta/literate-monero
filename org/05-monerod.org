@@ -14,33 +14,15 @@ This phase sets up the Monero full node (monerod) - core infrastructure for sove
 - P2P inbound: I2P hidden service (anonymous node-to-node)
 
 **Resource requirements:**
-- Disk: 160GB+ (blockchain size, grows ~40GB/year)
+- Disk: 250GB+ (blockchain size, grows ~40GB/year)
 - RAM: 2-4GB
 - Bandwidth: 500MB-1GB/day ongoing
 - Initial sync: 6-24 hours
+
+**After installation:**
+Mining setup phase will automatically use this local monerod instance via ZMQ port 18083.
 
 Reference: https://monerodocs.org/interacting/monero-network-ports/
-
-** Quick Decision Guide
-
-**Run monerod if:**
-- Want maximum wallet privacy (queries stay local)
-- Have 160GB+ disk space available
-- Can accept 500MB-1GB/day bandwidth  
-- Can wait 6-24 hours for initial sync
-- Want to contribute to Monero network
-
-**Skip monerod if:**
-- Limited disk/bandwidth
-- Want immediate mining
-- P2Pool light client is "good enough"
-- Resource minimalism is priority
-
-**Resource requirements:**
-- Disk: 160GB+ (blockchain size, grows ~40GB/year)
-- RAM: 2-4GB
-- Bandwidth: 500MB-1GB/day ongoing
-- Initial sync: 6-24 hours
 
 ** Install monerod
 
@@ -215,7 +197,9 @@ rpc-bind-ip={{ monerod_rpc_bind_ip }}
 rpc-bind-port={{ monerod_rpc_port }}
 confirm-external-bind=1
 
-# ZMQ notifications (required by P2Pool)
+# ZMQ notifications (REQUIRED by P2Pool)
+# P2Pool monitors block notifications via ZMQ pub-sub
+# Without this, P2Pool cannot detect new blocks for mining
 zmq-pub=tcp://127.0.0.1:18083
 
 # Restricted RPC (security - no wallet operations, mining control, etc.)
@@ -622,15 +606,20 @@ MRL issue: https://github.com/monero-project/meta/issues/1124
 
 *Security model:*
 
-We do NOT verify GPG signatures automatically because:
-- GPG keys must be fetched from potentially compromised hosts
-- Bootstrapping problem: if GitHub is compromised, keys are too
-- No additional security vs HTTPS alone
+**Why we don't verify GPG signatures automatically:**
 
-Instead we rely on:
-1. HTTPS transport security (GitHub's TLS)
-2. Size validation (>50% change triggers manual review)
-3. Manual verification available for paranoid operators
+The ban list is cryptographically signed by MRL developers (boog900, jeffro256), but automated signature verification has a bootstrapping problem:
+
+1. GPG keys must be fetched from the same potentially compromised sources as the ban list
+2. If GitHub is compromised to serve malicious ban lists, it's also compromised to serve malicious GPG keys
+3. Automated signature verification provides no additional security over HTTPS alone
+
+**Our approach:**
+- HTTPS transport security (GitHub's TLS protects download integrity)
+- Size validation (>50% change triggers manual review, detects corruption/attacks)
+- Manual GPG verification available for high-security operators (see instructions below)
+
+This is a pragmatic security trade-off: automated signatures would add complexity without meaningful protection, while manual verification remains available for those who need it.
 
 #+begin_example
 # Manual ban list operations

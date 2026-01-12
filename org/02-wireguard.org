@@ -551,7 +551,11 @@ echo ""
       tags: [wireguard, scripts]
 #+end_src
 
-** Provision SSH Keys
+** Provision SSH Keys for Server Access
+
+**Purpose:** These keys allow you to SSH into the server from your client machines (laptop → server).
+
+**Not covered here:** Git hosting keys (GitHub/GitLab) are generated separately in Phase 3 after privacy configuration.
 
 #+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
     - name: Ensure .ssh directory exists for dev user

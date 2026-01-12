@@ -58,21 +58,20 @@ The playbook should be run phase-by-phase in order. This is the tested and recom
 
 #+begin_example
 # Validate configuration first
-cd ansible
-ansible-playbook validate.yml
+ansible-playbook ansible/validate.yml
 
 # Run phases in order
-ansible-playbook playbook.yml --tags base -K
-ansible-playbook playbook.yml --tags wireguard -K
-ansible-playbook playbook.yml --tags privacy -K
-ansible-playbook playbook.yml --tags i2p -K
-ansible-playbook playbook.yml --tags monerod -K
-ansible-playbook playbook.yml --tags users -K
-ansible-playbook playbook.yml --tags mining -K
-ansible-playbook playbook.yml --tags firewall -K
-ansible-playbook playbook.yml --tags monitoring -K
-ansible-playbook playbook.yml --tags backup -K
-ansible-playbook playbook.yml --tags verify -K
+ansible-playbook ansible/playbook.yml --tags base -K
+ansible-playbook ansible/playbook.yml --tags wireguard -K
+ansible-playbook ansible/playbook.yml --tags privacy -K
+ansible-playbook ansible/playbook.yml --tags i2p -K
+ansible-playbook ansible/playbook.yml --tags monerod -K
+ansible-playbook ansible/playbook.yml --tags users -K
+ansible-playbook ansible/playbook.yml --tags mining -K
+ansible-playbook ansible/playbook.yml --tags firewall -K
+ansible-playbook ansible/playbook.yml --tags monitoring -K
+ansible-playbook ansible/playbook.yml --tags backup -K
+ansible-playbook ansible/playbook.yml --tags verify -K
 #+end_example
 
 Each phase can be re-run independently if needed:
@@ -100,14 +99,14 @@ Each phase can be worked on independently without re-running the entire installa
 Available tags correspond to phases:
 - =base= - Phase 1: Base system
 - =wireguard= - Phase 2: WireGuard VPN
-- =monerod= - Phase 3: Monero full node (optional)
-- =users= - Phase 4: User accounts  
-- =mining= - Phase 5: Monero mining
-- =privacy= - Phase 6: Privacy configuration (Tor, git)
-- =tails= - Phase 7: Tails VM
-- =firewall= - Phase 8: Firewall setup
+- =privacy= - Phase 3: Privacy (Tor, git)
+- =i2p= - Phase 4: I2P network privacy
+- =monerod= - Phase 5: Monero full node
+- =users= - Phase 6: User accounts
+- =mining= - Phase 7: Mining
+- =firewall= - Phase 8: Firewall
 - =monitoring= - Phase 9: Monitoring
-- =backup= - Phase 10: Backup & recovery
+- =backup= - Phase 10: Backup
 - =verify= - Phase 11: Verification
 
 * Pre-flight Validation

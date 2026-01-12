@@ -11,7 +11,8 @@ This phase sets up automated backups:
 #+begin_src bash :tangle ../configs/templates/backup.sh.j2
 #!/bin/bash
 # Automated backup script
-# Backs up critical data to {{ backup_dir }}
+# Backs up critical configuration files to {{ backup_dir }}
+# This is a selective backup - only essential configs, NOT entire /etc
 
 set -euo pipefail
 
@@ -427,35 +428,30 @@ sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz mining
 sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
 #+end_example
 
-*** What Gets Backed Up - Complete List
+*** What Gets Backed Up
 
-**SSH Keys (from wireguard and privacy phases):**
-- Server access keys: `/home/dev/.ssh/authorized_keys`
-- Git hosting keys: `/home/dev/.ssh/id_ed25519_github`, `id_ed25519_gitlab`
-- SSH config for Tor routing: `/home/dev/.ssh/config`
+**Critical configuration files (selective, not entire /etc):**
+- WireGuard: `/etc/wireguard` (peers, keys)
+- SSH: `/etc/ssh/sshd_config`
+- Tor: `/etc/tor/torrc`
+- I2P: `/etc/i2pd/tunnels.d`
+- Monerod: `/etc/monerod.conf`
 
-**Note:** All SSH keys in `/home/dev/.ssh` are backed up, including both server access and git hosting keys.
+**User data:**
+- SSH keys: `/home/dev/.ssh` (both server access and git hosting keys)
+- GPG keys: `/home/dev/.gnupg`
+- Git config: `/home/dev/.gitconfig`
 
-**GPG Keys:**
-- `/home/dev/.gnupg` - All GPG keys and configuration
-
-**Mining Configuration:**
+**Mining configuration:**
 - XMRig config: `/opt/xmrig/build/config.json`
-- Mining data: `/opt/mining`
-
-**Tails VM:**
-- Persistent storage disk: `/var/lib/libvirt/images/tails-fortress-persistent.qcow2` (~8GB)
-- Contains: crypto wallets, KeePassXC database, browser bookmarks, GnuPG keys
-
-**System Configuration:**
-- All of `/etc` (systemd services, configs, etc.)
 
 **What is NOT backed up:**
-- XMRig binary (rebuilt from source during restore)
-- P2Pool binary (re-downloaded during restore)
-- Tails ISO (re-downloaded during restore)
-- monerod blockchain (~160GB - too large, re-syncs during restore)
-- Temporary files matching patterns: {{ backup_exclude_patterns | join(', ') }}
+- Systemd services (Ansible regenerates these)
+- XMRig/P2Pool binaries (rebuilt/re-downloaded)
+- Monerod blockchain (~250GB - too large, re-syncs on restore)
+- Temporary files (*.tmp, *.log, *.cache)
+
+**Backup philosophy:** Store only what cannot be regenerated. Ansible playbooks recreate system services and install software. Backups preserve unique configuration and keys.
 
 *** Backup Safety
 
@@ -497,11 +493,11 @@ If you need to rebuild from scratch:
 *** Backup Size
 
 Expected backup sizes:
-- Mining: < 100 MB
-- Tails VM: ~8 GB (persistent storage)
-- System config: < 100 MB
+- Mining config: < 10 MB
+- System config: < 50 MB
+- User data (SSH keys, GPG): < 10 MB
 
-Total: 10-15 GB per backup
+Total: ~70 MB per backup (compressed)
 
 *** Backup Security
 

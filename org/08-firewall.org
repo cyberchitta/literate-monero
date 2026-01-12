@@ -1,11 +1,18 @@
 ** Overview
 
-This phase sets up the firewall:
-- UFW (Uncomplicated Firewall) configuration
-- Port access control
-- P2Pool peer connectivity
+This phase completes the firewall configuration. However, firewall rules are configured progressively throughout installation:
 
-SSH rules are managed by WireGuard phase and re-applied via the 'firewall' tag.
+**When ports are opened:**
+- WireGuard: WireGuard VPN port ({{ wireguard_port }}/udp), SSH rules
+- Monerod: Monero P2P port (18080/tcp)
+- Mining: P2Pool P2P port ({{ p2pool_p2p_port }}/tcp+udp)
+- This phase: Enable UFW, verify all rules
+
+**Why distributed configuration:**
+Each phase opens only the ports it needs, following principle of least privilege. This phase ensures UFW is enabled and validates the complete ruleset.
+
+**SSH access control:**
+SSH firewall rules are managed by the WireGuard phase because they depend on the `wireguard_only` configuration flag.
 
 ** Firewall Setup
 

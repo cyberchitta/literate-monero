@@ -358,18 +358,17 @@ Host *.github.com *.gitlab.com
       tags: [privacy, config]
 #+end_src
 
-** SSH Key Generation Script
+** Generate SSH Keys for Git Hosting
 
-Helper script to generate SSH keys for GitHub/GitLab accounts.
+**Purpose:** These keys authenticate git push/pull operations to GitHub/GitLab through Tor.
 
-*** Git Hosting SSH Keys
-
-These keys are for **git operations** (server → GitHub/GitLab via Tor), separate from 
-server access keys provisioned in the wireguard phase.
+**Different from server access keys:** Phase 2 provisioned keys for SSH login (laptop → server). These are for git operations (server → GitHub/GitLab via Tor).
 
 #+begin_src bash :tangle ../configs/templates/generate-git-keys.sh.j2
 #!/bin/bash
 # Generate SSH keys for git hosting services
+# These keys are used for: git push/pull to GitHub/GitLab (routed through Tor)
+# NOT used for: SSH login to this server (those keys in Phase 2)
 # Run as primary user ({{ dev_user }})
 
 set -euo pipefail

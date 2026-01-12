@@ -386,7 +386,7 @@ sudo rm -rf /etc/wireguard
 sudo ufw --force reset
 
 # Remove scripts
-sudo rm /usr/local/bin/{monerod,i2p,mining,system,wireguard,tails}-*.sh
+sudo rm /usr/local/bin/{monerod,i2p,mining,system,wireguard}-*.sh
 #+end_example
 
 ** Recovery After Failed Rollback
