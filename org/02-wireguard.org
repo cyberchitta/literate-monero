@@ -2,9 +2,6 @@
 
 This phase installs WireGuard, generates keys, configures the tunnel, and sets up peer management.
 
-**For complete setup guide, security model, troubleshooting, and advanced configuration:**
-See `docs/wireguard-setup.md`
-
 ** Quick Setup Summary
 
 After this phase completes:
@@ -674,8 +671,6 @@ Now that keys are provisioned and verified, apply full SSH hardening.
 
 ** Notes
 
-See docs/wireguard-setup.md for complete setup guide.
-
 *** Quick Operations
 
 After setup:
@@ -683,6 +678,3 @@ After setup:
 - Remove peer: sudo wireguard-remove-peer.sh laptop
 - Status: sudo wireguard-status.sh
 - Close SSH port 22: Set wireguard_only: true in config.yml
-
-For troubleshooting, security model, and detailed operations,
-see docs/wireguard-setup.md

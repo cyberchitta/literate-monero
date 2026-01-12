@@ -149,7 +149,6 @@ wireguard_only: false  # Change to true after testing WireGuard connectivity
 # Run full monerod node (vs. P2Pool light client only)
 # Benefits: Maximum wallet privacy, network contribution, self-verification
 # Cost: ~160GB disk, ~500MB-1GB/day bandwidth, 2-4GB RAM
-# See: docs/monerod-setup.md for decision guide
 monerod_enabled: true
 
 # monerod bandwidth limits (if enabled)

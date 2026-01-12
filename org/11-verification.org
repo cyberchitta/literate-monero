@@ -611,7 +611,6 @@ echo "Security audit completed"
           - "2. Set up Tails VM persistent storage"
           - "3. Test backup and restore procedures"
           - ""
-          - "Documentation: docs/"
           - "Source files: org/"
           - ""
           - "Happy mining and stay private! 🚀"
@@ -737,7 +736,6 @@ Resources:
 
 - Monero mining: https://www.getmonero.org
 - P2Pool: https://github.com/SChernykh/p2pool
-- Tails: https://tails.net/doc/
 - Tor: https://support.torproject.org
 - Emacs tutorial: =C-h t= (inside Emacs)
 - Ansible docs: https://docs.ansible.com/ansible/latest/
