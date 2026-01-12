@@ -87,7 +87,7 @@ This appendix contains tool references, cheatsheets, and common operations.
 
 *** Typical Workflow
 
-1. Open: =emacs -nw install.org=
+1. Open: =emacs -nw org/install.org=
 2. Navigate: Use =C-c C-n= to jump between phases, =TAB= to expand sections
 3. Read: Understand what each phase does
 4. Customize: Edit Phase 0 configuration values
@@ -122,7 +122,7 @@ When you press =C-c C-v t=, all blocks are extracted to their tangle destination
 
 - Use =C-s= to search for specific topics
 - Use =TAB= generously to collapse sections you've read
-- Keep install.org open in tmux - it survives SSH disconnects
+- Keep org/install.org open in tmux - it survives SSH disconnects
 - Source files (org/) are version controlled, generated files are not
 
 ** Troubleshooting Emacs
@@ -142,7 +142,7 @@ When you press =C-c C-v t=, all blocks are extracted to their tangle destination
 *** Tangling Doesn't Work
 
 1. Save first: =C-x C-s=
-2. Check you're in install.org (not a sub-file)
+2. Check you're in org/install.org (not a sub-file)
 3. Try again: =C-c C-v t=
 4. Check messages at bottom of screen for errors
 

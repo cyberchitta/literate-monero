@@ -246,16 +246,16 @@ touch scripts/.gitkeep
 echo -e "${YELLOW}→${NC} Installing Ansible collections..."
 ansible-galaxy collection install community.general community.libvirt
 
-echo -e "${YELLOW}→${NC} Tangling install.org to generate build scripts..."
+echo -e "${YELLOW}→${NC} Tangling org/install.org to generate build scripts..."
 cd org
 emacs --batch \
   --eval "(setq org-src-preserve-indentation t)" \
   --eval "(require 'org)" \
-  --eval "(find-file \"install.org\")" \
+  --eval "(find-file \"org/install.org\")" \
   --eval "(org-babel-tangle)"
 cd ..
 
-echo -e "${GREEN}✓${NC} Generated ansible/tangle-all.sh from install.org"
+echo -e "${GREEN}✓${NC} Generated ansible/tangle-all.sh from org/install.org"
 
 echo ""
 echo -e "${GREEN}✓ Bootstrap complete!${NC}"
@@ -265,17 +265,17 @@ echo "  1. Start a tmux session:"
 echo "     ${YELLOW}tmux new -s install${NC}"
 echo ""
 echo "  2. Open the installation document:"
-echo "     ${YELLOW}emacs -nw install.org${NC}"
+echo "     ${YELLOW}emacs -nw org/install.org${NC}"
 echo ""
 echo "  3. Edit config.yml with your settings (REQUIRED):"
 echo "     ${YELLOW}nano config.yml${NC}"
 echo "     - Verify dev_user matches your username (should be 'dev')"
 echo "     - Set your Monero wallet address"
 echo ""
-echo "  4. Read through install.org to understand the system"
+echo "  4. Read through org/install.org to understand the system"
 echo ""
 echo "  5. Tangle all org files to generate Ansible playbooks:"
-echo "     ${YELLOW}cd ansible && ./tangle-all.sh && ./assemble-playbook.sh${NC}"
+echo "     ${YELLOW}./ansible/tangle-all.sh && ./ansible/assemble-playbook.sh${NC}"
 echo ""
 echo "  6. Validate configuration:"
 echo "     ${YELLOW}ansible-playbook validate.yml${NC}"

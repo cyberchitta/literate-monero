@@ -160,7 +160,7 @@ This script tangles all org files to generate Ansible fragments and configuratio
 
 #+begin_src bash :tangle ../ansible/tangle-all.sh :shebang "#!/bin/bash"
 # Tangle all org files with indentation preserved
-# Generated from install.org
+# Generated from org/install.org
 # Get absolute paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -198,7 +198,7 @@ This script concatenates all phase fragments into the final playbook.yml.
 
 #+begin_src bash :tangle ../ansible/assemble-playbook.sh :shebang "#!/bin/bash"
 # Concatenate all fragment files into playbook.yml
-# Generated from install.org
+# Generated from org/install.org
 
 FRAGMENTS_DIR="ansible/fragments"
 OUTPUT="ansible/playbook.yml"
