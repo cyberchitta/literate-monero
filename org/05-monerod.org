@@ -438,61 +438,42 @@ Script to update the ban list weekly with safety checks.
 
 #+begin_src bash :tangle ../configs/templates/update-monero-banlist.sh.j2
 #!/bin/bash
-# Automated Monero spy node ban list updates
-# Runs weekly via cron (Sundays at 3 AM)
-#
-# MRL recommendation: https://github.com/monero-project/meta/issues/1124
-#
-# Security model:
-# - GPG signatures NOT verified automatically (bootstrapping problem: keys
-#   fetched from same potentially compromised hosts as ban list itself)
-# - Relies on HTTPS transport security + size validation
-# - Manual GPG verification: https://github.com/Boog900/monero-ban-list#signatures
+# Ban list update (see 05-monerod.org)
 
 set -euo pipefail
 
 TEMP_FILE="/tmp/ban_list.txt.tmp"
 BAN_LIST="/etc/monero/ban_list.txt"
 
-# Download latest ban list (HTTPS provides transport security)
 curl -s https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt -o "$TEMP_FILE"
 
-# Verify download succeeded and has content
 if [ ! -f "$TEMP_FILE" ] || [ ! -s "$TEMP_FILE" ]; then
   echo "ERROR: Failed to download ban list" >&2
   exit 1
 fi
 
-# Count entries
 NEW_COUNT=$(wc -l < "$TEMP_FILE")
 OLD_COUNT=$(wc -l < "$BAN_LIST" 2>/dev/null || echo 0)
 
-# Check for suspicious changes (>50% size change suggests corruption/attack)
-# This catches both malicious additions and accidental corruption
+# Check for suspicious size changes (>50% suggests corruption/attack)
 if [ "$OLD_COUNT" -gt 0 ]; then
-  # Calculate percentage change using integer arithmetic
-  # DIFF = abs((NEW - OLD) * 100 / OLD)
   DIFF_RAW=$(( (NEW_COUNT - OLD_COUNT) * 100 / OLD_COUNT ))
-  # Get absolute value
   DIFF=${DIFF_RAW#-}
   
   if [ "$DIFF" -gt 50 ]; then
     echo "WARNING: Ban list size changed by ${DIFF}% (old: $OLD_COUNT, new: $NEW_COUNT)" >&2
     echo "Possible corruption or malicious update. Manual review required." >&2
-    echo "Verify manually: https://github.com/Boog900/monero-ban-list" >&2
     exit 1
   fi
 fi
 
-# Update ban list
 mv "$TEMP_FILE" "$BAN_LIST"
 chmod 644 "$BAN_LIST"
 
-# Restart monerod if running and list changed
 if systemctl is-active --quiet monerod && [ "$NEW_COUNT" != "$OLD_COUNT" ]; then
   echo "Ban list updated ($OLD_COUNT -> $NEW_COUNT entries). Restarting monerod..."
   systemctl restart monerod
-  logger -t monero-ban-list "Ban list updated: $OLD_COUNT -> $NEW_COUNT entries, monerod restarted"
+  logger -t monero-ban-list "Ban list updated: $OLD_COUNT -> $NEW_COUNT entries"
 else
   echo "Ban list up to date ($NEW_COUNT entries)"
 fi

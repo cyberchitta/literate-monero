@@ -360,22 +360,14 @@ Host *.github.com *.gitlab.com
 
 ** Generate SSH Keys for Git Hosting
 
-**Purpose:** These keys authenticate git push/pull operations to GitHub/GitLab through Tor.
-
-**Different from server access keys:** Phase 2 provisioned keys for SSH login (laptop → server). These are for git operations (server → GitHub/GitLab via Tor).
-
 #+begin_src bash :tangle ../configs/templates/generate-git-keys.sh.j2
 #!/bin/bash
-# Generate SSH keys for git hosting services
-# These keys are used for: git push/pull to GitHub/GitLab (routed through Tor)
-# NOT used for: SSH login to this server (those keys in Phase 2)
-# Run as primary user ({{ dev_user }})
+# Generate SSH keys for git hosting (see 03-privacy.org)
 
 set -euo pipefail
 
 if [ "$(whoami)" != "{{ dev_user }}" ]; then
-    echo "ERROR: This script must be run as {{ dev_user }} user"
-    echo "Usage: /usr/local/bin/generate-git-keys.sh <service>"
+    echo "ERROR: Run as {{ dev_user }} user"
     exit 1
 fi
 
@@ -383,44 +375,23 @@ SERVICE="${1:-}"
 
 if [ -z "$SERVICE" ]; then
     echo "Usage: $0 <service>"
-    echo ""
-    echo "Examples:"
-    echo "  $0 github    # Generate key for GitHub"
-    echo "  $0 gitlab    # Generate key for GitLab"
-    echo ""
-    echo "Keys will be saved in ~/.ssh/id_ed25519_<service>"
+    echo "Examples: $0 github | $0 gitlab"
     exit 1
 fi
 
 KEY_FILE="$HOME/.ssh/id_ed25519_$SERVICE"
 
 if [ -f "$KEY_FILE" ]; then
-    echo "Key already exists: $KEY_FILE"
-    read -p "Overwrite? (y/N) " -n 1 -r
+    read -p "Key exists. Overwrite? (y/N) " -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Aborted"
-        exit 1
-    fi
+    [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
 fi
 
-echo "Generating SSH key for $SERVICE..."
 ssh-keygen -t ed25519 -C "{{ anon_git_email }}" -f "$KEY_FILE" -N ""
 
 echo ""
-echo "=== Key Generated ==="
-echo "Private key: $KEY_FILE"
-echo "Public key: ${KEY_FILE}.pub"
-echo ""
-echo "=== Public Key (add this to $SERVICE) ==="
+echo "=== Public Key (add to $SERVICE) ==="
 cat "${KEY_FILE}.pub"
-echo ""
-echo "=== Next Steps ==="
-echo "1. Copy the public key above"
-echo "2. In Tails VM phase, login to $SERVICE"
-echo "3. Go to Settings → SSH Keys"
-echo "4. Add the public key"
-echo "5. Test: ssh -T git@${SERVICE}.com"
 echo ""
 #+end_src
 
