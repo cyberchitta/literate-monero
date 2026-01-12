@@ -94,15 +94,20 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
 
 ** Download and Configure Spy Node Ban List
 
+The ban list blocks known spy nodes that attempt to link IP addresses to transactions.
+Updates are **automated weekly** (Sundays at 3 AM) with safety checks.
+
+**Why automated updates without GPG verification:**
+
 The ban list is cryptographically signed by multiple MRL developers, but we don't verify
 signatures in automated updates due to a bootstrapping problem: GPG keys themselves must
 be fetched from potentially compromised hosts. Our security model relies on:
 
 1. HTTPS transport security (GitHub's TLS)
-2. Size validation (detect corrupted/malicious updates)
-3. Manual verification available for paranoid operators
+2. Size validation (>50% change triggers manual review, detects corruption/attacks)
+3. Manual verification available for high-security operators (see Notes section below)
 
-For manual GPG verification, see: https://github.com/Boog900/monero-ban-list#signatures
+For manual GPG verification: https://github.com/Boog900/monero-ban-list#signatures
 
 #+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
     - name: Download Monero spy node ban list
@@ -433,7 +438,9 @@ Script to update the ban list weekly with safety checks.
 
 #+begin_src bash :tangle ../configs/templates/update-monero-banlist.sh.j2
 #!/bin/bash
-# Update Monero spy node ban list
+# Automated Monero spy node ban list updates
+# Runs weekly via cron (Sundays at 3 AM)
+#
 # MRL recommendation: https://github.com/monero-project/meta/issues/1124
 #
 # Security model:
@@ -501,7 +508,7 @@ Deploy the script and set up weekly updates.
         mode: '0755'
       tags: [monerod, scripts, security]
 
-    - name: Create weekly ban list update cron job
+    - name: Create weekly ban list update cron job (Sundays 3 AM)
       cron:
         name: "Update Monero spy node ban list"
         minute: "0"
@@ -594,6 +601,7 @@ Deploy the script and set up weekly updates.
           - ""
           - "Ban list updates: Weekly (Sundays at 3 AM)"
           - "Manual update: sudo update-monero-banlist.sh"
+          - "Check status: tail /var/log/monero-banlist.log"
           - ""
           - "P2Pool will automatically use this node once sync completes"
           - ""
@@ -618,9 +626,15 @@ du -sh /opt/monerod  # Check disk usage
 
 The ban list blocks known spy nodes that attempt to link IP addresses to transactions.
 
-Maintained by: Monero Research Lab
-Source: https://github.com/Boog900/monero-ban-list
-MRL issue: https://github.com/monero-project/meta/issues/1124
+**Automated updates:**
+- Runs weekly (Sundays at 3 AM)
+- Downloads from: https://github.com/Boog900/monero-ban-list
+- Size validation prevents corruption/attacks (>50% change triggers manual review)
+- Automatically restarts monerod if list changes
+
+**Maintained by:** Monero Research Lab
+**Source:** https://github.com/Boog900/monero-ban-list
+**MRL issue:** https://github.com/monero-project/meta/issues/1124
 
 *Security model:*
 
@@ -640,10 +654,14 @@ The ban list is cryptographically signed by MRL developers (boog900, jeffro256),
 This is a pragmatic security trade-off: automated signatures would add complexity without meaningful protection, while manual verification remains available for those who need it.
 
 #+begin_example
-# Manual ban list operations
-sudo update-monero-banlist.sh  # Update now
+# Check automated update status
+tail /var/log/monero-banlist.log
+
+# Manual update (if needed)
+sudo update-monero-banlist.sh
+
+# View current ban list
 cat /etc/monero/ban_list.txt | wc -l  # Count entries
-tail /var/log/monero-banlist.log  # Check update log
 #+end_example
 
 *Manual GPG verification (optional):*

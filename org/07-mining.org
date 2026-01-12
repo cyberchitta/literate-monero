@@ -12,6 +12,10 @@ This phase sets up Monero mining to demonstrate the full sovereign node stack:
 - Contributes to network security
 - Mining runs at low priority - can be disabled later if desired
 
+**Important:** P2Pool will start and XMRig will show hashrate, but **no shares will be found** 
+until monerod completes its initial blockchain sync (6-24 hours). This is normal. Monitor sync 
+progress with `sudo monerod-status.sh`.
+
 **Resource impact:**
 - CPU: Configurable threads (default: use all cores at low priority)
 - RAM: ~2GB for XMRig + P2Pool

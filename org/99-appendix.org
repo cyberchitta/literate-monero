@@ -247,6 +247,10 @@ sudo mining-monitor.sh  # if mining enabled
 source /etc/profile.d/log-aliases.sh
 logs-all
 logs-mining
+
+# Ban list status
+tail /var/log/monero-banlist.log
+sudo update-monero-banlist.sh  # Force update now
 #+end_example
 
 ** Service Management
