@@ -6,14 +6,39 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 > **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
 
-
 ## Why This Exists
 
-**For humans:** Maximum privacy + monetary sovereignty. Your own Monero full node, no trusted third parties, network-level anonymity via I2P + Tor.
+In a world of centralized services and opaque Docker images, Literate Monero provides a transparent, self-documenting way to run privacy-focused cryptocurrency infrastructure.
 
-**For agents:** Cryptocurrency lets AI agents transact without institutional dependencies (no bank accounts, KYC, legal personhood). Privacy coins extend this to network-level anonymity. Same infrastructure, different operator.
+**For humans:** Achieve maximum privacy and monetary sovereignty with your own Monero full node. No trusted third parties, with network-level anonymity via I2P + Tor. The literate approach ensures you understand every part of your setup.
 
-**The approach:** Literate programming keeps configuration and explanation synchronized. When the system changes, the documentation must change. They cannot drift.
+**For agents:** Cryptocurrency enables AI to transact without institutional dependencies (no banks, KYC, or legal personhood). Privacy coins add network-level anonymity. This repo provides verifiable, modifiable infrastructure that's easy to reason about programmatically.
+
+**The approach:** Literate programming keeps configuration, explanation, and code synchronized. When the system changes, the documentation must change—they cannot drift. This creates a "living document" that's both human-readable and machine-executable.
+
+## Runtime Benefits
+
+The deployed system provides:
+
+- **Privacy:** Tor for git/web, I2P for Monero P2P, WireGuard for access.
+- **Sovereignty:** Trustless validation via monerod full node.
+- **Decentralization:** Optional P2Pool mining without central pools.
+- **No intermediaries:** Direct network participation.
+
+## Installation Benefits
+
+The literate + Ansible setup offers:
+
+- **Transparency:** Code embedded in explanations—understand before deploy.
+- **Customizability:** Edit Org docs for tailored setups; tangle to generate.
+- **Repeatability:** Ansible idempotency ensures safe, consistent re-runs.
+- **Flexibility:** Modular phases for partial/custom installs.
+
+### Why Literate Programming Over Docker?
+
+- **Docker pros:** Quick, isolated.
+- **Docker cons:** Opaque images, harder deep customization, supply-chain risks.
+- **Literate advantages:** Full visibility, easy mods while keeping docs synced, educational. Ideal for sovereignty and learning; Docker better for "just run it".
 
 ## What You Get
 
@@ -25,7 +50,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 **Validation infrastructure:**
 
-- monerod: Monero full node (~230 GB blockchain)
+- monerod: Monero full node (230+ GB blockchain)
 - Trustless transaction verification
 - Direct P2P network participation
 
@@ -45,29 +70,44 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 **Hardware:**
 
-- 16GB+ RAM, 500GB+ disk (575GB recommended)
+- 16GB+ RAM, 500GB+ disk (575GB recommended for blockchain growth)
 - Modern x86_64 CPU (AMD Ryzen or Intel Core)
 - UEFI firmware (not legacy BIOS)
 
-## Install
+## Installation
 
-```bash
-# Prerequisites: Omarchy Linux installed (see INSTALL-OMARCHY.md)
+1. **Clone repository:**
 
-git clone https://github.com/cyberchitta/literate-monero
-cd literate-monero
-./bootstrap.sh
+   ```bash
+   git clone https://github.com/cyberchitta/literate-monero
+   cd literate-monero
+   ```
 
-# Configure
-nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key
+2. **Bootstrap:**
 
-# Generate playbooks from org files
-./tangle.sh
+   ```bash
+   ./bootstrap.sh
+   ```
 
-# Deploy
-ansible-playbook ansible/validate.yml      # Check configuration
-ansible-playbook ansible/playbook.yml -K   # Deploy (30-60min + 6-24hr blockchain sync)
-```
+   This sets up Emacs, Ansible, and dependencies.
+
+3. **Configure:**
+
+   ```bash
+   nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
+   ```
+
+4. **Generate playbooks:**
+
+   ```bash
+   ./tangle.sh
+   ```
+
+5. **Validate and deploy:**
+   ```bash
+   ansible-playbook ansible/validate.yml      # Check configuration
+   ansible-playbook ansible/playbook.yml -K   # Deploy (30-60min + 6-24hr blockchain sync)
+   ```
 
 ## How It Works
 
@@ -75,12 +115,13 @@ ansible-playbook ansible/playbook.yml -K   # Deploy (30-60min + 6-24hr blockchai
 
 **Workflow:**
 
-1. Read `org/install.org` to understand system
-2. Edit configuration in `config.yml`
-3. Tangle: `cd ansible && ./tangle-all.sh` (extract Ansible)
-4. Deploy: `ansible-playbook playbook.yml`
+1. Read `org/install.org` to understand the system.
+2. Edit configuration in `config.yml` or directly in Org files.
+3. Tangle: `cd ansible && ./tangle-all.sh` (extract Ansible fragments).
+4. Assemble: `./assemble-playbook.sh` (combine into `playbook.yml`).
+5. Deploy: `ansible-playbook playbook.yml`.
 
-**Updates:** Edit org files → re-tangle → re-deploy. Don't edit generated files.
+**Updates:** Edit Org files → re-tangle → re-deploy. Avoid editing generated files.
 
 ## Architecture
 
@@ -96,7 +137,7 @@ ansible-playbook ansible/playbook.yml -K   # Deploy (30-60min + 6-24hr blockchai
 - Base: Omarchy (Arch + encryption)
 - Privacy: Tor, I2P, WireGuard
 - Validation: monerod full node
-- Optional: P2Pool mining
+- Optional: P2Pool + XMRig mining
 
 ## Daily Operations
 
