@@ -117,9 +117,9 @@ The literate + Ansible setup offers:
 
 1. Read `org/install.org` to understand the system.
 2. Edit configuration in `config.yml` or directly in Org files.
-3. Tangle: `cd ansible && ./tangle-all.sh` (extract Ansible fragments).
-4. Assemble: `./assemble-playbook.sh` (combine into `playbook.yml`).
-5. Deploy: `ansible-playbook playbook.yml`.
+3. Tangle: `./ansible/tangle-all.sh` (extract Ansible fragments).
+4. Assemble: `./ansible/assemble-playbook.sh` (combine into `playbook.yml`).
+5. Deploy: `ansible-playbook ansible/playbook.yml`.
 
 **Updates:** Edit Org files → re-tangle → re-deploy. Avoid editing generated files.
 
