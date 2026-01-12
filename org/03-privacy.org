@@ -116,8 +116,8 @@ Tor Browser provides better fingerprint resistance than regular browsers, even w
       copy:
         content: |
           #!/bin/bash
-          cd /opt/tor-browser
-          ./start-tor-browser.desktop "$@"
+          cd /opt/tor-browser/Browser
+          ./start-tor-browser "$@"
         dest: /usr/local/bin/tor-browser
         mode: '0755'
       tags: [privacy, browser]
