@@ -70,7 +70,7 @@ echo -e "${YELLOW}→${NC} Installing base packages..."
 sudo pacman -S --noconfirm \
     base-devel \
     git \
-    emacs-nox \
+    emacs-wayland \
     tmux \
     ansible \
     bind-tools \
