@@ -24,6 +24,8 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 ## Prerequisites
 
+> **Portability:** Built and tested on Omarchy Linux. The Ansible playbooks assume systemd and pacman but should adapt to other distros with minor modifications.
+
 **Required:**
 
 - **Omarchy Linux** - Arch-based distro with full-disk encryption ([installation guide](INSTALL-OMARCHY.md))
