@@ -4,60 +4,23 @@
 
 Infrastructure-as-documentation using literate programming. The org files ARE the source code—Ansible playbooks are extracted from narrative documentation. Change the docs, regenerate the system.
 
-> **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
+> **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5, but with contributions from Claude Opus 4.5 and Grok 4.1. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
 
-## Why This Exists
+## Who This Is For
 
-In a world of centralized services and opaque Docker images, Literate Monero provides a transparent, self-documenting way to run privacy-focused cryptocurrency infrastructure.
+**Humans seeking monetary sovereignty:** Run your own Monero full node with network-level anonymity via I2P + Tor. No trusted third parties. The literate approach ensures you understand every part of your setup.
 
-**For humans:** Achieve maximum privacy and monetary sovereignty with your own Monero full node. No trusted third parties, with network-level anonymity via I2P + Tor. The literate approach ensures you understand every part of your setup.
+**AI agents transacting autonomously:** Cryptocurrency enables transactions without institutional dependencies (no banks, KYC, or legal personhood). Privacy coins add network-level anonymity. This repo provides verifiable, modifiable infrastructure that's easy to reason about programmatically.
 
-**For agents:** Cryptocurrency enables AI to transact without institutional dependencies (no banks, KYC, or legal personhood). Privacy coins add network-level anonymity. This repo provides verifiable, modifiable infrastructure that's easy to reason about programmatically.
-
-**The approach:** Literate programming keeps configuration, explanation, and code synchronized. When the system changes, the documentation must change—they cannot drift. This creates a "living document" that's both human-readable and machine-executable.
-
-## Runtime Benefits
-
-The deployed system provides:
-
-- **Privacy:** Tor for git/web, I2P for Monero P2P, WireGuard for access.
-- **Sovereignty:** Trustless validation via monerod full node.
-- **Decentralization:** Optional P2Pool mining without central pools.
-- **No intermediaries:** Direct network participation.
-
-## Installation Benefits
-
-The literate + Ansible setup offers:
-
-- **Transparency:** Code embedded in explanations—understand before deploy.
-- **Customizability:** Edit Org docs for tailored setups; tangle to generate.
-- **Repeatability:** Ansible idempotency ensures safe, consistent re-runs.
-- **Flexibility:** Modular phases for partial/custom installs.
-
-### Why Literate Programming Over Docker?
-
-- **Docker pros:** Quick, isolated.
-- **Docker cons:** Opaque images, harder deep customization, supply-chain risks.
-- **Literate advantages:** Full visibility, easy mods while keeping docs synced, educational. Ideal for sovereignty and learning; Docker better for "just run it".
+**Developers learning literate programming:** Real-world infrastructure where configuration, explanation, and code cannot drift apart. Edit Org docs, tangle to generate playbooks, deploy with Ansible.
 
 ## What You Get
 
-**Privacy stack:**
-
-- Tor: Anonymous git operations, web browsing
-- I2P: Monero P2P network privacy
-- WireGuard: Secure remote access
-
-**Validation infrastructure:**
-
-- monerod: Monero full node (250+ GB blockchain)
-- Trustless transaction verification
-- Direct P2P network participation
-
-**Optional (demonstrates complete stack):**
-
-- P2Pool: Decentralized mining pool
-- XMRig: CPU mining
+- **Tor**: Anonymous git operations, web browsing
+- **I2P**: Monero P2P network privacy
+- **WireGuard**: Secure remote access
+- **monerod**: Full node with trustless transaction verification (250+ GB blockchain)
+- **Optional**: P2Pool decentralized mining + XMRig CPU miner
 
 ## Prerequisites
 
@@ -94,7 +57,6 @@ The literate + Ansible setup offers:
 3. **Start persistent session:**
 
    ```bash
-   # After bootstrap completes, start tmux for remaining steps
    tmux new -s monero-install
    ```
 
@@ -106,7 +68,6 @@ The literate + Ansible setup offers:
 4. **Configure:**
 
    ```bash
-   # Inside tmux session:
    nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
    ```
 
@@ -119,8 +80,6 @@ The literate + Ansible setup offers:
 6. **Validate and deploy:**
 
    ```bash
-   # Still inside tmux session (or rejoin: tmux attach -t monero-install)
-   
    # Validate configuration first
    ansible-playbook ansible/validate.yml
    
@@ -138,36 +97,25 @@ The literate + Ansible setup offers:
    ansible-playbook ansible/playbook.yml --tags verify -K
    ```
 
-   **Note:** Phase-by-phase execution is the tested and recommended approach.
-   Each phase can be re-run independently if needed. Total time: 30-60min + 6-24hr monerod sync.
-
-   Session persists through SSH disconnects. Detach with `Ctrl-a d`, reattach anytime.
+   Each phase can be re-run independently. Total time: 30-60min + 6-24hr monerod sync.
 
    **Alternative (untested):** Run all phases at once:
    ```bash
    ansible-playbook ansible/playbook.yml -K
    ```
-   This may work but hasn't been validated. Phase-by-phase gives better control and error visibility.
 
 ## How It Works
 
-**Source files:** `org/*.org` (narrative + embedded code)
+**Source files:** `org/*.org` (narrative documentation with embedded code)
 
 **Workflow:**
 
-1. Read `org/install.org` to understand the system.
-2. Edit configuration in `config.yml` or directly in Org files.
-3. Tangle: `./ansible/tangle-all.sh` (extract Ansible fragments).
-4. Assemble: `./ansible/assemble-playbook.sh` (combine into `playbook.yml`).
-5. Deploy: `ansible-playbook ansible/playbook.yml`.
+1. Read `org/install.org` to understand the system
+2. Edit configuration in `config.yml` or directly in Org files
+3. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
+4. Deploy: `ansible-playbook ansible/playbook.yml`
 
-**Updates:** Edit Org files → re-tangle → re-deploy. Avoid editing generated files.
-
-**Tip:** Long-running operations (blockchain sync, compilation) benefit from tmux.
-Your session survives SSH disconnects—detach (`Ctrl-a d`), close terminal,
-reconnect later (`tmux attach`).
-
-## Architecture
+**Updates:** Edit Org files → re-tangle → re-deploy. Documentation and code stay synchronized because they're the same files.
 
 **Privacy model:**
 
@@ -176,17 +124,9 @@ reconnect later (`tmux attach`).
 - P2P connections: I2P hidden service
 - Git operations: Tor-routed
 
-**Stack:**
-
-- Base: Omarchy (Arch + encryption)
-- Privacy: Tor, I2P, WireGuard
-- Validation: monerod full node
-- Optional: P2Pool + XMRig mining
-
 ## Daily Operations
 
 ```bash
-# Start monitoring session
 tmux new -s monitoring
 
 # Status checks
@@ -194,40 +134,17 @@ sudo system-check.sh      # Full verification
 sudo monerod-status.sh    # Node sync status
 sudo i2p-status.sh        # I2P network
 
-# Live logs (in split panes)
+# Live logs
 source /etc/profile.d/log-aliases.sh
 logs-all    # System logs
 logs-tor    # Tor daemon
-
-# Detach and reconnect later
-# Ctrl-a d to detach, tmux attach -t monitoring to return
 ```
 
 ## Resource Requirements
 
-**Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)  
-**Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended  
+**Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)
+**Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended
 **Network:** 250GB initial sync, 500MB-1GB/day ongoing
-
-## Use Cases
-
-**Humans:**
-
-- Monetary sovereignty (verify your own transactions)
-- Maximum privacy (I2P + Tor network anonymity)
-- No trusted third parties
-
-**AI Agents:**
-
-- Transact without institutional intermediaries
-- Network-level anonymity (not just pseudonymity)
-- Deterministic validation without external dependencies
-
-**Developers:**
-
-- Literate programming example (real-world infrastructure)
-- Privacy-first development environment
-- Reproducible system from source
 
 ## Documentation
 
@@ -236,11 +153,7 @@ logs-tor    # Tor daemon
 - `org/01-11-*.org` - Modular installation phases
 - `org/99-appendix.org` - Commands and troubleshooting
 
-**External:**
-
-- [Monero](https://monerodocs.org)
-- [I2P](https://geti2p.net/en/docs)
-- [P2Pool](https://github.com/SChernykh/p2pool)
+**External:** [Monero](https://monerodocs.org) · [I2P](https://geti2p.net/en/docs) · [P2Pool](https://github.com/SChernykh/p2pool)
 
 ## License
 
