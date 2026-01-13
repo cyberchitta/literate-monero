@@ -50,7 +50,7 @@ The literate + Ansible setup offers:
 
 **Validation infrastructure:**
 
-- monerod: Monero full node (230+ GB blockchain)
+- monerod: Monero full node (250+ GB blockchain)
 - Trustless transaction verification
 - Direct P2P network participation
 
@@ -89,25 +89,65 @@ The literate + Ansible setup offers:
    ./bootstrap.sh
    ```
 
-   This sets up Emacs, Ansible, and dependencies.
+   This installs Emacs, Ansible, tmux, and dependencies.
 
-3. **Configure:**
+3. **Start persistent session:**
 
    ```bash
+   # After bootstrap completes, start tmux for remaining steps
+   tmux new -s monero-install
+   ```
+
+   **Tmux quick reference:**
+   - Detach: `Ctrl-a d` (work continues in background)
+   - Reattach: `tmux attach -t monero-install`
+   - Split window: `Ctrl-a |` (vertical) or `Ctrl-a -` (horizontal)
+
+4. **Configure:**
+
+   ```bash
+   # Inside tmux session:
    nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
    ```
 
-4. **Generate playbooks:**
+5. **Generate playbooks:**
 
    ```bash
    ./tangle.sh
    ```
 
-5. **Validate and deploy:**
+6. **Validate and deploy:**
+
    ```bash
-   ansible-playbook ansible/validate.yml      # Check configuration
-   ansible-playbook ansible/playbook.yml -K   # Deploy (30-60min + 6-24hr blockchain sync)
+   # Still inside tmux session (or rejoin: tmux attach -t monero-install)
+   
+   # Validate configuration first
+   ansible-playbook ansible/validate.yml
+   
+   # Run phases in order (tested approach)
+   ansible-playbook ansible/playbook.yml --tags base -K
+   ansible-playbook ansible/playbook.yml --tags wireguard -K
+   ansible-playbook ansible/playbook.yml --tags privacy -K
+   ansible-playbook ansible/playbook.yml --tags i2p -K
+   ansible-playbook ansible/playbook.yml --tags monerod -K
+   ansible-playbook ansible/playbook.yml --tags users -K
+   ansible-playbook ansible/playbook.yml --tags mining -K
+   ansible-playbook ansible/playbook.yml --tags firewall -K
+   ansible-playbook ansible/playbook.yml --tags monitoring -K
+   ansible-playbook ansible/playbook.yml --tags backup -K
+   ansible-playbook ansible/playbook.yml --tags verify -K
    ```
+
+   **Note:** Phase-by-phase execution is the tested and recommended approach.
+   Each phase can be re-run independently if needed. Total time: 30-60min + 6-24hr monerod sync.
+
+   Session persists through SSH disconnects. Detach with `Ctrl-a d`, reattach anytime.
+
+   **Alternative (untested):** Run all phases at once:
+   ```bash
+   ansible-playbook ansible/playbook.yml -K
+   ```
+   This may work but hasn't been validated. Phase-by-phase gives better control and error visibility.
 
 ## How It Works
 
@@ -122,6 +162,10 @@ The literate + Ansible setup offers:
 5. Deploy: `ansible-playbook ansible/playbook.yml`.
 
 **Updates:** Edit Org files → re-tangle → re-deploy. Avoid editing generated files.
+
+**Tip:** Long-running operations (blockchain sync, compilation) benefit from tmux.
+Your session survives SSH disconnects—detach (`Ctrl-a d`), close terminal,
+reconnect later (`tmux attach`).
 
 ## Architecture
 
@@ -142,22 +186,28 @@ The literate + Ansible setup offers:
 ## Daily Operations
 
 ```bash
-# Status
+# Start monitoring session
+tmux new -s monitoring
+
+# Status checks
 sudo system-check.sh      # Full verification
 sudo monerod-status.sh    # Node sync status
 sudo i2p-status.sh        # I2P network
 
-# Logs
+# Live logs (in split panes)
 source /etc/profile.d/log-aliases.sh
 logs-all    # System logs
 logs-tor    # Tor daemon
+
+# Detach and reconnect later
+# Ctrl-a d to detach, tmux attach -t monitoring to return
 ```
 
 ## Resource Requirements
 
-**Disk:** 230GB blockchain + 20GB system + ~15GB backups (575GB total recommended)  
+**Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)  
 **Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended  
-**Network:** 230GB initial sync, 500MB-1GB/day ongoing
+**Network:** 250GB initial sync, 500MB-1GB/day ongoing
 
 ## Use Cases
 
