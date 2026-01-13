@@ -52,6 +52,13 @@ Tor Browser version is configurable in config.yml. Check https://www.torproject.
           - torsocks
         state: present
       tags: [privacy, tor]
+
+    - name: Install KeePassXC
+      community.general.pacman:
+        name:
+          - keepassxc
+        state: present
+      tags: [privacy, keepassxc]
 #+end_src
 
 ** Install Tor Browser
@@ -586,3 +593,26 @@ To update:
 3. Re-run phase: `ansible-playbook playbook.yml --tags privacy`
 
 Checksums are verified automatically during download.
+
+*** KeePassXC Password & TOTP Manager
+
+KeePassXC stores passwords and TOTP seeds in a single encrypted `.kdbx` database.
+
+**Keyboard shortcuts (no browser extension needed):**
+- =Ctrl+B= — Copy username
+- =Ctrl+C= — Copy password
+- =Ctrl+T= — Copy TOTP code
+- =Ctrl+Shift+V= — Auto-type into focused window
+
+Clipboard auto-clears after 10 seconds.
+
+**Setup:**
+#+begin_example
+keepassxc  # Launch, create new database with strong master password
+# Add entries, right-click → TOTP → Set up TOTP for 2FA seeds
+#+end_example
+
+**Backup:**
+- Upload `.kdbx` to cloud drive via Tor Browser
+- File is encrypted locally—cloud drive sees only opaque blob
+- Manual backup when seeds change (infrequent)
