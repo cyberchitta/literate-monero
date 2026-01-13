@@ -148,6 +148,9 @@ Available tags correspond to phases:
 * Phase 11: Verification & Testing
 #+INCLUDE: "11-verification.org"
 
+* Handlers
+#+INCLUDE: "98_handlers.org"
+
 * Appendix: Quick Reference
 #+INCLUDE: "99-appendix.org"
 
