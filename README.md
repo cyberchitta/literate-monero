@@ -12,7 +12,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 **AI agents transacting autonomously:** Cryptocurrency enables transactions without institutional dependencies (no banks, KYC, or legal personhood). Privacy coins add network-level anonymity. This repo provides verifiable, modifiable infrastructure that's easy to reason about programmatically.
 
-**Developers learning literate programming:** Real-world infrastructure where configuration, explanation, and code cannot drift apart. Edit Org docs, tangle to generate playbooks, deploy with Ansible.
+**Developers building on Monero:** A reproducible local environment for wallet integrations, payment systems, or agent infrastructure. Full node access without relying on remote APIs. The literate approach means the codebase doubles as documentation.
 
 ## What You Get
 
