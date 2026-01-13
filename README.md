@@ -63,6 +63,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
    ```
 
    **Tmux quick reference:**
+
    - Detach: `Ctrl-a d` (work continues in background)
    - Reattach: `tmux attach -t monero-install`
    - Split window: `Ctrl-a |` (vertical) or `Ctrl-a -` (horizontal)
@@ -84,7 +85,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
    ```bash
    # Validate configuration first
    ansible-playbook ansible/validate.yml
-   
+
    # Run phases in order (tested approach)
    ansible-playbook ansible/playbook.yml --tags base -K
    ansible-playbook ansible/playbook.yml --tags wireguard -K
@@ -102,6 +103,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
    Each phase can be re-run independently. Total time: 30-60min + 6-24hr monerod sync.
 
    **Alternative (untested):** Run all phases at once:
+
    ```bash
    ansible-playbook ansible/playbook.yml -K
    ```
@@ -144,9 +146,9 @@ logs-tor    # Tor daemon
 
 ## Resource Requirements
 
-**Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)
-**Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended
-**Network:** 250GB initial sync, 500MB-1GB/day ongoing
+- **Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)
+- **Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended
+- **Network:** 250GB initial sync, 500MB-1GB/day ongoing
 
 ## Documentation
 
