@@ -79,8 +79,6 @@ This is a literate programming system - documentation and code are the same file
 2. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
 3. Deploy: `ansible-playbook ansible/playbook.yml --tags <phase>`
 
-Documentation and code stay synchronized because they're the same files.
-
 ## Post-Install
 
 Daily operations and monitoring are documented in `org/09-monitoring.org` and `org/99-appendix.org`.
