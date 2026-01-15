@@ -40,49 +40,30 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
    cd literate-monero
    ```
 
-2. **Bootstrap:**
+2. **Bootstrap:** (installs Emacs, Ansible, tmux)
 
    ```bash
    ./bootstrap.sh
    ```
 
-   This installs Emacs, Ansible, tmux, and dependencies.
+   _Tip: Run installation in tmux (`tmux new -s monero-install`) to survive SSH disconnects._
 
 3. **Configure:**
 
    ```bash
-   nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
+   nano config.yml  # Set monero_wallet_address, ssh keys, etc.
    ```
 
-   _Tip: Run installation in tmux (`tmux new -s monero-install`) to survive disconnects._
-
-4. **Generate playbooks:**
+4. **Generate and deploy:**
 
    ```bash
-   ./tangle.sh
+   ./tangle.sh  # Extract Ansible playbooks from org files
+   ansible-playbook ansible/validate.yml  # Check configuration
+   ansible-playbook ansible/playbook.yml --tags base -K  # Run first phase
+   # Continue with remaining phases (see org/install.org for order)
    ```
 
-5. **Validate and deploy:**
-
-   ```bash
-   # Validate configuration first
-   ansible-playbook ansible/validate.yml
-
-   # Run phases in order (tested approach)
-   ansible-playbook ansible/playbook.yml --tags base -K
-   ansible-playbook ansible/playbook.yml --tags wireguard -K
-   ansible-playbook ansible/playbook.yml --tags privacy -K
-   ansible-playbook ansible/playbook.yml --tags i2p -K
-   ansible-playbook ansible/playbook.yml --tags monerod -K
-   ansible-playbook ansible/playbook.yml --tags users -K
-   ansible-playbook ansible/playbook.yml --tags mining -K
-   ansible-playbook ansible/playbook.yml --tags firewall -K
-   ansible-playbook ansible/playbook.yml --tags monitoring -K
-   ansible-playbook ansible/playbook.yml --tags backup -K
-   ansible-playbook ansible/playbook.yml --tags verify -K
-   ```
-
-   Each phase can be re-run independently. Total time: 30-60min + 6-24hr monerod sync.
+   Total time: 30-60min + 6-24hr blockchain sync. Full phase list in `org/install.org`.
 
 ## How It Works
 
@@ -93,6 +74,7 @@ This is a literate programming system - documentation and code are the same file
 **Initial setup:** Follow Installation steps above.
 
 **Making changes:**
+
 1. Edit `config.yml` for simple settings, or edit `org/*.org` files directly for deeper changes
 2. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
 3. Deploy: `ansible-playbook ansible/playbook.yml --tags <phase>`
