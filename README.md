@@ -54,7 +54,7 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
    nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
    ```
 
-   _Tip: Run installation in tmux (`tmux new -s monero-install`) to survive disconnects. See `org/99-appendix.org` for tmux reference._
+   _Tip: Run installation in tmux (`tmux new -s monero-install`) to survive disconnects._
 
 4. **Generate playbooks:**
 
