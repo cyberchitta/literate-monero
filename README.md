@@ -86,18 +86,18 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 ## How It Works
 
+This is a literate programming system - documentation and code are the same files.
+
 **Source files:** `org/*.org` (narrative documentation with embedded code)
 
-**Workflow:**
+**Initial setup:** Follow Installation steps above.
 
-1. Read `org/install.org` to understand the system
-2. Edit configuration in `config.yml` or directly in Org files
-3. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
-4. Deploy: `ansible-playbook ansible/playbook.yml`
+**Making changes:**
+1. Edit `config.yml` for simple settings, or edit `org/*.org` files directly for deeper changes
+2. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
+3. Deploy: `ansible-playbook ansible/playbook.yml --tags <phase>`
 
-**Updates:** Edit Org files → re-tangle → re-deploy. Documentation and code stay synchronized because they're the same files.
-
-See `org/05-monerod.org` for detailed privacy model (I2P/Tor routing).
+Documentation and code stay synchronized because they're the same files.
 
 ## Post-Install
 
