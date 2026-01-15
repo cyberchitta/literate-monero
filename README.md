@@ -93,7 +93,7 @@ source /etc/profile.d/log-aliases.sh && logs-all  # Live logs
 
 ## Resource Requirements
 
-- **Disk:** 250GB blockchain + 20GB system + ~15GB backups (575GB total recommended)
+- **Disk:** 250GB blockchain (grows ~40GB/year) + 20GB system/backups (350GB+ recommended, 500GB+ for long-term)
 - **Memory:** 2-4GB monerod + 2GB system = 16GB+ recommended
 - **Network:** 250GB initial sync, 500MB-1GB/day ongoing
 
