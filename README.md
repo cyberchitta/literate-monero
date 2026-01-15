@@ -26,18 +26,10 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 > **Portability:** Built and tested on Omarchy Linux. The Ansible playbooks assume systemd and pacman but should adapt to other distros with minor modifications.
 
-**Required:**
-
 - **Omarchy Linux** - Arch-based distro with full-disk encryption ([installation guide](INSTALL-OMARCHY.md))
   - Install this FIRST (complete wipe of target drive)
   - Create user `dev` during install (or adjust `config.yml`)
 - Monero wallet address (get from getmonero.org or Cake Wallet)
-
-**Hardware:**
-
-- 16GB+ RAM, 500GB+ disk (575GB recommended for blockchain growth)
-- Modern x86_64 CPU (AMD Ryzen or Intel Core)
-- UEFI firmware (not legacy BIOS)
 
 ## Installation
 
@@ -56,31 +48,21 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
    This installs Emacs, Ansible, tmux, and dependencies.
 
-3. **Start persistent session:**
-
-   ```bash
-   tmux new -s monero-install
-   ```
-
-   **Tmux quick reference:**
-
-   - Detach: `Ctrl-a d` (work continues in background)
-   - Reattach: `tmux attach -t monero-install`
-   - Split window: `Ctrl-a |` (vertical) or `Ctrl-a -` (horizontal)
-
-4. **Configure:**
+3. **Configure:**
 
    ```bash
    nano config.yml  # Set dev_user, monero_wallet_address, ssh_public_key, etc.
    ```
 
-5. **Generate playbooks:**
+   _Tip: Run installation in tmux (`tmux new -s monero-install`) to survive disconnects. See `org/99-appendix.org` for tmux reference._
+
+4. **Generate playbooks:**
 
    ```bash
    ./tangle.sh
    ```
 
-6. **Validate and deploy:**
+5. **Validate and deploy:**
 
    ```bash
    # Validate configuration first
@@ -102,12 +84,6 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
    Each phase can be re-run independently. Total time: 30-60min + 6-24hr monerod sync.
 
-   **Alternative (untested):** Run all phases at once:
-
-   ```bash
-   ansible-playbook ansible/playbook.yml -K
-   ```
-
 ## How It Works
 
 **Source files:** `org/*.org` (narrative documentation with embedded code)
@@ -121,27 +97,18 @@ Infrastructure-as-documentation using literate programming. The org files ARE th
 
 **Updates:** Edit Org files → re-tangle → re-deploy. Documentation and code stay synchronized because they're the same files.
 
-**Privacy model:**
+See `org/05-monerod.org` for detailed privacy model (I2P/Tor routing).
 
-- Blockchain sync: Clearnet (sybil protection)
-- Transaction broadcast: I2P primary, Tor fallback
-- P2P connections: I2P hidden service
-- Git operations: Tor-routed
+## Post-Install
 
-## Daily Operations
+Daily operations and monitoring are documented in `org/09-monitoring.org` and `org/99-appendix.org`.
+
+Quick reference:
 
 ```bash
-tmux new -s monitoring
-
-# Status checks
 sudo system-check.sh      # Full verification
 sudo monerod-status.sh    # Node sync status
-sudo i2p-status.sh        # I2P network
-
-# Live logs
-source /etc/profile.d/log-aliases.sh
-logs-all    # System logs
-logs-tor    # Tor daemon
+source /etc/profile.d/log-aliases.sh && logs-all  # Live logs
 ```
 
 ## Resource Requirements
