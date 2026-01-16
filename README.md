@@ -10,9 +10,9 @@ Built using literate programming: the documentation IS the source code. Understa
 
 ## Who This Is For
 
-**Privacy-focused users** (human or AI agent): Trustless transaction validation with network-level anonymity. No intermediaries, no KYC, no IP leakage. The literate approach means you can verify exactly what your node does.
+**Privacy-focused users** (human or AI agent): Verify transactions locally, broadcast anonymously. No intermediaries between you and the blockchain. The literate approach means you can audit exactly what your node does.
 
-**Monero developers**: Reproducible local environment for wallet integrations, payment systems, or agent infrastructure. Full node access without dependencies. The narrative codebase is easier to audit, customize, and build upon than traditional config-heavy deployments.
+**Monero developers**: Full node access for wallet integrations, payment systems, or agent infrastructure. The narrative codebase is easier to customize and build upon than traditional config-heavy deployments.
 
 ## What You Get
 
