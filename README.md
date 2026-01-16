@@ -1,26 +1,30 @@
 # Literate Monero
 
-**Privacy-preserving Monero infrastructure for humans and agents**
+**Privacy-first Monero full node with trustless validation and network anonymity**
 
-Infrastructure-as-documentation using literate programming. The org files ARE the source code—Ansible playbooks are extracted from narrative documentation. Change the docs, regenerate the system.
+Run your own Monero infrastructure with complete sovereignty—no trusted third parties, no custodial services, no remote APIs. Network-level anonymity via I2P + Tor ensures transactions cannot be linked to your IP address.
+
+Built using literate programming: the documentation IS the source code. Understand every component, customize any behavior, reproduce the entire system. Infrastructure as narrative.
 
 > **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5, but with contributions from Claude Opus 4.5 and Grok 4.1. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
 
 ## Who This Is For
 
-**Humans seeking monetary sovereignty:** Run your own Monero full node with network-level anonymity via I2P + Tor. No trusted third parties. The literate approach ensures you understand every part of your setup.
+**Privacy-focused users** (human or AI agent): Trustless transaction validation with network-level anonymity. No intermediaries, no KYC, no IP leakage. The literate approach means you can verify exactly what your node does.
 
-**AI agents transacting autonomously:** Cryptocurrency enables transactions without institutional dependencies (no banks, KYC, or legal personhood). Privacy coins add network-level anonymity. This repo provides verifiable, modifiable infrastructure that's easy to reason about programmatically.
-
-**Developers building on Monero:** A reproducible local environment for wallet integrations, payment systems, or agent infrastructure. Full node access without relying on remote APIs. The literate approach means the codebase doubles as documentation.
+**Monero developers**: Reproducible local environment for wallet integrations, payment systems, or agent infrastructure. Full node access without dependencies. The narrative codebase is easier to audit, customize, and build upon than traditional config-heavy deployments.
 
 ## What You Get
 
-- **Tor**: Anonymous git operations, web browsing
-- **I2P**: Monero P2P network privacy
+Full Monero node infrastructure with defense-in-depth privacy:
+
+- **monerod**: Trustless blockchain validation (250+ GB)
+- **I2P**: Peer-to-peer network anonymity for Monero traffic
+- **Tor**: Anonymous git operations and web browsing  
 - **WireGuard**: Secure remote access
-- **monerod**: Full node with trustless transaction verification (250+ GB blockchain)
 - **Optional**: P2Pool decentralized mining + XMRig CPU miner
+
+All documented as executable narrative in `org/*.org` files.
 
 ## Prerequisites
 
