@@ -79,7 +79,7 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
     - name: Find Linux x64 AppImage
       set_fact:
-        feather_asset: "{{ feather_release.json.assets | selectattr('name', 'match', '.*linux.*x86_64.*\\.AppImage$') | list | first }}"
+        feather_asset: "{{ feather_release.json.assets | selectattr('name', 'match', '^feather-.*\\.AppImage$') | rejectattr('name', 'search', '-(a|arm|arm64|riscv64)\\.AppImage$') | list | first }}"
       when: not feather_installed.stat.exists
       tags: [wallet, gui]
 
