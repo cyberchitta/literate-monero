@@ -312,6 +312,7 @@ anonymous-inbound={{ monero_i2p_address }},127.0.0.1:18085,128
 # List maintained by Monero Research Lab
 # https://github.com/monero-project/meta/issues/1124
 ban-list=/etc/monero/ban_list.txt
+enable-dns-blocklist=1
 
 # Note: Blockchain sync uses clearnet (intentional - sybil protection)
 # See: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
