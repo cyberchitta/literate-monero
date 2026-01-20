@@ -74,7 +74,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
 
     - name: Extract expected hash for downloaded file
       shell: |
-        grep "monero-linux-x64-{{ monerod_version }}.tar.bz2" /tmp/monero-hashes.txt | awk -F', ' '{print $2}'
+        grep "monero-linux-x64-{{ monerod_version }}.tar.bz2" /tmp/monero-hashes.txt | awk '{print $1}'
       register: expected_hash
       changed_when: false
       when: not monerod_binary.stat.exists
