@@ -79,6 +79,18 @@ sudo pacman -S --noconfirm \
     htop \
     ufw
 
+# Install yay (AUR helper)
+echo -e "${YELLOW}→${NC} Installing yay (AUR helper)..."
+if ! command -v yay &> /dev/null; then
+    cd /tmp
+    git clone https://aur.archlinux.org/yay.git
+    cd yay
+    makepkg -si --noconfirm
+    cd ~
+else
+    echo -e "${GREEN}✓${NC} yay already installed"
+fi
+
 # Configure Emacs for Org-mode
 echo -e "${YELLOW}→${NC} Configuring Emacs..."
 
