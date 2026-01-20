@@ -245,13 +245,6 @@ Trezor hardware wallets provide secure key storage - private keys never leave th
       changed_when: false
       tags: [wallet, trezor]
 
-    - name: Ensure dev user is in plugdev group
-      user:
-        name: "{{ dev_user }}"
-        groups: plugdev
-        append: yes
-      tags: [wallet, trezor]
-
     - name: Verify Trezor Suite installation
       command: /opt/trezor/trezor-suite --version
       register: trezor_version
