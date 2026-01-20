@@ -241,7 +241,7 @@ Trezor hardware wallets provide secure key storage - private keys never leave th
       tags: [wallet, trezor]
 
     - name: Reload udev rules for Trezor
-      command: udevadm control --reload-rules && udevadm trigger
+      shell: udevadm control --reload-rules && udevadm trigger
       changed_when: false
       tags: [wallet, trezor]
 
