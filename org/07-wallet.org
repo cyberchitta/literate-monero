@@ -154,19 +154,160 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 Trezor hardware wallets provide secure key storage - private keys never leave the device.
 
 #+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
-    - name: Install Trezor bridge daemon
-      community.general.pacman:
-        name:
-          - trezord
-        state: present
+    - name: Check if Trezor Suite is installed
+      stat:
+        path: /opt/trezor/trezor-suite
+      register: trezor_suite_installed
       tags: [wallet, trezor]
 
-    - name: Install Trezor Suite from AUR
-      community.general.pacman:
-        name: trezor-suite-bin
-        state: present
-        executable: yay
-      become_user: "{{ dev_user }}"
+    - name: Create Trezor installation directory
+      file:
+        path: /opt/trezor
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Get latest Trezor Suite release info
+      uri:
+        url: https://api.github.com/repos/trezor/trezor-suite/releases/latest
+        return_content: yes
+      register: trezor_suite_release
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Find Trezor Suite Linux AppImage
+      set_fact:
+        trezor_suite_asset: "{{ trezor_suite_release.json.assets | selectattr('name', 'match', '^Trezor-Suite-.*\\.AppImage$') | list | first }}"
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Download Trezor Suite AppImage
+      get_url:
+        url: "{{ trezor_suite_asset.browser_download_url }}"
+        dest: /opt/trezor/trezor-suite.AppImage
+        mode: '0755'
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      when: not trezor_suite_installed.stat.exists
+      register: trezor_suite_download
+      tags: [wallet, trezor]
+
+    - name: Create Trezor Suite symlink
+      file:
+        src: /opt/trezor/trezor-suite.AppImage
+        dest: /opt/trezor/trezor-suite
+        state: link
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Get latest Trezor Bridge release info
+      uri:
+        url: https://api.github.com/repos/trezor/trezord-go/releases/latest
+        return_content: yes
+      register: trezor_bridge_release
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Find Trezor Bridge Linux binary
+      set_fact:
+        trezor_bridge_asset: "{{ trezor_bridge_release.json.assets | selectattr('name', 'match', '^trezord-linux-.*\\.tar\\.gz$') | rejectattr('name', 'search', 'arm') | list | first }}"
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Download Trezor Bridge
+      get_url:
+        url: "{{ trezor_bridge_asset.browser_download_url }}"
+        dest: /tmp/trezord.tar.gz
+        mode: '0644'
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Extract Trezor Bridge
+      unarchive:
+        src: /tmp/trezord.tar.gz
+        dest: /opt/trezor
+        remote_src: yes
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Find extracted trezord binary
+      find:
+        paths: /opt/trezor
+        patterns: 'trezord'
+        recurse: yes
+        file_type: file
+      register: trezord_binary
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Move trezord to standard location
+      command:
+        cmd: mv "{{ trezord_binary.files[0].path }}" /opt/trezor/trezord
+      when:
+        - not trezor_suite_installed.stat.exists
+        - trezord_binary.files | length > 0
+      tags: [wallet, trezor]
+
+    - name: Set trezord executable permissions
+      file:
+        path: /opt/trezor/trezord
+        mode: '0755'
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      tags: [wallet, trezor]
+
+    - name: Create Trezor Suite launcher script
+      copy:
+        content: |
+          #!/bin/bash
+          cd /opt/trezor
+          ./trezor-suite "$@"
+        dest: /usr/local/bin/trezor-suite
+        mode: '0755'
+      tags: [wallet, trezor]
+
+    - name: Create Trezor Suite desktop entry
+      copy:
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Trezor Suite
+          GenericName=Hardware Wallet Manager
+          Comment=Manage Trezor hardware wallet
+          Exec=/usr/local/bin/trezor-suite
+          Terminal=false
+          Categories=Finance;Network;
+          Keywords=trezor;wallet;cryptocurrency;hardware;
+          StartupNotify=true
+        dest: /usr/share/applications/trezor-suite.desktop
+        mode: '0644'
+      tags: [wallet, trezor]
+
+    - name: Create trezord systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=Trezor Bridge
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ dev_user }}
+          ExecStart=/opt/trezor/trezord
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/trezord.service
+        mode: '0644'
       tags: [wallet, trezor]
 
     - name: Add udev rules for Trezor devices
@@ -193,6 +334,11 @@ Trezor hardware wallets provide secure key storage - private keys never leave th
         append: yes
       tags: [wallet, trezor]
 
+    - name: Reload systemd for trezord
+      systemd:
+        daemon_reload: yes
+      tags: [wallet, trezor]
+
     - name: Start and enable trezord service
       systemd:
         name: trezord
@@ -200,8 +346,14 @@ Trezor hardware wallets provide secure key storage - private keys never leave th
         state: started
       tags: [wallet, trezor]
 
+    - name: Clean up Trezor Bridge download
+      file:
+        path: /tmp/trezord.tar.gz
+        state: absent
+      tags: [wallet, trezor]
+
     - name: Verify Trezor Suite installation
-      command: trezor-suite --version
+      command: /opt/trezor/trezor-suite --version
       register: trezor_version
       changed_when: false
       failed_when: false
