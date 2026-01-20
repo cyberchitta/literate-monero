@@ -18,7 +18,9 @@ Built using literate programming: the documentation IS the source code. Understa
 
 Full Monero node infrastructure with defense-in-depth privacy:
 
-- **monerod**: Trustless blockchain validation (250+ GB)
+- **monerod**: Trustless blockchain validation
+- **Monero wallet tools**: CLI/RPC wallets + Feather GUI + optional Trezor support
+- **KeePassXC**: Encrypted password and TOTP manager (no cloud, clipboard auto-clears)
 - **I2P**: Peer-to-peer network anonymity for Monero traffic
 - **Tor**: Anonymous git operations and web browsing  
 - **WireGuard**: Secure remote access
