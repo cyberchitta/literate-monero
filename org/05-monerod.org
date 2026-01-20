@@ -31,12 +31,148 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
     # Monero Full Node
     # ------------------------------------------------------------------------
 
-    - name: Install monerod
+- name: Install monerod dependencies
       community.general.pacman:
         name:
-          - monero
+          - curl
+          - tar
+          - jq
         state: present
       tags: [monerod]
+
+    - name: Create Monero installation directory
+      file:
+        path: "{{ monerod_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: [monerod]
+
+    - name: Check if monerod is already installed
+      stat:
+        path: "{{ monerod_install_dir }}/monerod"
+      register: monerod_binary
+      tags: [monerod]
+
+    - name: Get Monero release info
+      uri:
+        url: "https://api.github.com/repos/monero-project/monero/releases/tags/{{ monerod_version }}"
+        return_content: yes
+      register: monero_release_info
+      when: not monerod_binary.stat.exists
+      tags: [monerod]
+
+    - name: Find Linux x64 asset
+      set_fact:
+        monero_asset: "{{ monero_release_info.json.assets | selectattr('name', 'match', '.*linux-x64.*\\.tar\\.bz2$') | list | first }}"
+      when: not monerod_binary.stat.exists
+      tags: [monerod]
+
+    - name: Download Monero release
+      get_url:
+        url: "{{ monero_asset.browser_download_url }}"
+        dest: /tmp/monero.tar.bz2
+        mode: '0644'
+      when: not monerod_binary.stat.exists
+      register: monero_download
+      tags: [monerod]
+
+    - name: Download Monero hashes
+      get_url:
+        url: "https://www.getmonero.org/downloads/hashes.txt"
+        dest: /tmp/monero-hashes.txt
+        mode: '0644'
+      when: not monerod_binary.stat.exists
+      tags: [monerod]
+
+    - name: Extract expected hash for downloaded file
+      shell: |
+        grep "{{ monero_asset.name }}" /tmp/monero-hashes.txt | awk '{print $1}'
+      register: expected_hash
+      changed_when: false
+      when: not monerod_binary.stat.exists
+      tags: [monerod]
+
+    - name: Verify download hash
+      stat:
+        path: /tmp/monero.tar.bz2
+        checksum_algorithm: sha256
+      register: download_stat
+      when: not monerod_binary.stat.exists
+      tags: [monerod]
+
+    - name: Fail if hash mismatch
+      fail:
+        msg: |
+          Hash verification failed!
+          Expected: {{ expected_hash.stdout }}
+          Got: {{ download_stat.stat.checksum }}
+      when:
+        - not monerod_binary.stat.exists
+        - download_stat.stat.checksum != expected_hash.stdout
+      tags: [monerod]
+
+    - name: Extract Monero release
+      unarchive:
+        src: /tmp/monero.tar.bz2
+        dest: "{{ monerod_install_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+      when: not monerod_binary.stat.exists
+      register: monero_extract
+      tags: [monerod]
+
+    - name: Create symlink to monerod
+      file:
+        src: "{{ monerod_install_dir }}/monerod"
+        dest: /usr/local/bin/monerod
+        state: link
+      tags: [monerod]
+
+    - name: Clean up download files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/monero.tar.bz2
+        - /tmp/monero-hashes.txt
+      when: monero_extract.changed
+      tags: [monerod]
+
+    - name: Verify monerod binary exists
+      stat:
+        path: "{{ monerod_install_dir }}/monerod"
+      register: monerod_installed
+      tags: [monerod]
+
+    - name: Fail if monerod not found after installation
+      fail:
+        msg: |
+          Monerod binary not found after extraction.
+
+          Possible issues:
+          - Invalid version specified: {{ monerod_version }}
+          - Archive structure changed
+          - Download corrupted
+
+          Check https://github.com/monero-project/monero/releases for valid versions.
+      when: not monerod_installed.stat.exists
+      tags: [monerod]
+
+    - name: Get monerod version
+      command: "{{ monerod_install_dir }}/monerod --version"
+      register: monerod_version_output
+      changed_when: false
+      tags: [monerod, verify]
+
+    - name: Display monerod installation info
+      debug:
+        msg:
+          - "Monerod installed: {{ monerod_install_dir }}/monerod"
+          - "Version: {{ monerod_version_output.stdout_lines[0] }}"
+          - "Symlinked to: /usr/local/bin/monerod"
+      tags: [monerod, verify]
 #+end_src
 
 ** Create Data Directory
@@ -115,7 +251,7 @@ For manual GPG verification: https://github.com/Boog900/monero-ban-list#signatur
         url: https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt
         dest: /etc/monero/ban_list.txt
         mode: '0644'
-        force: yes
+        force: no
       register: ban_list_download
       tags: [monerod, config, security]
 
@@ -371,7 +507,7 @@ SYNC_INFO=$(curl -s --max-time 5 http://127.0.0.1:{{ monerod_rpc_port }}/json_rp
 if [ -n "$SYNC_INFO" ] && [ "$SYNC_INFO" != "null" ]; then
   HEIGHT=$(echo "$SYNC_INFO" | jq -r '.height')
   TARGET_HEIGHT=$(echo "$SYNC_INFO" | jq -r '.target_height')
-  
+
   if [ "$HEIGHT" -eq "$TARGET_HEIGHT" ]; then
     echo -e "${GREEN}✓ Blockchain synced${NC}"
     echo "  Current height: $HEIGHT"
@@ -399,7 +535,7 @@ if [ -n "$INFO" ] && [ "$INFO" != "null" ]; then
   INCOMING=$(echo "$INFO" | jq -r '.incoming_connections_count')
   OUTGOING=$(echo "$INFO" | jq -r '.outgoing_connections_count')
   TX_POOL=$(echo "$INFO" | jq -r '.tx_pool_size')
-  
+
   echo "--- Network Connections ---"
   echo "  Incoming: $INCOMING"
   echo "  Outgoing: $OUTGOING"
@@ -459,7 +595,7 @@ OLD_COUNT=$(wc -l < "$BAN_LIST" 2>/dev/null || echo 0)
 if [ "$OLD_COUNT" -gt 0 ]; then
   DIFF_RAW=$(( (NEW_COUNT - OLD_COUNT) * 100 / OLD_COUNT ))
   DIFF=${DIFF_RAW#-}
-  
+
   if [ "$DIFF" -gt 50 ]; then
     echo "WARNING: Ban list size changed by ${DIFF}% (old: $OLD_COUNT, new: $NEW_COUNT)" >&2
     echo "Possible corruption or malicious update. Manual review required." >&2
@@ -524,7 +660,7 @@ Deploy the script and set up weekly updates.
           - "P2Pool will use this to detect new Monero blocks"
           - "If P2Pool shows ZMQ errors, verify this port is accessible"
       tags: [monerod, verify]
-      
+
     - name: Check monerod service status
       systemd:
         name: monerod

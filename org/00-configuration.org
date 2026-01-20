@@ -47,7 +47,7 @@ become_ask_pass = False
 # Global Configuration Variables (System Defaults)
 # ============================================================================
 # Generated from org/00-configuration.org
-# 
+#
 # User-editable values are in config.yml (project root)
 # These are system defaults that rarely need changing
 
@@ -64,6 +64,9 @@ tor_control_port: 9051
 # DNS port for Tor
 tor_dns_port: 5353
 
+# Monero daemon installation
+monerod_install_dir: /opt/monero
+monerod_version: "v0.18.4.5"
 # Monero ZMQ pub port (required by P2Pool)
 monerod_zmq_port: 18083
 
