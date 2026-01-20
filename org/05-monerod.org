@@ -31,7 +31,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
     # Monero Full Node
     # ------------------------------------------------------------------------
 
-- name: Install monerod dependencies
+    - name: Install monerod dependencies
       community.general.pacman:
         name:
           - curl
