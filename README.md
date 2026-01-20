@@ -32,7 +32,7 @@ All documented as executable narrative in `org/*.org` files.
 
 > **Portability:** Built and tested on Omarchy Linux. The Ansible playbooks assume systemd and pacman but should adapt to other distros with minor modifications.
 
-- **Omarchy Linux** - Arch-based distro with full-disk encryption ([installation guide](INSTALL-OMARCHY.md))
+- **Omarchy Linux** - Arch-based distro with full-disk encryption ([installation guide](https://learn.omacom.io/2/the-omarchy-manual/50/getting-started))
   - Install this FIRST (complete wipe of target drive)
   - Create user `dev` during install (or adjust `config.yml`)
 - Monero wallet address (get from getmonero.org or Cake Wallet)
