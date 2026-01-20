@@ -251,7 +251,7 @@ For manual GPG verification: https://github.com/Boog900/monero-ban-list#signatur
       shell: wc -l /etc/monero/ban_list.txt | awk '{print $1}'
       register: ban_list_lines
       changed_when: false
-      tags: [monerod, config, security]
+      tags: [monerod, config, security, verify]
 
     - name: Display ban list stats
       debug:
