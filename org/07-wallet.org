@@ -1,0 +1,318 @@
+** Overview
+
+This phase installs Monero wallet software for managing XMR:
+- Symlink wallet binaries from monerod installation
+- Install Feather Wallet (GUI)
+- Install Trezor hardware wallet support (optional)
+
+Wallet creation is a user operation - see official documentation for usage.
+
+** Prerequisites
+
+- Phase 5 (monerod) must be complete
+- Phase 6 (users) must be complete
+
+** Symlink Wallet Binaries
+
+The wallet binaries are already in `/opt/monero` from monerod installation.
+
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
+    # ------------------------------------------------------------------------
+    # Monero Wallet
+    # ------------------------------------------------------------------------
+
+    - name: Create symlinks for wallet binaries
+      file:
+        src: "{{ monerod_install_dir }}/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        state: link
+      loop:
+        - monero-wallet-cli
+        - monero-wallet-rpc
+      tags: [wallet]
+
+    - name: Verify wallet binaries exist
+      stat:
+        path: "/usr/local/bin/{{ item }}"
+      register: wallet_binaries
+      loop:
+        - monero-wallet-cli
+        - monero-wallet-rpc
+      tags: [wallet, verify]
+
+    - name: Fail if wallet binaries missing
+      fail:
+        msg: "Wallet binary {{ item.item }} not found. Check monerod installation."
+      when: not item.stat.exists
+      loop: "{{ wallet_binaries.results }}"
+      tags: [wallet, verify]
+#+end_src
+
+** Install Feather Wallet
+
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
+    - name: Install Feather Wallet dependencies
+      community.general.pacman:
+        name:
+          - qt6-base
+          - qt6-svg
+          - qt6-websockets
+          - libzip
+          - zbar
+        state: present
+      tags: [wallet, gui]
+
+    - name: Check if Feather Wallet is installed
+      stat:
+        path: /usr/bin/feather
+      register: feather_installed
+      tags: [wallet, gui]
+
+    - name: Install Feather Wallet from AUR
+      community.general.pacman:
+        name: feather
+        state: present
+        executable: yay
+      become_user: "{{ dev_user }}"
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Verify Feather installation
+      command: feather --version
+      register: feather_version
+      changed_when: false
+      failed_when: false
+      tags: [wallet, gui, verify]
+#+end_src
+
+** Install Trezor Hardware Wallet Support
+
+Trezor hardware wallets provide secure key storage - private keys never leave the device.
+
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
+    - name: Install Trezor bridge daemon
+      community.general.pacman:
+        name:
+          - trezord
+        state: present
+      tags: [wallet, trezor]
+
+    - name: Install Trezor Suite from AUR
+      community.general.pacman:
+        name: trezor-suite-bin
+        state: present
+        executable: yay
+      become_user: "{{ dev_user }}"
+      tags: [wallet, trezor]
+
+    - name: Add udev rules for Trezor devices
+      copy:
+        content: |
+          # Trezor One
+          SUBSYSTEM=="usb", ATTR{idVendor}=="534c", ATTR{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+          # Trezor Model T
+          SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="53c1", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+          SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="53c0", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+        dest: /etc/udev/rules.d/51-trezor.rules
+        mode: '0644'
+      tags: [wallet, trezor]
+
+    - name: Reload udev rules for Trezor
+      command: udevadm control --reload-rules && udevadm trigger
+      changed_when: false
+      tags: [wallet, trezor]
+
+    - name: Ensure dev user is in plugdev group
+      user:
+        name: "{{ dev_user }}"
+        groups: plugdev
+        append: yes
+      tags: [wallet, trezor]
+
+    - name: Start and enable trezord service
+      systemd:
+        name: trezord
+        enabled: yes
+        state: started
+      tags: [wallet, trezor]
+
+    - name: Verify Trezor Suite installation
+      command: trezor-suite --version
+      register: trezor_version
+      changed_when: false
+      failed_when: false
+      tags: [wallet, trezor, verify]
+#+end_src
+
+** Configure Wallet Directory
+
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
+    - name: Create Monero wallet directory
+      file:
+        path: "/home/{{ dev_user }}/.bitmonero"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0700'
+      tags: [wallet]
+#+end_src
+
+** Verify Wallet Setup
+
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
+    - name: Test monerod RPC connectivity for wallet
+      uri:
+        url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          id: "0"
+          method: "get_info"
+        timeout: 10
+      register: monerod_rpc_test
+      failed_when: false
+      tags: [wallet, verify]
+
+    - name: Check monerod sync status for wallet
+      uri:
+        url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          id: "0"
+          method: "sync_info"
+        timeout: 10
+      register: monerod_sync
+      failed_when: false
+      tags: [wallet, verify]
+
+    - name: Parse sync status
+      set_fact:
+        monerod_synced: "{{ (monerod_sync.json.result.height | default(0)) == (monerod_sync.json.result.target_height | default(1)) }}"
+      when: monerod_sync.status == 200
+      tags: [wallet, verify]
+
+    - name: Display wallet setup summary
+      debug:
+        msg:
+          - "=== Wallet Software Installation Complete ==="
+          - ""
+          - "Installed wallet software:"
+          - "  monero-wallet-cli: /usr/local/bin/monero-wallet-cli"
+          - "  monero-wallet-rpc: /usr/local/bin/monero-wallet-rpc"
+          - "  Feather Wallet: {% if feather_version.rc == 0 %}Installed (launch: feather){% else %}Not available{% endif %}"
+          - "  Trezor Suite: {% if trezor_version.rc == 0 %}Installed (launch: trezor-suite){% else %}Not installed (skip with --skip-tags trezor){% endif %}"
+          - ""
+          - "Wallet directory: /home/{{ dev_user }}/.bitmonero"
+          - "Monerod RPC: http://127.0.0.1:{{ monerod_rpc_port }}"
+          - "Monerod status: {% if monerod_rpc_test.status == 200 %}Connected{% else %}Not responding{% endif %}"
+          - "Blockchain synced: {% if monerod_synced | default(false) %}Yes{% else %}No (wallet requires synced node){% endif %}"
+          - ""
+          - "=== Creating Your Wallet ==="
+          - ""
+          - "{% if not monerod_synced | default(false) %}IMPORTANT: Wait for monerod to sync before creating wallet{% endif %}"
+          - "{% if not monerod_synced | default(false) %}Check sync status: sudo monerod-status.sh{% endif %}"
+          - ""
+          - "Wallet creation (see official documentation):"
+          - "  CLI wallet: https://monerodocs.org/interacting/monero-wallet-cli-reference/"
+          - "  Feather Wallet: https://docs.featherwallet.org/guides/create-wallet"
+          - "  Trezor hardware: https://trezor.io/learn/a/monero-xmr"
+          - ""
+          - "Quick start:"
+          - "  Feather GUI: feather (recommended for beginners)"
+          - "  CLI wallet: monero-wallet-cli --daemon-address 127.0.0.1:{{ monerod_rpc_port }} --generate-new-wallet ~/.bitmonero/wallet"
+          - ""
+          - "Store seed phrase in KeePassXC (already installed)"
+          - ""
+      tags: [wallet, verify]
+#+end_src
+
+** Notes
+
+*** Wallet Software vs Wallet Creation
+
+This phase installs wallet **software only**. Creating an actual wallet is a user operation.
+
+**What's installed:**
+- `monero-wallet-cli` - Command-line wallet
+- `monero-wallet-rpc` - RPC server for programmatic access
+- Feather Wallet - Modern GUI wallet
+- Trezor Suite - Hardware wallet interface (optional)
+
+**What you do next:**
+1. Wait for monerod to sync (check: `sudo monerod-status.sh`)
+2. Create wallet using your preferred software
+3. Save seed phrase in KeePassXC
+4. Get receiving address for mining payouts
+
+*** Wallet Options
+
+**Feather Wallet (Recommended):**
+- Modern Qt GUI
+- Connect to local node: Settings → Node → localhost:18081
+- Best for most users
+
+**CLI Wallet:**
+- Terminal-based
+- Full control, scriptable
+- Good for automation/servers
+
+**Trezor Hardware Wallet:**
+- Maximum security (keys never leave device)
+- Requires Trezor hardware
+- Works with Feather GUI
+
+*** Seed Phrase Security
+
+**Critical:** Your seed phrase is your wallet. Anyone with the seed phrase controls your XMR.
+
+**Best practices:**
+1. Store in KeePassXC (encrypted, already installed)
+2. Write on paper, store in safe location
+3. Never share seed phrase
+4. Test restore before receiving large amounts
+
+**Trezor:** Seed stored on hardware device, separate from Monero seed.
+
+*** Mining Payouts
+
+**Current setup:**
+- Mining (Phase 8) uses `monero_wallet_address` from config.yml
+- This can be ANY wallet address (local, exchange, hardware)
+
+**To use local wallet for mining:**
+1. Create wallet (this phase)
+2. Get receiving address from wallet
+3. Update config.yml: `monero_wallet_address: <your-address>`
+4. Re-run Phase 8: `ansible-playbook playbook.yml --tags mining`
+
+*** Official Documentation
+
+**Monero CLI wallet:**
+- Reference: https://monerodocs.org/interacting/monero-wallet-cli-reference/
+- Guide: https://www.getmonero.org/resources/user-guides/monero-wallet-cli.html
+
+**Feather Wallet:**
+- Docs: https://docs.featherwallet.org/
+- Create wallet: https://docs.featherwallet.org/guides/create-wallet
+- Hardware wallet: https://docs.featherwallet.org/guides/hardware-wallet
+
+**Trezor:**
+- Monero guide: https://trezor.io/learn/a/monero-xmr
+- Setup: https://trezor.io/support
+
+*** Skipping Trezor Installation
+
+If you don't have Trezor hardware:
+
+#+begin_example
+ansible-playbook playbook.yml --tags wallet --skip-tags trezor
+#+end_example
+
+Trezor support can be added later:
+
+#+begin_example
+ansible-playbook playbook.yml --tags wallet,trezor
+#+end_example

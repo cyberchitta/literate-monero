@@ -133,19 +133,22 @@ Available tags correspond to phases:
 * Phase 6: User Account Setup
 #+INCLUDE: "06-users.org"
 
-* Phase 7: Monero Mining Setup
-#+INCLUDE: "07-mining.org"
+* Phase 7: Monero Wallet
+#+INCLUDE: "07-wallet.org"
 
-* Phase 8: Firewall Setup
-#+INCLUDE: "08-firewall.org"
+* Phase 8: Monero Mining Setup
+#+INCLUDE: "08-mining.org"
 
-* Phase 9: Monitoring
+* Phase 9: Firewall Setup
+#+INCLUDE: "09-firewall.org"
+
+* Phase 10: Monitoring
 #+INCLUDE: "09-monitoring.org"
 
-* Phase 10: Backup & Recovery
+* Phase 11: Backup & Recovery
 #+INCLUDE: "10-backup.org"
 
-* Phase 11: Verification & Testing
+* Phase 12: Verification & Testing
 #+INCLUDE: "11-verification.org"
 
 * Handlers
