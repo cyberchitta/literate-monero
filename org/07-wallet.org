@@ -50,33 +50,99 @@ The wallet binaries are already in `/opt/monero` from monerod installation.
 
 ** Install Feather Wallet
 
-#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
-    - name: Install Feather Wallet dependencies
-      community.general.pacman:
-        name:
-          - qt6-base
-          - qt6-svg
-          - qt6-websockets
-          - libzip
-          - zbar
-        state: present
-      tags: [wallet, gui]
+Feather Wallet doesn't have a stable AUR package, so we install from official GitHub releases.
 
+#+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
     - name: Check if Feather Wallet is installed
       stat:
-        path: /usr/bin/feather
+        path: /opt/feather/feather
       register: feather_installed
       tags: [wallet, gui]
 
-    - name: Install Feather Wallet from AUR
-      shell: yay -S --noconfirm feather
-      become: yes
-      become_user: "{{ dev_user }}"
+    - name: Create Feather installation directory
+      file:
+        path: /opt/feather
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
       when: not feather_installed.stat.exists
       tags: [wallet, gui]
 
+    - name: Get latest Feather release info
+      uri:
+        url: https://api.github.com/repos/feather-wallet/feather/releases/latest
+        return_content: yes
+      register: feather_release
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Find Linux x64 AppImage
+      set_fact:
+        feather_asset: "{{ feather_release.json.assets | selectattr('name', 'match', '.*linux.*x86_64.*\\.AppImage$') | list | first }}"
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Download Feather Wallet AppImage
+      get_url:
+        url: "{{ feather_asset.browser_download_url }}"
+        dest: /opt/feather/feather.AppImage
+        mode: '0755'
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      when: not feather_installed.stat.exists
+      register: feather_download
+      tags: [wallet, gui]
+
+    - name: Create Feather symlink
+      file:
+        src: /opt/feather/feather.AppImage
+        dest: /opt/feather/feather
+        state: link
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Create Feather launcher script
+      copy:
+        content: |
+          #!/bin/bash
+          cd /opt/feather
+          ./feather "$@"
+        dest: /usr/local/bin/feather
+        mode: '0755'
+      tags: [wallet, gui]
+
+    - name: Create Feather desktop entry
+      copy:
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Feather Wallet
+          GenericName=Monero Wallet
+          Comment=Lightweight Monero wallet
+          Exec=/usr/local/bin/feather
+          Icon=/opt/feather/feather.png
+          Terminal=false
+          Categories=Finance;Network;
+          Keywords=monero;wallet;cryptocurrency;
+          StartupNotify=true
+        dest: /usr/share/applications/feather-wallet.desktop
+        mode: '0644'
+      tags: [wallet, gui]
+
+    - name: Download Feather icon
+      get_url:
+        url: https://raw.githubusercontent.com/feather-wallet/feather/master/src/assets/images/appicons/64x64.png
+        dest: /opt/feather/feather.png
+        mode: '0644'
+      failed_when: false
+      tags: [wallet, gui]
+
     - name: Verify Feather installation
-      command: feather --version
+      command: /opt/feather/feather --version
       register: feather_version
       changed_when: false
       failed_when: false

@@ -67,6 +67,7 @@ ansible-playbook ansible/playbook.yml --tags privacy -K
 ansible-playbook ansible/playbook.yml --tags i2p -K
 ansible-playbook ansible/playbook.yml --tags monerod -K
 ansible-playbook ansible/playbook.yml --tags users -K
+ansible-playbook ansible/playbook.yml --tags wallet -K
 ansible-playbook ansible/playbook.yml --tags mining -K
 ansible-playbook ansible/playbook.yml --tags firewall -K
 ansible-playbook ansible/playbook.yml --tags monitoring -K
