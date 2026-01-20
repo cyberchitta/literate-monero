@@ -55,23 +55,9 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
       register: monerod_binary
       tags: [monerod]
 
-    - name: Get Monero release info
-      uri:
-        url: "https://api.github.com/repos/monero-project/monero/releases/tags/{{ monerod_version }}"
-        return_content: yes
-      register: monero_release_info
-      when: not monerod_binary.stat.exists
-      tags: [monerod]
-
-    - name: Find Linux x64 asset
-      set_fact:
-        monero_asset: "{{ monero_release_info.json.assets | selectattr('name', 'match', '.*linux-x64.*\\.tar\\.bz2$') | list | first }}"
-      when: not monerod_binary.stat.exists
-      tags: [monerod]
-
-    - name: Download Monero release
+    - name: Download Monero release from getmonero.org
       get_url:
-        url: "{{ monero_asset.browser_download_url }}"
+        url: "https://downloads.getmonero.org/cli/monero-linux-x64-{{ monerod_version }}.tar.bz2"
         dest: /tmp/monero.tar.bz2
         mode: '0644'
       when: not monerod_binary.stat.exists
@@ -88,7 +74,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
 
     - name: Extract expected hash for downloaded file
       shell: |
-        grep "{{ monero_asset.name }}" /tmp/monero-hashes.txt | awk '{print $1}'
+        grep "monero-linux-x64-{{ monerod_version }}.tar.bz2" /tmp/monero-hashes.txt | awk '{print $NF}'
       register: expected_hash
       changed_when: false
       when: not monerod_binary.stat.exists
