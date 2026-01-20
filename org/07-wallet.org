@@ -69,10 +69,8 @@ The wallet binaries are already in `/opt/monero` from monerod installation.
       tags: [wallet, gui]
 
     - name: Install Feather Wallet from AUR
-      community.general.pacman:
-        name: feather
-        state: present
-        executable: yay
+      shell: yay -S --noconfirm feather
+      become: yes
       become_user: "{{ dev_user }}"
       when: not feather_installed.stat.exists
       tags: [wallet, gui]
