@@ -51,6 +51,9 @@ become_ask_pass = False
 # User-editable values are in config.yml (project root)
 # These are system defaults that rarely need changing
 
+# System version
+system_version: "{{ lookup('file', '../VERSION') | trim }}"
+
 # ----------------------------------------------------------------------------
 # Network Ports
 # ----------------------------------------------------------------------------

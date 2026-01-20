@@ -44,6 +44,7 @@ check_warn() {
 
 echo "========================================"
 echo "  Literate Monero Verification"
+echo "  Version: $(cat /etc/literate-monero-version 2>/dev/null || echo 'unknown')"
 echo "  $(date)"
 echo "========================================"
 echo ""
@@ -303,7 +304,7 @@ fi
 # XMRig config
 if [ -f /opt/xmrig/build/config.json ]; then
   check_pass "XMRig config exists"
-  
+
   # Check wallet address
   if grep -q "YOUR_WALLET_ADDRESS_HERE" /opt/xmrig/build/config.json; then
     check_fail "XMRig wallet address NOT CONFIGURED"
@@ -353,7 +354,7 @@ echo "=== Backup Checks ==="
 # Backup directory
 if [ -d "{{ backup_dir }}" ]; then
   check_pass "Backup directory exists"
-  
+
   # Recent backup
   LATEST_BACKUP=$(find {{ backup_dir }} -name "backup_*.tar.gz" -type f -mtime -2 | wc -l)
   if [ "$LATEST_BACKUP" -gt 0 ]; then

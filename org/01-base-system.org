@@ -34,6 +34,13 @@ All phases append to the same playbook. This starts the main play.
 Install tools needed for system administration and development.
 
 #+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+    - name: Deploy system version
+      copy:
+        content: "{{ system_version }}"
+        dest: /etc/literate-monero-version
+        mode: '0644'
+      tags: [base, version]
+
     - name: Install essential system packages
       community.general.pacman:
         name:
