@@ -77,6 +77,8 @@ This is a literate programming system - documentation and code are the same file
 
 **Source files:** `org/*.org` (narrative documentation with embedded code)
 
+**Generated:** Ansible playbooks, systemd services, config files, shell scripts (idempotent deployment)
+
 **Initial setup:** Follow Installation steps above.
 
 **Making changes:**
