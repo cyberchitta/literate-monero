@@ -21,11 +21,6 @@ SSH firewall rules are managed by the WireGuard phase because they depend on the
     # Firewall Setup
     # ------------------------------------------------------------------------
 
-    - name: Reset ufw to default
-      community.general.ufw:
-        state: reset
-      tags: [security, firewall]
-
     - name: Set ufw default policies
       community.general.ufw:
         direction: "{{ item.direction }}"
@@ -52,7 +47,7 @@ SSH firewall rules are managed by the WireGuard phase because they depend on the
         proto: "{{ item.split('/')[1] }}"
       loop: "{{ firewall_allowed_ports }}"
       tags: [security, firewall]
-  
+
     - name: Enable ufw
       community.general.ufw:
         state: enabled
