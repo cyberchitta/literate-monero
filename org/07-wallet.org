@@ -153,6 +153,15 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
 Trezor hardware wallets provide secure key storage - private keys never leave the device.
 
+**Important:** Trezor Suite does NOT support Monero transactions. It's used only for:
+- Device firmware updates
+- PIN/passphrase management
+- General device management
+
+For Monero operations with Trezor, use Feather Wallet (installed above). Feather communicates directly with Trezor hardware for signing Monero transactions.
+
+Reference: https://docs.featherwallet.org/guides/hardware-wallet
+
 #+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
     - name: Check if Trezor Suite is installed
       stat:
@@ -348,7 +357,7 @@ This phase installs wallet **software only**. Creating an actual wallet is a use
 - `monero-wallet-cli` - Command-line wallet
 - `monero-wallet-rpc` - RPC server for programmatic access
 - Feather Wallet - Modern GUI wallet
-- Trezor Suite - Hardware wallet interface (optional)
+- Trezor Suite - Hardware device management (optional)
 
 **What you do next:**
 1. Wait for monerod to sync (check: `sudo monerod-status.sh`)
@@ -362,6 +371,8 @@ This phase installs wallet **software only**. Creating an actual wallet is a use
 - Modern Qt GUI
 - Connect to local node: Settings → Node → localhost:18081
 - Best for most users
+- Supports Trezor hardware wallets
+- Supports Polyseed (16-word) and Legacy (25-word) seeds
 
 **CLI Wallet:**
 - Terminal-based
@@ -371,7 +382,53 @@ This phase installs wallet **software only**. Creating an actual wallet is a use
 **Trezor Hardware Wallet:**
 - Maximum security (keys never leave device)
 - Requires Trezor hardware
-- Works with Feather GUI
+- Used with Feather Wallet for Monero operations
+
+*** Using Trezor with Monero
+
+Trezor hardware wallet workflow:
+
+1. **Setup device:** Use Trezor Suite for firmware, PIN, recovery seed
+2. **Monero operations:** Use Feather Wallet
+   - File → New/Restore → Hardware wallet → Trezor
+   - Feather derives Monero keys from Trezor
+   - Transactions signed on device
+3. **Device management:** Return to Trezor Suite for firmware updates
+
+**Important:** Trezor Suite does NOT support Monero transactions directly. It's only for device management (firmware, PIN, recovery seed). All Monero operations must go through Feather Wallet.
+
+Reference: https://docs.featherwallet.org/guides/hardware-wallet
+
+*** Trezor Seed Compatibility Warning
+
+**Critical:** Trezor's Monero implementation uses SLIP-0010 key derivation, which is NOT compatible with standard Monero seed formats.
+
+**Monero seed formats:**
+- **Legacy:** 25-word seed (original Monero format)
+- **Polyseed:** 16-word seed with embedded wallet birthday (used by Cake Wallet, Feather)
+- **MyMonero:** 13-word seed
+
+**Trezor uses:** 12/24-word BIP39 seed with SLIP-0010 derivation (incompatible with all above)
+
+**What this means:**
+- Trezor recovery seed ONLY works with other Trezor devices
+- Cannot convert Trezor seed to any standard Monero seed format (25-word, 16-word Polyseed, or 13-word MyMonero)
+- Cannot restore Trezor Monero wallet on non-Trezor hardware (even Ledger with same seed words produces different keys)
+- Feather Wallet can access Trezor-derived keys, but only via connected Trezor hardware
+
+**Recovery scenario:** If you lose your Trezor:
+1. Buy another Trezor device
+2. Restore using your Trezor recovery seed
+3. Connect to Feather Wallet - your Monero keys will be accessible again
+
+**Why:** Different hardware wallets chose incompatible key derivation methods (Trezor: SLIP-0010, Ledger: modified BIP-32). This lack of standardization means the same seed words produce different Monero keys on different devices.
+
+**Recommendation:** For maximum portability, use a standard Monero software wallet with Polyseed (16-word) or Legacy (25-word) format. These seeds work across Feather, Cake Wallet, Monero GUI, and other wallets. Use Trezor only if you're committed to the Trezor ecosystem for recovery.
+
+References:
+- https://trezor.io/learn/supported-assets/other-cryptocurrencies/monero-xmr-on-trezor
+- https://resilience365.com/ledger-trezor-seed-compatibility-monero/
+- https://docs.featherwallet.org/guides/seed-scheme
 
 *** Seed Phrase Security
 
@@ -383,7 +440,7 @@ This phase installs wallet **software only**. Creating an actual wallet is a use
 3. Never share seed phrase
 4. Test restore before receiving large amounts
 
-**Trezor:** Seed stored on hardware device, separate from Monero seed.
+**Trezor:** Recovery seed stored on hardware device. Feather Wallet uses Trezor for Monero key derivation and transaction signing. The Trezor recovery seed can restore access to Monero funds via another Trezor device + Feather Wallet.
 
 *** Mining Payouts
 
@@ -407,10 +464,16 @@ This phase installs wallet **software only**. Creating an actual wallet is a use
 - Docs: https://docs.featherwallet.org/
 - Create wallet: https://docs.featherwallet.org/guides/create-wallet
 - Hardware wallet: https://docs.featherwallet.org/guides/hardware-wallet
+- Seed schemes: https://docs.featherwallet.org/guides/seed-scheme
 
 **Trezor:**
 - Monero guide: https://trezor.io/learn/a/monero-xmr
-- Setup: https://trezor.io/support
+- Device setup: https://trezor.io/support
+- Suite downloads: https://trezor.io/trezor-suite
+
+**Monero seed formats:**
+- Legacy (25-word): https://www.getmonero.org/resources/moneropedia/mnemonicseed.html
+- Polyseed (16-word): https://docs.getmonero.org/mnemonics/polyseed/
 
 *** Skipping Trezor Installation
 
