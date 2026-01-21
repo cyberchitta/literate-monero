@@ -109,7 +109,7 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
         content: |
           #!/bin/bash
           cd /opt/feather
-          ./feather "$@"
+          ./feather -platform wayland "$@"
         dest: /usr/local/bin/feather
         mode: '0755'
       tags: [wallet, gui]
