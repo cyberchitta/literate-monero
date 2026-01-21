@@ -152,6 +152,9 @@ Available tags correspond to phases:
 * Phase 12: Verification & Testing
 #+INCLUDE: "11-verification.org"
 
+* Update Management
+#+INCLUDE: "97-updates.org"
+
 * Handlers
 #+INCLUDE: "98_handlers.org"
 
