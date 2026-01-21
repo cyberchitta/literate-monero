@@ -178,11 +178,9 @@ Trezor hardware wallets provide secure key storage - private keys never leave th
       when: not trezor_suite_installed.stat.exists
       tags: [wallet, trezor]
 
-    - name: Find Trezor Suite Linux AppImage
+    - name: Find Trezor Suite Linux x64 AppImage
       set_fact:
-        trezor_suite_asset: "{{ trezor_suite_release.json.assets | selectattr('name', 'match', '^Trezor-Suite-.*\\.AppImage$') | list | first }}"
-      when: not trezor_suite_installed.stat.exists
-      tags: [wallet, trezor]
+        trezor_suite_asset: "{{ trezor_release.json.assets | selectattr('name', 'match', '^Trezor-Suite-.*\\.AppImage$') | rejectattr('name', 'search', '-(a|arm|arm64|riscv64)\\.AppImage$') | list | first }}"
 
     - name: Download Trezor Suite AppImage
       get_url:
