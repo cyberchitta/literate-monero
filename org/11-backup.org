@@ -35,7 +35,7 @@ mkdir -p "$BACKUP_PATH"
 backup_path() {
   local src="$1"
   local dest="$2"
-  
+
   if [ -e "$src" ]; then
     echo "Backing up: $src"
     mkdir -p "$(dirname "$dest")"
@@ -58,6 +58,8 @@ echo "--- User Data ---"
 backup_path "/home/{{ dev_user }}/.ssh" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/.gnupg" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/.gitconfig" "$BACKUP_PATH/home/{{ dev_user }}"
+backup_path "/home/{{ dev_user }}/Documents" "$BACKUP_PATH/home/{{ dev_user }}"
+backup_path "/home/{{ dev_user }}/.local/share/feather" "$BACKUP_PATH/home/{{ dev_user }}/.local/share"
 
 # Mining Configuration
 echo "--- Mining Configuration ---"
@@ -84,6 +86,8 @@ Critical configs backed up:
 - User SSH keys: /home/{{ dev_user }}/.ssh
 - User GPG keys: /home/{{ dev_user }}/.gnupg
 - Git config: /home/{{ dev_user }}/.gitconfig
+- KeePassXC databases: /home/{{ dev_user }}/Documents/*.kdbx (encrypted blobs)
+- Feather wallets: /home/{{ dev_user }}/.local/share/feather (encrypted blobs)
 - XMRig config: /opt/xmrig/build/config.json
 
 NOT backed up (Ansible regenerates):
@@ -103,7 +107,7 @@ if [ $? -eq 0 ]; then
   rm -rf "$BACKUP_NAME"
   echo "Backup compressed: ${BACKUP_NAME}.tar.gz"
   echo "Size: $(du -h "${BACKUP_NAME}.tar.gz" | cut -f1)"
-  
+
   # Remove old backups only after successful new backup
   echo "--- Cleaning Old Backups ---"
   find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +$RETENTION_DAYS -delete
@@ -183,7 +187,7 @@ echo ""
 # Restore specific path or show contents
 if [ -n "$RESTORE_PATH" ]; then
   echo "--- Restoring: $RESTORE_PATH ---"
-  
+
   if [ -d "$EXTRACTED_DIR/$RESTORE_PATH" ]; then
     # Restore to system
     case "$RESTORE_PATH" in
@@ -441,6 +445,10 @@ sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
 - SSH keys: `/home/dev/.ssh` (both server access and git hosting keys)
 - GPG keys: `/home/dev/.gnupg`
 - Git config: `/home/dev/.gitconfig`
+
+**Encrypted data (safe to backup):**
+- KeePassXC databases: `~/Documents/*.kdbx` (encrypted with master password)
+- Feather wallets: `~/.local/share/feather` (encrypted with wallet password)
 
 **Mining configuration:**
 - XMRig config: `/opt/xmrig/build/config.json`
