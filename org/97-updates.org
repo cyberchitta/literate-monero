@@ -605,15 +605,15 @@ for dir in /opt/monero-*; do
     fi
 done
 
-if [ ${#VERSIONS[@]} -eq 0 ]; then
+if [ {% raw %}${#VERSIONS[@]}{% endraw %} -eq 0 ]; then
     echo -e "${RED}No monerod versions found in /opt${NC}"
     exit 1
 fi
 
 echo ""
-read -p "Select version to rollback to (1-${#VERSIONS[@]}): " SELECTION
+read -p "Select version to rollback to (1-{% raw %}${#VERSIONS[@]}{% endraw %}): " SELECTION
 
-if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt ${#VERSIONS[@]} ]; then
+if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt {% raw %}${#VERSIONS[@]}{% endraw %} ]; then
     echo -e "${RED}Invalid selection${NC}"
     exit 1
 fi
@@ -719,15 +719,15 @@ for dir in /opt/p2pool-*; do
     fi
 done
 
-if [ ${#VERSIONS[@]} -eq 0 ]; then
+if [ {% raw %}${#VERSIONS[@]}{% endraw %} -eq 0 ]; then
     echo -e "${RED}No P2Pool versions found in /opt${NC}"
     exit 1
 fi
 
 echo ""
-read -p "Select version to rollback to (1-${#VERSIONS[@]}): " SELECTION
+read -p "Select version to rollback to (1-{% raw %}${#VERSIONS[@]}{% endraw %}): " SELECTION
 
-if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt ${#VERSIONS[@]} ]; then
+if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt {% raw %}${#VERSIONS[@]}{% endraw %} ]; then
     echo -e "${RED}Invalid selection${NC}"
     exit 1
 fi
@@ -822,15 +822,15 @@ for dir in /opt/xmrig-*; do
     fi
 done
 
-if [ ${#VERSIONS[@]} -eq 0 ]; then
+if [ {% raw %}${#VERSIONS[@]}{% endraw %} -eq 0 ]; then
     echo -e "${RED}No XMRig versions found in /opt${NC}"
     exit 1
 fi
 
 echo ""
-read -p "Select version to rollback to (1-${#VERSIONS[@]}): " SELECTION
+read -p "Select version to rollback to (1-{% raw %}${#VERSIONS[@]}{% endraw %}): " SELECTION
 
-if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt ${#VERSIONS[@]} ]; then
+if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt {% raw %}${#VERSIONS[@]}{% endraw %} ]; then
     echo -e "${RED}Invalid selection${NC}"
     exit 1
 fi
