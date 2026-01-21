@@ -12,8 +12,8 @@ This phase sets up Monero mining to demonstrate the full sovereign node stack:
 - Contributes to network security
 - Mining runs at low priority - can be disabled later if desired
 
-**Important:** P2Pool will start and XMRig will show hashrate, but **no shares will be found** 
-until monerod completes its initial blockchain sync (6-24 hours). This is normal. Monitor sync 
+**Important:** P2Pool will start and XMRig will show hashrate, but **no shares will be found**
+until monerod completes its initial blockchain sync (6-24 hours). This is normal. Monitor sync
 progress with `sudo monerod-status.sh`.
 
 **Resource impact:**
@@ -168,58 +168,86 @@ This Jinja2 template configures XMRig with variables from configuration.org.
 ** Build XMRig
 
 #+begin_src yaml :tangle ../ansible/fragments/07-mining.yml
-    - name: Create XMRig directory
+    - name: Set versioned XMRig directory
+      set_fact:
+        xmrig_versioned_dir: "{{ xmrig_install_dir }}-{{ xmrig_version }}"
+      tags: [mining]
+
+    - name: Check if this XMRig version is already built
+      stat:
+        path: "{{ xmrig_versioned_dir }}/build/xmrig"
+      register: xmrig_version_exists
+      tags: [mining]
+
+    - name: Create versioned XMRig directory
       file:
-        path: /opt/xmrig
+        path: "{{ xmrig_versioned_dir }}"
         state: directory
         owner: mining
         group: mining
         mode: '0755'
+      when: not xmrig_version_exists.stat.exists
       tags: [mining]
 
-    - name: Clone XMRig repository
+    - name: Clone XMRig repository to versioned directory
       git:
         repo: https://github.com/xmrig/xmrig.git
-        dest: /opt/xmrig
+        dest: "{{ xmrig_versioned_dir }}"
         version: "{{ xmrig_version }}"
         force: yes
       become_user: mining
+      when: not xmrig_version_exists.stat.exists
+      register: xmrig_clone
       tags: [mining]
 
     - name: Create XMRig build directory
       file:
-        path: /opt/xmrig/build
+        path: "{{ xmrig_versioned_dir }}/build"
         state: directory
         mode: '0755'
+      when: not xmrig_version_exists.stat.exists
       tags: [mining]
 
     - name: Configure XMRig build
       command:
         cmd: cmake .. -DWITH_HWLOC=ON
-        chdir: /opt/xmrig/build
-        creates: /opt/xmrig/build/Makefile
+        chdir: "{{ xmrig_versioned_dir }}/build"
+        creates: "{{ xmrig_versioned_dir }}/build/Makefile"
+      when: not xmrig_version_exists.stat.exists
       tags: [mining]
 
     - name: Build XMRig
       command:
         cmd: make -j{{ ansible_facts['processor_vcpus'] }}
-        chdir: /opt/xmrig/build
-        creates: /opt/xmrig/build/xmrig
+        chdir: "{{ xmrig_versioned_dir }}/build"
+        creates: "{{ xmrig_versioned_dir }}/build/xmrig"
+      when: not xmrig_version_exists.stat.exists
+      register: xmrig_build
       tags: [mining]
 
     - name: Set XMRig capabilities for MSR access
       capabilities:
-        path: /opt/xmrig/build/xmrig
+        path: "{{ xmrig_versioned_dir }}/build/xmrig"
         capability: cap_sys_rawio=ep
         state: present
       tags: [mining]
-      
+
     - name: Set XMRig ownership
       file:
-        path: /opt/xmrig
+        path: "{{ xmrig_versioned_dir }}"
         owner: "{{ mining_user }}"
         group: "{{ mining_user }}"
         recurse: yes
+      tags: [mining]
+
+    - name: Update XMRig symlink to current version
+      file:
+        src: "{{ xmrig_versioned_dir }}"
+        dest: "{{ xmrig_install_dir }}"
+        state: link
+        force: yes
+      when: xmrig_build.changed
+      notify: restart xmrig
       tags: [mining]
 #+end_src
 
@@ -245,47 +273,79 @@ XMRig requires access to Model-Specific Registers (MSR) for optimal RandomX mini
         state: present
       tags: [mining, p2pool]
 
+    - name: Set versioned P2Pool directory
+      set_fact:
+        p2pool_versioned_dir: "{{ p2pool_install_dir }}-{{ p2pool_version }}"
+      tags: [mining, p2pool]
+
+    - name: Check if this P2Pool version is already installed
+      stat:
+        path: "{{ p2pool_versioned_dir }}/p2pool"
+      register: p2pool_version_exists
+      tags: [mining, p2pool]
+
     - name: Download P2Pool
       get_url:
         url: "https://github.com/SChernykh/p2pool/releases/download/{{ p2pool_version }}/p2pool-{{ p2pool_version }}-linux-x64.tar.gz"
         dest: /tmp/p2pool.tar.gz
         mode: '0644'
+      when: not p2pool_version_exists.stat.exists
       register: p2pool_download
       tags: [mining, p2pool]
 
-    - name: Extract P2Pool
+    - name: Create versioned P2Pool directory
+      file:
+        path: "{{ p2pool_versioned_dir }}"
+        state: directory
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        mode: '0755'
+      when: not p2pool_version_exists.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Extract P2Pool to versioned directory
       unarchive:
         src: /tmp/p2pool.tar.gz
-        dest: "{{ p2pool_data_dir }}"
+        dest: "{{ p2pool_versioned_dir }}"
         remote_src: yes
         extra_opts: [--strip-components=1]
-      when: p2pool_download.changed
+      when: not p2pool_version_exists.stat.exists
       register: p2pool_extract
       tags: [mining, p2pool]
 
     - name: Check P2Pool binary exists
       stat:
-        path: "{{ p2pool_data_dir }}/p2pool"
-      register: p2pool_binary
+        path: "{{ p2pool_versioned_dir }}/p2pool"
+      register: p2pool_versioned_binary
       tags: [mining, p2pool]
 
     - name: Fail if P2Pool not found
       fail:
         msg: |
           P2Pool binary not found after extraction.
-          
+
           Possible issues:
           - Invalid version specified: {{ p2pool_version }}
           - Download URL changed
           - Archive structure changed
-          
+
           Check https://github.com/SChernykh/p2pool/releases for valid versions.
-      when: not p2pool_binary.stat.exists
+      when: not p2pool_versioned_binary.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Update P2Pool symlink to current version
+      file:
+        src: "{{ p2pool_versioned_dir }}"
+        dest: "{{ p2pool_install_dir }}"
+        state: link
+        force: yes
+      when: p2pool_extract.changed
+      notify: restart p2pool
       tags: [mining, p2pool]
 
     - name: Set P2Pool ownership
       file:
-        path: "{{ p2pool_data_dir }}"
+        path: "{{ p2pool_versioned_dir }}"
         owner: "{{ mining_user }}"
         group: "{{ mining_user }}"
         recurse: yes
@@ -317,10 +377,10 @@ Wants=network-online.target monerod.service
 Type=simple
 User={{ mining_user }}
 Group={{ mining_user }}
-WorkingDirectory={{ p2pool_data_dir }}
+WorkingDirectory={{ p2pool_install_dir }}
 
 # P2Pool always uses local monerod (core infrastructure)
-ExecStart={{ p2pool_data_dir }}/p2pool \
+ExecStart={{ p2pool_install_dir }}/p2pool \
   --host 127.0.0.1 \
   --rpc-port {{ monerod_rpc_port }} \
   {% if p2pool_type != 'normal' %}--{{ p2pool_type }}{% endif %} \
@@ -452,7 +512,7 @@ WantedBy=multi-user.target
       register: p2pool_mode
       changed_when: false
       tags: [mining, verify]
-      
+
     - name: Check P2Pool status
       systemd:
         name: p2pool
@@ -545,7 +605,7 @@ P2Pool requires port {{ p2pool_p2p_port }} open for incoming connections:
 
 The port depends on pool type:
 - normal: 37889
-- mini: 37888  
+- mini: 37888
 - nano: 37890
 
 If behind a router, forward this port (TCP+UDP) to your server.

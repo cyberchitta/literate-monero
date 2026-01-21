@@ -13,6 +13,24 @@
 #   ansible-playbook playbook.yml    # Run installation
 
 # ----------------------------------------------------------------------------
+# Software Versions
+# ----------------------------------------------------------------------------
+# Check for latest releases:
+#   Monerod: https://github.com/monero-project/monero/releases
+#   P2Pool: https://github.com/SChernykh/p2pool/releases
+#   XMRig: https://github.com/xmrig/xmrig/releases
+#   Tor Browser: https://www.torproject.org/download/
+#   Feather Wallet: https://github.com/feather-wallet/feather/releases
+#   Trezor Suite: https://github.com/trezor/trezor-suite/releases
+
+monerod_version: "v0.18.4.5"
+p2pool_version: "v4.12"
+xmrig_version: "v6.22.2"
+tor_browser_version: "15.0.3"
+feather_version: "2.7.2"
+trezor_suite_version: "24.11.2"
+
+# ----------------------------------------------------------------------------
 # Required Configuration
 # ----------------------------------------------------------------------------
 
@@ -65,14 +83,6 @@ mining_threads: 0
 # - nano: For very low hashrate (experimental)
 p2pool_type: mini
 
-# P2Pool version (check github.com/SChernykh/p2pool/releases)
-# Use "latest" for most recent, or pin to version like "v4.1"
-p2pool_version: "v4.12"
-
-# XMRig version
-# Use "master" for latest, or pin to version like "v6.21.0"
-xmrig_version: "master"
-
 # Mining priority (19 = lowest, won't interfere with other work)
 mining_nice_priority: 19
 
@@ -81,11 +91,6 @@ mining_huge_pages: true
 
 # XMRig donation level (1 = 1%, 0 = 0%)
 xmrig_donate_level: 5
-
-# ----------------------------------------------------------------------------
-# Tor Browser version (check https://www.torproject.org/download/)
-# ----------------------------------------------------------------------------
-tor_browser_version: "15.0.3"
 
 # ----------------------------------------------------------------------------
 # Backup Configuration

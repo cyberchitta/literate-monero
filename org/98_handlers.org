@@ -21,12 +21,24 @@ All service restart handlers collected here.
         name: i2pd
         state: restarted
       listen: restart i2pd
-      
+
     - name: restart monerod
       systemd:
         name: monerod
         state: restarted
       listen: restart monerod
+
+    - name: restart p2pool
+      systemd:
+        name: p2pool
+        state: restarted
+      listen: restart p2pool
+
+    - name: restart xmrig
+      systemd:
+        name: xmrig
+        state: restarted
+      listen: restart xmrig
 
     - name: restart journald
       systemd:

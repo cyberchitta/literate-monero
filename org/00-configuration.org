@@ -69,7 +69,6 @@ tor_dns_port: 5353
 
 # Monero daemon installation
 monerod_install_dir: /opt/monero
-monerod_version: "v0.18.4.5"
 # Monero ZMQ pub port (required by P2Pool)
 monerod_zmq_port: 18083
 
@@ -114,8 +113,14 @@ firewall_service_rules:
 # Mining data directory
 mining_data_dir: /opt/mining
 
-# P2Pool data directory
-p2pool_data_dir: /opt/p2pool
+# P2Pool installation directory (base path - version in config.yml)
+p2pool_install_dir: /opt/p2pool
+
+# P2Pool data directory (persistent state, separate from install)
+p2pool_data_dir: /var/lib/p2pool
+
+# XMRig installation directory (base path - version in config.yml)
+xmrig_install_dir: /opt/xmrig
 
 # Backup directory
 backup_dir: /srv/backups

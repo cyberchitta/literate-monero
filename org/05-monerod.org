@@ -40,19 +40,15 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         state: present
       tags: [monerod]
 
-    - name: Create Monero installation directory
-      file:
-        path: "{{ monerod_install_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+    - name: Set versioned monerod directory
+      set_fact:
+        monerod_versioned_dir: "{{ monerod_install_dir }}-{{ monerod_version }}"
       tags: [monerod]
 
-    - name: Check if monerod is already installed
+    - name: Check if this monerod version is already installed
       stat:
-        path: "{{ monerod_install_dir }}/monerod"
-      register: monerod_binary
+        path: "{{ monerod_versioned_dir }}/monerod"
+      register: monerod_version_exists
       tags: [monerod]
 
     - name: Download Monero release from getmonero.org
@@ -60,7 +56,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         url: "https://downloads.getmonero.org/cli/monero-linux-x64-{{ monerod_version }}.tar.bz2"
         dest: /tmp/monero.tar.bz2
         mode: '0644'
-      when: not monerod_binary.stat.exists
+      when: not monerod_version_exists.stat.exists
       register: monero_download
       tags: [monerod]
 
@@ -69,7 +65,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         url: "https://www.getmonero.org/downloads/hashes.txt"
         dest: /tmp/monero-hashes.txt
         mode: '0644'
-      when: not monerod_binary.stat.exists
+      when: not monerod_version_exists.stat.exists
       tags: [monerod]
 
     - name: Extract expected hash for downloaded file
@@ -77,7 +73,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         grep "monero-linux-x64-{{ monerod_version }}.tar.bz2" /tmp/monero-hashes.txt | awk '{print $1}'
       register: expected_hash
       changed_when: false
-      when: not monerod_binary.stat.exists
+      when: not monerod_version_exists.stat.exists
       tags: [monerod]
 
     - name: Verify download hash
@@ -85,7 +81,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         path: /tmp/monero.tar.bz2
         checksum_algorithm: sha256
       register: download_stat
-      when: not monerod_binary.stat.exists
+      when: not monerod_version_exists.stat.exists
       tags: [monerod]
 
     - name: Fail if hash mismatch
@@ -95,41 +91,34 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
           Expected: {{ expected_hash.stdout }}
           Got: {{ download_stat.stat.checksum }}
       when:
-        - not monerod_binary.stat.exists
+        - not monerod_version_exists.stat.exists
         - download_stat.stat.checksum != expected_hash.stdout
       tags: [monerod]
 
-    - name: Extract Monero release
+    - name: Create versioned Monero directory
+      file:
+        path: "{{ monerod_versioned_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: not monerod_version_exists.stat.exists
+      tags: [monerod]
+
+    - name: Extract Monero release to versioned directory
       unarchive:
         src: /tmp/monero.tar.bz2
-        dest: "{{ monerod_install_dir }}"
+        dest: "{{ monerod_versioned_dir }}"
         remote_src: yes
         extra_opts: [--strip-components=1]
-      when: not monerod_binary.stat.exists
+      when: not monerod_version_exists.stat.exists
       register: monero_extract
       tags: [monerod]
 
-    - name: Create symlink to monerod
-      file:
-        src: "{{ monerod_install_dir }}/monerod"
-        dest: /usr/local/bin/monerod
-        state: link
-      tags: [monerod]
-
-    - name: Clean up download files
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /tmp/monero.tar.bz2
-        - /tmp/monero-hashes.txt
-      when: monero_extract.changed
-      tags: [monerod]
-
-    - name: Verify monerod binary exists
+    - name: Verify monerod binary exists in versioned directory
       stat:
-        path: "{{ monerod_install_dir }}/monerod"
-      register: monerod_installed
+        path: "{{ monerod_versioned_dir }}/monerod"
+      register: monerod_versioned_binary
       tags: [monerod]
 
     - name: Fail if monerod not found after installation
@@ -143,22 +132,36 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
           - Download corrupted
 
           Check https://github.com/monero-project/monero/releases for valid versions.
-      when: not monerod_installed.stat.exists
+      when: not monerod_versioned_binary.stat.exists
       tags: [monerod]
 
-    - name: Get monerod version
-      command: "{{ monerod_install_dir }}/monerod --version"
-      register: monerod_version_output
-      changed_when: false
-      tags: [monerod, verify]
+    - name: Update monerod symlink to current version
+      file:
+        src: "{{ monerod_versioned_dir }}"
+        dest: "{{ monerod_install_dir }}"
+        state: link
+        force: yes
+      when: monero_extract.changed
+      notify: restart monerod
+      tags: [monerod]
 
-    - name: Display monerod installation info
-      debug:
-        msg:
-          - "Monerod installed: {{ monerod_install_dir }}/monerod"
-          - "Version: {{ monerod_version_output.stdout_lines[0] }}"
-          - "Symlinked to: /usr/local/bin/monerod"
-      tags: [monerod, verify]
+    - name: Create symlink to monerod in PATH
+      file:
+        src: "{{ monerod_install_dir }}/monerod"
+        dest: /usr/local/bin/monerod
+        state: link
+        force: yes
+      tags: [monerod]
+
+    - name: Clean up download files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/monero.tar.bz2
+        - /tmp/monero-hashes.txt
+      when: monero_extract.changed
+      tags: [monerod]
 #+end_src
 
 ** Create Data Directory
