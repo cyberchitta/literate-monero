@@ -141,7 +141,6 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
         dest: "{{ monerod_install_dir }}"
         state: link
         force: yes
-      when: monero_extract.changed
       notify: restart monerod
       tags: [monerod]
 

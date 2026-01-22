@@ -246,7 +246,6 @@ This Jinja2 template configures XMRig with variables from configuration.org.
         dest: "{{ xmrig_install_dir }}"
         state: link
         force: yes
-      when: xmrig_build.changed
       notify: restart xmrig
       tags: [mining]
 #+end_src
@@ -339,7 +338,6 @@ XMRig requires access to Model-Specific Registers (MSR) for optimal RandomX mini
         dest: "{{ p2pool_install_dir }}"
         state: link
         force: yes
-      when: p2pool_extract.changed
       notify: restart p2pool
       tags: [mining, p2pool]
 
