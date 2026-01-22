@@ -25,7 +25,7 @@
 
 monerod_version: "v0.18.4.5"
 p2pool_version: "v4.12"
-xmrig_version: "v6.22.2"
+xmrig_version: "v6.25.0"
 tor_browser_version: "15.0.3"
 feather_version: "2.7.2"
 trezor_suite_version: "24.11.2"
