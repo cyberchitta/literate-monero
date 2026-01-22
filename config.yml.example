@@ -24,7 +24,7 @@
 #   Trezor Suite: https://github.com/trezor/trezor-suite/releases
 
 monerod_version: "v0.18.4.5"
-p2pool_version: "v4.12"
+p2pool_version: "v4.13"
 xmrig_version: "v6.25.0"
 tor_browser_version: "15.0.3"
 feather_version: "2.7.2"
