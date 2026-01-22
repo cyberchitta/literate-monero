@@ -2,21 +2,12 @@
 
 This phase installs WireGuard, generates keys, configures the tunnel, and sets up peer management.
 
-** Quick Setup Summary
-
-After this phase completes:
-1. Generate client keys: `wg genkey | tee private.key | wg pubkey`
-2. Add peer: `sudo wireguard-add-peer.sh laptop <pubkey>`
-3. Configure client with output from script
-4. Test: `ssh dev_user@10.8.0.1`
-5. After testing: Set `wireguard_only: true` in config.yml
-
 ** SSH Keys Note
 
 This phase provisions keys for **server access** (laptop → server SSH login).
 
-**Separate workflow:** Git hosting keys for GitHub/GitLab are generated later in Phase 6 
-after privacy configuration (Tor, git over Tor, etc.). Those keys authenticate git push 
+**Separate workflow:** Git hosting keys for GitHub/GitLab are generated later in Phase 6
+after privacy configuration (Tor, git over Tor, etc.). Those keys authenticate git push
 operations through Tor tunnel.
 
 ** Prerequisites
@@ -51,7 +42,7 @@ WireGuard uses public-key cryptography. Each peer has a private/public key pair.
 
     - name: Generate WireGuard server private key
       shell: wg genkey > /etc/wireguard/server-private.key
-      when: 
+      when:
         - not wg_server_key.stat.exists
       tags: [wireguard]
 
@@ -241,17 +232,17 @@ SSH access has two phases:
         fail_msg: |
           SSH firewall configuration error!
           Found {{ ssh_rules.stdout_lines | length }} SSH rule(s)
-          
+
           Current rules:
           {{ ssh_rules.stdout }}
-          
+
           Expected configuration:
           {% if wireguard_only | default(false) %}
           - SSH only from WireGuard network (10.8.0.0/24)
           {% else %}
           - SSH allowed from anywhere (initial setup)
           {% endif %}
-          
+
           To fix:
           1. Reset firewall: sudo ufw reset
           2. Re-run: ansible-playbook playbook.yml --tags firewall
@@ -287,7 +278,7 @@ SSH access has two phases:
           echo "no_peers"
           exit 0
         fi
-        
+
         PEER_IP=$(wg show wg0 allowed-ips | head -1 | awk '{print $2}' | cut -d/ -f1)
         if ping -c 3 -W 5 "$PEER_IP" >/dev/null 2>&1; then
           echo "peer_reachable"
@@ -481,15 +472,15 @@ else
     PEER_IP=$(grep -A 2 "$pubkey" /etc/wireguard/wg0.conf | grep AllowedIPs | awk '{print $3}')
     PEER_ENDPOINT=$(wg show wg0 endpoints | grep "$pubkey" | awk '{print $2}')
     PEER_HANDSHAKE=$(wg show wg0 latest-handshakes | grep "$pubkey" | awk '{print $2}')
-    
+
     echo ""
     echo "  Peer: $PEER_NAME"
     echo "  IP: $PEER_IP"
     echo "  Public Key: ${pubkey:0:20}..."
-    
+
     if [ -n "$PEER_ENDPOINT" ]; then
       echo "  Endpoint: $PEER_ENDPOINT"
-      
+
       # Calculate time since last handshake
       if [ -n "$PEER_HANDSHAKE" ] && [ "$PEER_HANDSHAKE" != "0" ]; then
         NOW=$(date +%s)
@@ -541,7 +532,7 @@ echo ""
         user: "{{ dev_user }}"
         key: "{{ dev_user_ssh_public_key }}"
         state: present
-      when: 
+      when:
         - dev_user_ssh_public_key is defined
         - dev_user_ssh_public_key != ""
       tags: [wireguard, ssh]
@@ -556,10 +547,10 @@ echo ""
       fail:
         msg: |
           SSH keys required but not found!
-          
+
           Add your SSH public key to config.yml:
             dev_user_ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2E... user@laptop"
-          
+
           Get it from your client machine:
             cat ~/.ssh/id_rsa.pub
       when:

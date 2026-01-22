@@ -596,19 +596,9 @@ For now, mining is enabled to demonstrate the full stack.
 
 *** P2Pool Network Requirements
 
-P2Pool requires port {{ p2pool_p2p_port }} open for incoming connections:
-- Allows peer-to-peer pool communication
-- Contributes to pool decentralization
-- Mining works without this, but you won't help other miners
+P2Pool requires port {{ p2pool_p2p_port }} open (TCP+UDP) for peer communication. Mining works without this, but you won't contribute to pool decentralization. Forward this port if behind router.
 
-The port depends on pool type:
-- normal: 37889
-- mini: 37888
-- nano: 37890
-
-If behind a router, forward this port (TCP+UDP) to your server.
-
-The firewall rules are configured in the firewall phase when UFW is enabled.
+Port varies by type: normal (37889), mini (37888), nano (37890).
 
 *** Mining Performance
 

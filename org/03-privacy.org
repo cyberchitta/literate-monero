@@ -19,21 +19,12 @@ All git operations route through Tor automatically. Tor Browser provides fingerp
 
 ** Threat Model
 
-This system provides network-level privacy for git operations and web research:
-
-**What's protected:**
-- ✓ Your real IP hidden from GitHub/GitLab (Tor routing)
+Network-level privacy for git/web operations:
+- ✓ IP hidden from GitHub/GitLab (Tor routing)
 - ✓ Browser fingerprinting minimized (Tor Browser)
-- ✓ Git commit metadata doesn't leak location
+- ✓ Git commits don't leak location
 
-**Pragmatic trade-offs:**
-- AI services may know your real identity (if using paid accounts)
-- Package managers reveal technology stack (public downloads)
-- Focus is operational privacy, not theoretical anonymity
-
-For detailed threat modeling, see:
-- Tor Browser design: https://2019.www.torproject.org/projects/torbrowser/design/
-- Git over Tor: https://github.com/git/git/blob/master/Documentation/git-config.txt#L1862
+Trade-offs: AI services may know identity (paid accounts), package managers reveal tech stack. Focus is operational privacy, not theoretical anonymity.
 
 ** Configuration Variables
 

@@ -373,33 +373,14 @@ Reference: https://docs.featherwallet.org/guides/hardware-wallet
 
 *** Trezor Seed Compatibility Warning
 
-**Critical:** Trezor's Monero implementation uses SLIP-0010 key derivation, which is NOT compatible with standard Monero seed formats.
+**Critical:** Trezor uses SLIP-0010 key derivation (BIP39 seed), incompatible with standard Monero formats (25-word Legacy, 16-word Polyseed, 13-word MyMonero).
 
-**Monero seed formats:**
-- **Legacy:** 25-word seed (original Monero format)
-- **Polyseed:** 16-word seed with embedded wallet birthday (used by Cake Wallet, Feather)
-- **MyMonero:** 13-word seed
+**Recovery:** Trezor seed only works with another Trezor device. Cannot restore on Ledger or software wallets even with same seed words.
 
-**Trezor uses:** 12/24-word BIP39 seed with SLIP-0010 derivation (incompatible with all above)
-
-**What this means:**
-- Trezor recovery seed ONLY works with other Trezor devices
-- Cannot convert Trezor seed to any standard Monero seed format (25-word, 16-word Polyseed, or 13-word MyMonero)
-- Cannot restore Trezor Monero wallet on non-Trezor hardware (even Ledger with same seed words produces different keys)
-- Feather Wallet can access Trezor-derived keys, but only via connected Trezor hardware
-
-**Recovery scenario:** If you lose your Trezor:
-1. Buy another Trezor device
-2. Restore using your Trezor recovery seed
-3. Connect to Feather Wallet - your Monero keys will be accessible again
-
-**Why:** Different hardware wallets chose incompatible key derivation methods (Trezor: SLIP-0010, Ledger: modified BIP-32). This lack of standardization means the same seed words produce different Monero keys on different devices.
-
-**Recommendation:** For maximum portability, use a standard Monero software wallet with Polyseed (16-word) or Legacy (25-word) format. These seeds work across Feather, Cake Wallet, Monero GUI, and other wallets. Use Trezor only if you're committed to the Trezor ecosystem for recovery.
+**For portability:** Use standard Monero wallet with Polyseed (16-word) or Legacy (25-word). These work across Feather, Cake Wallet, Monero GUI.
 
 References:
 - https://trezor.io/learn/supported-assets/other-cryptocurrencies/monero-xmr-on-trezor
-- https://resilience365.com/ledger-trezor-seed-compatibility-monero/
 - https://docs.featherwallet.org/guides/seed-scheme
 
 *** Seed Phrase Security
