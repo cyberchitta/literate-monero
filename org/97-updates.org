@@ -209,6 +209,7 @@ cd "{{ lookup('env', 'HOME') }}/literate-monero"
 
 # Run Ansible to install new version
 echo "Running Ansible playbook..."
+rm -f /tmp/monero.tar.bz2 /tmp/monero-hashes.txt
 cd ansible
 if ansible-playbook playbook.yml --tags monerod -v; then
     echo -e "${GREEN}✓ Ansible playbook completed successfully${NC}"
@@ -360,6 +361,7 @@ cd "{{ lookup('env', 'HOME') }}/literate-monero"
 
 # Run Ansible to install new version
 echo "Running Ansible playbook..."
+rm -f /tmp/p2pool.tar.gz
 cd ansible
 if ansible-playbook playbook.yml --tags mining -v; then
     echo -e "${GREEN}✓ Ansible playbook completed successfully${NC}"
