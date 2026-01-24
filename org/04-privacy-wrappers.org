@@ -390,7 +390,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
             hyprctl dispatch focuswindow "address:$WINDOW"
         else
             # Window doesn't exist - create new window
-            "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
+            TOR_SKIP_LAUNCH=0 TOR_CONTROL_PORT="" "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
         fi
     else
         # Just focus any existing window
@@ -401,7 +401,8 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
     fi
 else
     # Start new instance with github-auth profile
-    "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
+    # Use bundled Tor, ignore system Tor daemon
+    TOR_SKIP_LAUNCH=0 TOR_CONTROL_PORT="" "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
 fi
 #+end_src
 
