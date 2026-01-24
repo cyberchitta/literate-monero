@@ -359,18 +359,16 @@ This section configures desktop applications that use GitHub for authentication 
 # Manages shared Tor Browser profile for GitHub-authenticated apps
 #
 # Usage:
-#   github-auth-browser.sh <url> [mode] [title-pattern]
+#   github-auth-browser.sh <url> <title-pattern>
 #
 # Arguments:
 #   url            - URL to open (default: https://github.com)
-#   mode           - "focus" (default) or "own-window"
-#   title-pattern  - String to match in window title (required for own-window)
+#   title-pattern  - String to match in window title (required)
 
 PROFILE_DIR="$HOME/.tor-browser-profiles/github-auth"
 TOR_BROWSER="/opt/tor-browser/Browser/start-tor-browser"
 URL="${1:-https://github.com}"
-MODE="${2:-focus}"
-TITLE_PATTERN="${3:-}"
+TITLE_PATTERN="${2:-}"
 
 mkdir -p "$PROFILE_DIR"
 
@@ -384,36 +382,28 @@ user_pref("extensions.torlauncher.control_port", 9151);
 user_pref("extensions.torlauncher.socks_port", 9150);
 USER_EOF
 
+# Validate title pattern
+if [ -z "$TITLE_PATTERN" ]; then
+    echo "Error: title-pattern required" >&2
+    exit 1
+fi
+
 # Get parent firefox PID for github-auth profile (not child content processes)
 BROWSER_PID=$(ps aux | grep "firefox.real.*profile.*github-auth" | grep -v grep | grep -v contentproc | awk '{print $2}' | head -1)
 
 if [ -n "$BROWSER_PID" ]; then
-    if [ "$MODE" = "own-window" ]; then
-        if [ -z "$TITLE_PATTERN" ]; then
-            echo "Error: title-pattern required for own-window mode" >&2
-            exit 1
-        fi
+    # Browser running - check if window for this title pattern exists
+    WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | test(\"$TITLE_PATTERN\"; \"i\"))) | .address" | head -1)
 
-        # Check if window with this title pattern exists
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | test(\"$TITLE_PATTERN\"; \"i\"))) | .address" | head -1)
-
-        if [ -n "$WINDOW" ]; then
-            # Window exists - focus it
-            hyprctl dispatch focuswindow "address:$WINDOW"
-        else
-            # Window doesn't exist - create new window
-            "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
-        fi
+    if [ -n "$WINDOW" ]; then
+        # Window exists - focus it
+        hyprctl dispatch focuswindow "address:$WINDOW"
     else
-        # Just focus any existing window for this profile
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID) | .address" | head -1)
-
-        if [ -n "$WINDOW" ]; then
-            hyprctl dispatch focuswindow "address:$WINDOW"
-        fi
+        # Window doesn't exist - create new window via remote command
+        "$TOR_BROWSER" --profile "$PROFILE_DIR" -new-window "$URL" 2>/dev/null || true
     fi
 else
-    # Start new instance with github-auth profile
+    # Browser not running - start it
     "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
 fi
 #+end_src

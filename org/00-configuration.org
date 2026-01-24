@@ -168,7 +168,7 @@ github_auth_apps:
     url: "https://github.com"
     icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
     icon_name: "github.png"
-    title_pattern: ""  # Focus any window in profile
+    title_pattern: "GitHub"
     categories: "Network;Development;"
 
   - name: "Element"
