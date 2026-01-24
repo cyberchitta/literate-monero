@@ -8,7 +8,7 @@ This phase configures privacy wrappers for applications - routing specific tools
 
 **Pattern established:** This shows how to take any application/workflow and route it through Tor. Currently focused on development tools (git, SSH), but the same pattern applies to any privacy-sensitive workflow.
 
-**Prerequisites:** Phase 3 (privacy-infra) must be complete - Tor daemon must be running with SOCKS proxy on port {{ tor_socks_port }}.
+**Prerequisites:** Phase 3 (privacy) must be complete - Tor daemon must be running with SOCKS proxy on port {{ tor_socks_port }}.
 
 ** Threat Model for Development Operations
 

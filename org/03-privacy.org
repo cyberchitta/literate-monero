@@ -51,7 +51,7 @@ Tor Browser version is configurable in config.yml. Check https://www.torproject.
 
 #+begin_src conf :tangle ../configs/templates/torrc.j2
 ## Tor Configuration for Privacy-First Operation
-## Generated from org/03-privacy-infra.org
+## Generated from org/03-privacy.org
 
 # SOCKS proxy for application wrappers
 SOCKSPort {{ tor_socks_port }}
@@ -94,7 +94,7 @@ ExitPolicyRejectPrivate 1
 
 *** Deploy Tor Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Deploy Tor configuration
       template:
         src: ../configs/templates/torrc.j2
@@ -158,7 +158,7 @@ ExitPolicyRejectPrivate 1
 
 *** Install i2pd
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # I2P Network Privacy
     # ------------------------------------------------------------------------
@@ -173,7 +173,7 @@ ExitPolicyRejectPrivate 1
 
 *** Configure i2pd
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Create i2pd tunnels config directory
       file:
         path: /etc/i2pd/tunnels.d
@@ -206,7 +206,7 @@ port = 18089
 keys = monero-mainnet.dat
 #+end_src
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Deploy Monero I2P tunnel configuration
       template:
         src: ../configs/templates/monero-i2p.conf.j2
@@ -220,7 +220,7 @@ keys = monero-mainnet.dat
 
 *** Enable and Start i2pd
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Enable and start i2pd service
       systemd:
         name: i2pd
@@ -236,7 +236,7 @@ keys = monero-mainnet.dat
 
 *** Retrieve I2P Address
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Check I2P web console accessibility
       uri:
         url: http://127.0.0.1:7070
@@ -344,7 +344,7 @@ echo ""
 
 *** Download and Install
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # Tor Browser
     # ------------------------------------------------------------------------
@@ -520,7 +520,7 @@ fi
 
 *** Deploy Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # GitHub-Authenticated Browser Infrastructure
     # ------------------------------------------------------------------------
@@ -542,7 +542,7 @@ fi
 
 *** Download GitHub Icon
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Download GitHub icon
       get_url:
         url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
@@ -553,7 +553,7 @@ fi
 
 *** GitHub Desktop Entry
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Create GitHub desktop entry
       copy:
         content: |
@@ -575,7 +575,7 @@ fi
 
 *** Install KeePassXC
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # KeePassXC Password Manager
     # ------------------------------------------------------------------------
@@ -620,7 +620,7 @@ ShowTrayIcon=false
 
 *** Deploy Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     - name: Create KeePassXC config directory
       file:
         path: "/home/{{ dev_user }}/.config/keepassxc"
@@ -723,7 +723,7 @@ echo ""
 
 ** Deploy Helper Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # Privacy Infrastructure Helper Scripts
     # ------------------------------------------------------------------------
@@ -741,7 +741,7 @@ echo ""
 
 ** Verify Privacy Infrastructure
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # Privacy Infrastructure Verification
     # ------------------------------------------------------------------------
