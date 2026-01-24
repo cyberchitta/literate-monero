@@ -104,7 +104,7 @@ Host *.github.com *.gitlab.com
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
         mode: '0700'
-      tags: [privacy, config]
+      tags: [privacy-wrappers, config]
 
     - name: Deploy git configuration for privacy
       template:
@@ -113,7 +113,7 @@ Host *.github.com *.gitlab.com
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
         mode: '0644'
-      tags: [privacy, config]
+      tags: [privacy-wrappers, config]
 
     - name: Deploy SSH configuration for Tor routing
       template:
@@ -122,7 +122,7 @@ Host *.github.com *.gitlab.com
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
         mode: '0600'
-      tags: [privacy, config]
+      tags: [privacy-wrappers, config]
 
     - name: Create workspace directory
       file:
@@ -131,7 +131,7 @@ Host *.github.com *.gitlab.com
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
         mode: '0755'
-      tags: [privacy, config]
+      tags: [privacy-wrappers, config]
 #+end_src
 
 *** Generate SSH Keys Script
@@ -185,7 +185,7 @@ echo ""
         mode: '0755'
       loop:
         - generate-git-keys.sh
-      tags: [privacy, scripts]
+      tags: [privacy-wrappers, scripts]
 #+end_src
 
 ** Verify Privacy Wrappers
@@ -199,13 +199,13 @@ echo ""
       stat:
         path: "/home/{{ dev_user }}/.gitconfig"
       register: git_config
-      tags: [privacy, verify]
+      tags: [privacy-wrappers, verify]
 
     - name: Check SSH config
       stat:
         path: "/home/{{ dev_user }}/.ssh/config"
       register: ssh_config
-      tags: [privacy, verify]
+      tags: [privacy-wrappers, verify]
 
     - name: Display privacy wrappers status
       debug:
@@ -229,7 +229,7 @@ echo ""
           - ""
           - "Git operations will route through Tor automatically"
           - ""
-      tags: [privacy, verify]
+      tags: [privacy-wrappers, verify]
 #+end_src
 
 ** Notes
