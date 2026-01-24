@@ -173,8 +173,8 @@ github_auth_apps:
 
   - name: "Element"
     url: "https://app.element.io"
-    icon_url: "https://element.io/images/logo-mark-primary.svg"
-    icon_name: "element.svg"
+    icon_url: "https://app.element.io/vector-icons/144.5a63bf2.png"
+    icon_name: "element.png"
     title_pattern: "Element"
     categories: "Network;InstantMessaging;"
 #+end_src
