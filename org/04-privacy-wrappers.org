@@ -375,17 +375,19 @@ TITLE_PATTERN="${3:-}"
 mkdir -p "$PROFILE_DIR"
 
 # Disable Tor Launcher, use bundled Tor directly
-cat > "$PROFILE_DIR/user.js" << 'EOF'
+cat > "$PROFILE_DIR/user.js" << 'USER_EOF'
 // Disable Tor Launcher auto-start check
 user_pref("extensions.torlauncher.start_tor", false);
 user_pref("extensions.torlauncher.prompt_at_startup", false);
 // Use bundled Tor ports
 user_pref("extensions.torlauncher.control_port", 9151);
 user_pref("extensions.torlauncher.socks_port", 9150);
-EOF
+USER_EOF
 
-# Check if Tor Browser with this profile is running
-if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
+# Get parent firefox PID for github-auth profile (not child content processes)
+BROWSER_PID=$(ps aux | grep "firefox.real.*profile.*github-auth" | grep -v grep | grep -v contentproc | awk '{print $2}' | head -1)
+
+if [ -n "$BROWSER_PID" ]; then
     if [ "$MODE" = "own-window" ]; then
         if [ -z "$TITLE_PATTERN" ]; then
             echo "Error: title-pattern required for own-window mode" >&2
@@ -393,7 +395,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
         fi
 
         # Check if window with this title pattern exists
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == ${BROWSER_PID} and (.title | contains(\"$TITLE_PATTERN\"))) | .address" | head -1)
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | test(\"$TITLE_PATTERN\"; \"i\"))) | .address" | head -1)
 
         if [ -n "$WINDOW" ]; then
             # Window exists - focus it
@@ -403,8 +405,9 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
             "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
         fi
     else
-        # Just focus any existing window
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == ${BROWSER_PID}) | .address" | head -1)
+        # Just focus any existing window for this profile
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID) | .address" | head -1)
+
         if [ -n "$WINDOW" ]; then
             hyprctl dispatch focuswindow "address:$WINDOW"
         fi
