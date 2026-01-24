@@ -180,6 +180,11 @@ mkdir -p "$PROJECT_ROOT/ansible/group_vars"
 mkdir -p "$PROJECT_ROOT/configs/templates"
 
 echo ""
+echo "=== Cleaning old fragments ==="
+rm -f "$PROJECT_ROOT/ansible/fragments"/*.yml
+echo "Removed old fragment files"
+
+echo ""
 echo "=== Tangling all org files with preserved indentation ==="
 echo ""
 
