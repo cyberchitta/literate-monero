@@ -33,7 +33,7 @@ Tor Browser version is configurable in config.yml. Check https://www.torproject.
 
 *** Install Tor
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
     # ------------------------------------------------------------------------
     # Privacy Infrastructure
     # ------------------------------------------------------------------------
