@@ -372,19 +372,27 @@ URL="${1:-https://github.com}"
 MODE="${2:-focus}"
 TITLE_PATTERN="${3:-}"
 
+echo "DEBUG: Profile dir: $PROFILE_DIR"
+echo "DEBUG: Tor Browser: $TOR_BROWSER"
+
 mkdir -p "$PROFILE_DIR"
 
 # Configure profile to use bundled Tor on first run
 if [ ! -f "$PROFILE_DIR/prefs.js" ]; then
+    echo "DEBUG: Creating prefs.js"
     cat > "$PROFILE_DIR/prefs.js" << 'EOF'
 // Use bundled Tor, don't try to connect to system Tor
 user_pref("extensions.torlauncher.control_port", 9151);
 user_pref("extensions.torlauncher.socks_port", 9150);
 EOF
+else
+    echo "DEBUG: prefs.js exists, contents:"
+    cat "$PROFILE_DIR/prefs.js"
 fi
 
 # Check if Tor Browser with this profile is running
 if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
+    echo "DEBUG: Browser already running (PID: $BROWSER_PID)"
     if [ "$MODE" = "own-window" ]; then
         if [ -z "$TITLE_PATTERN" ]; then
             echo "Error: title-pattern required for own-window mode" >&2
@@ -395,21 +403,23 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
         WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | contains(\"$TITLE_PATTERN\"))) | .address" | head -1)
 
         if [ -n "$WINDOW" ]; then
-            # Window exists - focus it
+            echo "DEBUG: Focusing existing window"
             hyprctl dispatch focuswindow "address:$WINDOW"
         else
-            # Window doesn't exist - create new window
+            echo "DEBUG: Creating new window"
             "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
         fi
     else
         # Just focus any existing window
         WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID) | .address" | head -1)
         if [ -n "$WINDOW" ]; then
+            echo "DEBUG: Focusing existing window"
             hyprctl dispatch focuswindow "address:$WINDOW"
         fi
     fi
 else
-    # Start new instance with github-auth profile
+    echo "DEBUG: Starting new browser instance"
+    echo "DEBUG: Command: $TOR_BROWSER --profile $PROFILE_DIR $URL"
     "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
 fi
 #+end_src
