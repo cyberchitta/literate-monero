@@ -374,6 +374,15 @@ TITLE_PATTERN="${3:-}"
 
 mkdir -p "$PROFILE_DIR"
 
+# Configure profile to use bundled Tor on first run
+if [ ! -f "$PROFILE_DIR/prefs.js" ]; then
+    cat > "$PROFILE_DIR/prefs.js" << 'EOF'
+// Use bundled Tor, don't try to connect to system Tor
+user_pref("extensions.torlauncher.control_port", 9151);
+user_pref("extensions.torlauncher.socks_port", 9150);
+EOF
+fi
+
 # Check if Tor Browser with this profile is running
 if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
     if [ "$MODE" = "own-window" ]; then
@@ -390,7 +399,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
             hyprctl dispatch focuswindow "address:$WINDOW"
         else
             # Window doesn't exist - create new window
-            TOR_SKIP_LAUNCH=0 TOR_CONTROL_PORT="" "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
+            "$TOR_BROWSER" --profile "$PROFILE_DIR" --new-window "$URL" &
         fi
     else
         # Just focus any existing window
@@ -401,8 +410,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
     fi
 else
     # Start new instance with github-auth profile
-    # Use bundled Tor, ignore system Tor daemon
-    TOR_SKIP_LAUNCH=0 TOR_CONTROL_PORT="" "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
+    "$TOR_BROWSER" --profile "$PROFILE_DIR" "$URL" &
 fi
 #+end_src
 
