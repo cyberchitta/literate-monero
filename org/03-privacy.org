@@ -258,6 +258,11 @@ ExitPolicyRejectPrivate 1
 	name = {{ anon_git_name }}
 	email = {{ anon_git_email }}
 
+[http]
+	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+[https]
+	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+
 [core]
 	editor = vim
 	autocrlf = input
