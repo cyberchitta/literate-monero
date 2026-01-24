@@ -374,9 +374,12 @@ TITLE_PATTERN="${3:-}"
 
 mkdir -p "$PROFILE_DIR"
 
-# Configure profile to use bundled Tor via user.js (persistent across runs)
+# Disable Tor Launcher, use bundled Tor directly
 cat > "$PROFILE_DIR/user.js" << 'EOF'
-// Use bundled Tor, don't try to connect to system Tor
+// Disable Tor Launcher auto-start check
+user_pref("extensions.torlauncher.start_tor", false);
+user_pref("extensions.torlauncher.prompt_at_startup", false);
+// Use bundled Tor ports
 user_pref("extensions.torlauncher.control_port", 9151);
 user_pref("extensions.torlauncher.socks_port", 9150);
 EOF
