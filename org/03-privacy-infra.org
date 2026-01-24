@@ -1,28 +1,27 @@
 ** Overview
 
-This phase configures privacy infrastructure for sovereign operations:
+This phase configures privacy infrastructure - foundational services and applications:
 - Install and configure Tor for network anonymity
+- Install and configure I2P for P2P network privacy
 - Install Tor Browser for web browsing
-- Configure git for anonymous/pseudonymous commits
-- Set up Tor-routed SSH for GitHub/GitLab
-- Generate SSH keys for git hosting
 - Install and configure KeePassXC for password management
+- Set up shared Tor Browser profile infrastructure for GitHub-authenticated apps
 
-All git operations route through Tor automatically. Tor Browser provides fingerprint resistance for web research.
+All network routing infrastructure is established here. Application-specific wrappers (git, SSH, etc.) are configured in Phase 4.
 
 **Network privacy model:**
-- Git operations: Tor (hide IP from GitHub/GitLab)
 - Web browsing: Tor Browser (fingerprint resistance)
 - Monero node: I2P + Tor (configured in monerod phase)
+- Application wrappers: Use Tor SOCKS proxy (Phase 4)
 
 **Note on account management:** For high-security operations (crypto wallets, account registration), use hardware wallet + Tor Browser. Future documentation will cover hardware wallet setup.
 
 ** Threat Model
 
-Network-level privacy for git/web operations:
-- ✓ IP hidden from GitHub/GitLab (Tor routing)
+Network-level privacy for operations:
+- ✓ IP hidden from web services (Tor routing)
 - ✓ Browser fingerprinting minimized (Tor Browser)
-- ✓ Git commits don't leak location
+- ✓ P2P network privacy (I2P for Monero)
 
 Trade-offs: AI services may know identity (paid accounts), package managers reveal tech stack. Focus is operational privacy, not theoretical anonymity.
 
@@ -30,13 +29,13 @@ Trade-offs: AI services may know identity (paid accounts), package managers reve
 
 Tor Browser version is configurable in config.yml. Check https://www.torproject.org/download/ for latest version.
 
-** Tor
+** Tor Daemon
 
 *** Install Tor
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
     # ------------------------------------------------------------------------
-    # Privacy Configuration
+    # Privacy Infrastructure
     # ------------------------------------------------------------------------
 
     - name: Install Tor
@@ -52,9 +51,9 @@ Tor Browser version is configurable in config.yml. Check https://www.torproject.
 
 #+begin_src conf :tangle ../configs/templates/torrc.j2
 ## Tor Configuration for Privacy-First Operation
-## Generated from org/05-privacy.org
+## Generated from org/03-privacy-infra.org
 
-# SOCKS proxy for git/SSH operations
+# SOCKS proxy for application wrappers
 SOCKSPort {{ tor_socks_port }}
 SOCKSPolicy accept 127.0.0.1
 
@@ -95,7 +94,7 @@ ExitPolicyRejectPrivate 1
 
 *** Deploy Tor Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
     - name: Deploy Tor configuration
       template:
         src: ../configs/templates/torrc.j2
@@ -155,11 +154,201 @@ ExitPolicyRejectPrivate 1
       tags: [privacy, tor]
 #+end_src
 
+** I2P Daemon
+
+*** Install i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # I2P Network Privacy
+    # ------------------------------------------------------------------------
+
+    - name: Install i2pd
+      community.general.pacman:
+        name:
+          - i2pd
+        state: present
+      tags: [privacy, i2p]
+#+end_src
+
+*** Configure i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    - name: Create i2pd tunnels config directory
+      file:
+        path: /etc/i2pd/tunnels.d
+        state: directory
+        owner: i2pd
+        group: i2pd
+        mode: '0755'
+      tags: [privacy, i2p, config]
+#+end_src
+
+*** Monero I2P Server Tunnels
+
+#+begin_src conf :tangle ../configs/templates/monero-i2p.conf.j2
+# I2P Server Tunnels for Monero
+# Generated from org/03-privacy-infra.org
+
+[monero-node]
+type = server
+host = 127.0.0.1
+# Anonymous inbound port (P2P)
+port = 18085
+inport = 0
+keys = monero-mainnet.dat
+
+[monero-rpc]
+type = server
+host = 127.0.0.1
+# Restricted RPC port (for wallet connections)
+port = 18089
+keys = monero-mainnet.dat
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    - name: Deploy Monero I2P tunnel configuration
+      template:
+        src: ../configs/templates/monero-i2p.conf.j2
+        dest: /etc/i2pd/tunnels.d/monero-mainnet.conf
+        owner: i2pd
+        group: i2pd
+        mode: '0644'
+      notify: restart i2pd
+      tags: [privacy, i2p, config]
+#+end_src
+
+*** Enable and Start i2pd
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    - name: Enable and start i2pd service
+      systemd:
+        name: i2pd
+        enabled: yes
+        state: started
+      tags: [privacy, i2p]
+
+    - name: Wait for i2pd to generate tunnel address
+      pause:
+        seconds: 15
+      tags: [privacy, i2p]
+#+end_src
+
+*** Retrieve I2P Address
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    - name: Check I2P web console accessibility
+      uri:
+        url: http://127.0.0.1:7070
+        method: GET
+        timeout: 5
+      register: i2p_console_check
+      failed_when: false
+      tags: [privacy, i2p, verify]
+
+    - name: Retrieve I2P tunnel address from web console
+      shell: |
+        curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | \
+        grep -oP '[a-z0-9]{52}\.b32\.i2p' | \
+        head -1
+      register: i2p_address_raw
+      changed_when: false
+      failed_when: false
+      when: i2p_console_check.status == 200
+      tags: [privacy, i2p, verify]
+
+    - name: Create monero config directory
+      file:
+        path: /etc/monero
+        state: directory
+        mode: '0755'
+      tags: [privacy, i2p, config]
+
+    - name: Save I2P address to file for monerod
+      copy:
+        content: "{{ i2p_address_raw.stdout | default('') }}"
+        dest: /etc/monero/i2p-address.txt
+        mode: '0644'
+      when:
+        - i2p_address_raw.stdout is defined
+        - i2p_address_raw.stdout != ""
+      tags: [privacy, i2p, config]
+#+end_src
+
+*** I2P Status Script
+
+#+begin_src bash :tangle ../configs/templates/i2p-status.sh.j2
+#!/bin/bash
+# I2P Status Script
+# Generated from org/03-privacy-infra.org
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}=== I2P Status ===${NC}"
+echo ""
+
+# Service status
+if systemctl is-active --quiet i2pd; then
+  echo -e "${GREEN}✓ i2pd service running${NC}"
+else
+  echo -e "${YELLOW}✗ i2pd service NOT running${NC}"
+  exit 1
+fi
+
+echo ""
+
+# I2P address
+if [ -f /etc/monero/i2p-address.txt ]; then
+  I2P_ADDR=$(cat /etc/monero/i2p-address.txt)
+  if [ -n "$I2P_ADDR" ]; then
+    echo "--- Monero I2P Address ---"
+    echo "  $I2P_ADDR"
+  else
+    echo -e "${YELLOW}⚠ I2P address file exists but is empty${NC}"
+    echo "  Tunnels may still be initializing"
+  fi
+else
+  echo -e "${YELLOW}⚠ I2P address not yet generated${NC}"
+  echo "  Check web console: http://127.0.0.1:7070/?page=i2p_tunnels"
+fi
+
+echo ""
+
+# Tunnel status via web console
+echo "--- I2P Tunnel Status ---"
+if curl -s --max-time 3 http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -q "monero-node"; then
+  echo -e "${GREEN}✓ Monero tunnels configured${NC}"
+  TUNNELS=$(curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -c "monero")
+  echo "  Found $TUNNELS monero tunnel(s)"
+  # Extract I2P address
+  I2P_ADDR=$(curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | grep -oP '[a-z0-9]{52}\.b32\.i2p' | head -1)
+  if [ -n "$I2P_ADDR" ]; then
+    echo "  Address: $I2P_ADDR"
+  fi
+else
+  echo -e "${YELLOW}⚠ Could not verify tunnel status${NC}"
+fi
+
+echo ""
+echo "--- Commands ---"
+echo "  Web console: http://127.0.0.1:7070"
+echo "  Tunnels page: http://127.0.0.1:7070/?page=i2p_tunnels"
+echo "  Logs: journalctl -u i2pd -f"
+echo "  Restart: systemctl restart i2pd"
+echo ""
+#+end_src
+
 ** Tor Browser
 
 *** Download and Install
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # Tor Browser
+    # ------------------------------------------------------------------------
+
     - name: Check if Tor Browser is installed
       stat:
         path: /opt/tor-browser
@@ -331,7 +520,11 @@ fi
 
 *** Deploy Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # GitHub-Authenticated Browser Infrastructure
+    # ------------------------------------------------------------------------
+
     - name: Deploy GitHub-auth browser helper script
       template:
         src: ../configs/templates/github-auth-browser.sh.j2
@@ -349,7 +542,7 @@ fi
 
 *** Download GitHub Icon
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
     - name: Download GitHub icon
       get_url:
         url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
@@ -360,7 +553,7 @@ fi
 
 *** GitHub Desktop Entry
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
     - name: Create GitHub desktop entry
       copy:
         content: |
@@ -378,189 +571,15 @@ fi
       tags: [privacy, browser]
 #+end_src
 
-*** Notes
-
-**** Usage
-
-The GitHub desktop application:
-- **First launch**: Opens Tor Browser with github.com in dedicated profile
-- **Subsequent launches**: Focuses existing Tor Browser window
-- **Session persistence**: Keep browser running = stay logged in, close browser = log out
-- **Shared profile**: Other apps (Element, etc.) can use same profile and session
-
-**** Adding More Apps
-
-To add apps that authenticate via GitHub (e.g., Element):
-
-#+begin_example
-# Create app script
-cat > configs/templates/element-browser.sh.j2 << 'EOF'
-#!/bin/bash
-/usr/local/bin/github-auth-browser.sh https://app.element.io own-window "Element"
-EOF
-
-# Add deployment task in org/03-privacy.org
-# Add desktop entry
-#+end_example
-
-The "own-window" mode ensures Element gets its own window, separate from GitHub.
-
-**** Security Model
-
-- All apps share same Tor circuit (exit node)
-- All apps share GitHub authentication
-- Standard Tor Browser security (no session persistence on close)
-- Close browser to clear all sessions and log out
-#+end_src
-
-** Git Privacy Configuration
-
-*** Git Configuration Template
-
-#+begin_src gitconfig :tangle ../configs/templates/anon-gitconfig.j2
-[user]
-	name = {{ anon_git_name }}
-	email = {{ anon_git_email }}
-
-[http]
-	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
-[https]
-	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
-
-[core]
-	editor = vim
-	autocrlf = input
-
-[init]
-	defaultBranch = main
-
-[pull]
-	rebase = false
-
-[push]
-	default = simple
-
-[commit]
-	gpgsign = false
-
-# Avoid leaking system information
-[advice]
-	detachedHead = false
-#+end_src
-
-*** SSH Configuration Template
-
-#+begin_src sshconfig :tangle ../configs/templates/anon-ssh-config.j2
-# SSH configuration for privacy-first git operations
-# Routes all git traffic through Tor SOCKS proxy
-
-Host github.com
-    HostName github.com
-    User git
-    Port 22
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
-    IdentityFile ~/.ssh/id_ed25519_github
-    IdentitiesOnly yes
-    ServerAliveInterval 60
-    ServerAliveCountMax 10
-
-Host gitlab.com
-    HostName gitlab.com
-    User git
-    Port 22
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
-    IdentityFile ~/.ssh/id_ed25519_gitlab
-    IdentitiesOnly yes
-    ServerAliveInterval 60
-    ServerAliveCountMax 10
-
-# Catch-all for other git hosts
-Host *.github.com *.gitlab.com
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
-#+end_src
-
-*** Deploy Privacy Configuration
-
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
-    - name: Ensure primary user .ssh directory exists
-      file:
-        path: "/home/{{ dev_user }}/.ssh"
-        state: directory
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: '0700'
-      tags: [privacy, config]
-
-    - name: Deploy git configuration for privacy
-      template:
-        src: ../configs/templates/anon-gitconfig.j2
-        dest: "/home/{{ dev_user }}/.gitconfig"
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: '0644'
-      tags: [privacy, config]
-
-    - name: Deploy SSH configuration for Tor routing
-      template:
-        src: ../configs/templates/anon-ssh-config.j2
-        dest: "/home/{{ dev_user }}/.ssh/config"
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: '0600'
-      tags: [privacy, config]
-
-    - name: Create workspace directory
-      file:
-        path: "/home/{{ dev_user }}/projects"
-        state: directory
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: '0755'
-      tags: [privacy, config]
-#+end_src
-
-*** Generate SSH Keys Script
-
-#+begin_src bash :tangle ../configs/templates/generate-git-keys.sh.j2
-#!/bin/bash
-# Generate SSH keys for git hosting (see 03-privacy.org)
-
-set -euo pipefail
-
-if [ "$(whoami)" != "{{ dev_user }}" ]; then
-    echo "ERROR: Run as {{ dev_user }} user"
-    exit 1
-fi
-
-SERVICE="${1:-}"
-
-if [ -z "$SERVICE" ]; then
-    echo "Usage: $0 <service>"
-    echo "Examples: $0 github | $0 gitlab"
-    exit 1
-fi
-
-KEY_FILE="$HOME/.ssh/id_ed25519_$SERVICE"
-
-if [ -f "$KEY_FILE" ]; then
-    read -p "Key exists. Overwrite? (y/N) " -n 1 -r
-    echo
-    [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
-fi
-
-ssh-keygen -t ed25519 -C "{{ anon_git_email }}" -f "$KEY_FILE" -N ""
-
-echo ""
-echo "=== Public Key (add to $SERVICE) ==="
-cat "${KEY_FILE}.pub"
-echo ""
-#+end_src
-
 ** KeePassXC
 
 *** Install KeePassXC
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # KeePassXC Password Manager
+    # ------------------------------------------------------------------------
+
     - name: Install KeePassXC
       community.general.pacman:
         name:
@@ -601,7 +620,7 @@ ShowTrayIcon=false
 
 *** Deploy Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
     - name: Create KeePassXC config directory
       file:
         path: "/home/{{ dev_user }}/.config/keepassxc"
@@ -625,9 +644,9 @@ ShowTrayIcon=false
 
 #+begin_src bash :tangle ../configs/templates/check-privacy.sh.j2
 #!/bin/bash
-# Verify privacy configuration
+# Verify privacy infrastructure configuration
 
-echo "=== Privacy Configuration Check ==="
+echo "=== Privacy Infrastructure Check ==="
 echo ""
 
 # Check Tor is running
@@ -649,6 +668,34 @@ else
     echo "✗ Tor SOCKS proxy not working"
 fi
 
+# Check I2P service
+echo ""
+echo "--- I2P Service ---"
+if systemctl is-active --quiet i2pd; then
+  echo "✓ I2P service running"
+else
+  echo "✗ I2P service NOT running"
+fi
+
+# I2P SAM bridge
+if timeout 5 bash -c "echo -e 'HELLO VERSION\n' | nc 127.0.0.1 7656" 2>/dev/null | grep -q "HELLO REPLY"; then
+  echo "✓ I2P SAM bridge responding"
+else
+  echo "✗ I2P SAM bridge not responding"
+fi
+
+# I2P address
+if [ -f /etc/monero/i2p-address.txt ]; then
+  I2P_ADDR=$(cat /etc/monero/i2p-address.txt)
+  if [ -n "$I2P_ADDR" ]; then
+    echo "✓ I2P address configured: ${I2P_ADDR:0:20}...${I2P_ADDR: -10}"
+  else
+    echo "⚠ I2P address file empty (may still be generating)"
+  fi
+else
+  echo "✗ I2P address file not found"
+fi
+
 # Check Tor Browser
 echo ""
 echo "--- Tor Browser ---"
@@ -659,67 +706,46 @@ else
     echo "✗ Tor Browser not found"
 fi
 
-# Check git configuration
+# Check KeePassXC
 echo ""
-echo "--- Git Configuration ---"
-if [ -f "/home/{{ dev_user }}/.gitconfig" ]; then
-    echo "✓ Git config exists"
-    echo "  Name: $(sudo -u {{ dev_user }} git config user.name)"
-    echo "  Email: $(sudo -u {{ dev_user }} git config user.email)"
+echo "--- KeePassXC ---"
+if command -v keepassxc &> /dev/null; then
+    echo "✓ KeePassXC installed"
+    echo "  Launch: keepassxc"
 else
-    echo "✗ Git config not found"
-fi
-
-# Check SSH config
-if [ -f "/home/{{ dev_user }}/.ssh/config" ]; then
-    echo "✓ SSH config exists (Tor routing enabled)"
-else
-    echo "✗ SSH config not found"
-fi
-
-# Check SSH keys
-echo ""
-echo "--- SSH Keys ---"
-if ls /home/{{ dev_user }}/.ssh/id_ed25519_* 2>/dev/null | grep -q .; then
-    echo "✓ SSH keys found:"
-    ls -1 /home/{{ dev_user }}/.ssh/id_ed25519_* | grep -v ".pub$"
-else
-    echo "⚠ No SSH keys generated yet"
-    echo "  Run: /usr/local/bin/generate-git-keys.sh github"
-fi
-
-# Test git over Tor
-echo ""
-echo "--- Git over Tor Test ---"
-if sudo -u {{ dev_user }} timeout 30 ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-    echo "✓ GitHub SSH working through Tor"
-else
-    echo "⚠ GitHub SSH not configured or not working"
-    echo "  (Normal if you haven't added SSH keys to GitHub yet)"
+    echo "✗ KeePassXC not found"
 fi
 
 echo ""
-echo "Next: Configure monerod (Phase 5) for I2P network privacy"
+echo "Next: Configure privacy wrappers (Phase 4) for git/SSH operations"
 echo ""
 #+end_src
 
 ** Deploy Helper Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
-    - name: Deploy privacy helper scripts
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # Privacy Infrastructure Helper Scripts
+    # ------------------------------------------------------------------------
+
+    - name: Deploy privacy infrastructure helper scripts
       template:
         src: "../configs/templates/{{ item }}.j2"
         dest: "/usr/local/bin/{{ item }}"
         mode: '0755'
       loop:
-        - generate-git-keys.sh
+        - i2p-status.sh
         - check-privacy.sh
       tags: [privacy, scripts]
 #+end_src
 
-** Verify Privacy Configuration
+** Verify Privacy Infrastructure
 
-#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy-infra.yml
+    # ------------------------------------------------------------------------
+    # Privacy Infrastructure Verification
+    # ------------------------------------------------------------------------
+
     - name: Wait for Tor to start
       pause:
         seconds: 5
@@ -740,32 +766,37 @@ echo ""
       changed_when: false
       tags: [privacy, verify]
 
+    - name: Verify I2P service status
+      systemd:
+        name: i2pd
+      register: i2pd_status
+      tags: [privacy, verify]
+
     - name: Verify Tor Browser installation
       stat:
         path: /usr/share/applications/tor-browser.desktop
       register: tor_browser_desktop
       tags: [privacy, verify]
 
-    - name: Display privacy configuration status
+    - name: Display privacy infrastructure status
       debug:
         msg:
-          - "=== Privacy Configuration Complete ==="
-          - "Tor Service: {{ tor_status.status.ActiveState }}"
-          - "SOCKS Proxy: 127.0.0.1:{{ tor_socks_port }}"
-          - "User: {{ dev_user }}"
-          - "Workspace: /home/{{ dev_user }}/projects"
+          - "=== Privacy Infrastructure Complete ==="
           - ""
-          - "Test result: {{ tor_test.stdout }}"
+          - "Tor Service: {{ tor_status.status.ActiveState }}"
+          - "Tor SOCKS Proxy: 127.0.0.1:{{ tor_socks_port }}"
+          - "Tor test result: {{ tor_test.stdout }}"
+          - ""
+          - "I2P Service: {{ i2pd_status.status.ActiveState }}"
+          - "I2P SAM Bridge: 127.0.0.1:7656"
+          - "{% if i2p_address_raw.stdout is defined and i2p_address_raw.stdout != '' %}I2P address: {{ i2p_address_raw.stdout }}{% else %}I2P address: Generating (check i2p-status.sh in ~1 minute){% endif %}"
           - ""
           - "Tor Browser: {% if tor_browser_desktop.stat.exists %}Installed (launch: tor-browser){% else %}Not found{% endif %}"
+          - "KeePassXC: Installed (launch: keepassxc)"
           - ""
-          - "Next steps:"
-          - "1. Generate SSH keys: /usr/local/bin/generate-git-keys.sh github"
-          - "2. Save public key for later (add to GitHub when ready)"
-          - "3. Verify: check-privacy.sh"
+          - "Infrastructure ready for application wrappers (Phase 4)"
+          - "Verify: check-privacy.sh"
           - ""
-          - "Git operations will route through Tor automatically"
-          - "Monerod will use I2P (configured in Phase 5)"
       tags: [privacy, verify]
 #+end_src
 
@@ -774,33 +805,37 @@ echo ""
 *** Quick Operations
 
 #+begin_example
-# Generate SSH keys for git hosting
-/usr/local/bin/generate-git-keys.sh github
-/usr/local/bin/generate-git-keys.sh gitlab
-
-# Verify privacy setup
+# Verify privacy infrastructure
 check-privacy.sh
+
+# Check I2P status
+i2p-status.sh
 
 # Launch Tor Browser
 tor-browser
+
+# Launch KeePassXC
+keepassxc
 #+end_example
 
-*** Network Routing
+*** Network Routing Infrastructure
 
-**Git operations (clone, push, pull):**
-- Route through Tor automatically (via SSH config)
-- Hides your IP from GitHub/GitLab
-- Test: `ssh -T git@github.com`
+**Tor daemon:**
+- SOCKS proxy on port {{ tor_socks_port }}
+- Used by application wrappers (git, SSH, etc.)
+- Test: `curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip`
 
-**Monero node:**
-- Uses I2P for transaction broadcast
-- Uses I2P hidden service for P2P
-- Configured in monerod phase (05)
+**I2P daemon:**
+- SAM bridge on port 7656
+- Used by Monero node for P2P privacy
+- Test: `i2p-status.sh`
 
-**Web browsing:**
-- Use Tor Browser for all technical research
-- Better fingerprint resistance than regular browsers
-- Launch: `tor-browser` or from app menu
+**Monero node routing:**
+- Transaction broadcast: I2P primary, Tor fallback
+- P2P connections: I2P hidden service
+- Blockchain sync: Clearnet (sybil protection)
+
+Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
 
 *** Tor Browser Updates
 
@@ -848,3 +883,26 @@ keepassxc  # Launch, create new database with strong master password
 - Upload `.kdbx` to cloud drive via Tor Browser for off-site backup
 - File is encrypted locally—cloud drive sees only opaque blob
 - Manual off-site backup when critical data changes
+
+*** GitHub Browser Infrastructure
+
+The GitHub browser wrapper uses a shared Tor Browser profile for all GitHub-authenticated apps. This provides:
+- Persistent GitHub session across app launches
+- Shared Tor circuit (same exit node)
+- Session isolation from main Tor Browser
+
+**Usage:**
+- Launch GitHub: Desktop icon or `github-browser.sh`
+- First launch: Opens Tor Browser, log into GitHub
+- Subsequent launches: Focuses existing window
+- Keep browser open = stay logged in
+- Close browser = log out
+
+**Adding more apps:**
+See Phase 4 (privacy-wrappers) for pattern to add Element, etc.
+
+*** I2P vs Tor
+
+Monero recommends I2P for P2P connections:
+- Designed for peer-to-peer networks (not client-server)
+- No exit nodes (all traffic within I2P network)

@@ -20,7 +20,7 @@ Physical Server (Beelink AMD Ryzen)
 │  ├─ mining (Monero mining, headless)
 │  ├─ monerod (Monero full node, I2P privacy)
 │  └─ Services:
-│     ├─ Tor (git operations, web browsing)
+│     ├─ Tor (network privacy layer)
 │     ├─ I2P (Monero P2P network privacy)
 │     ├─ P2Pool (decentralized mining pool)
 │     └─ XMRig (CPU mining)
@@ -64,7 +64,6 @@ ansible-playbook ansible/validate.yml
 ansible-playbook ansible/playbook.yml --tags base -K
 ansible-playbook ansible/playbook.yml --tags wireguard -K
 ansible-playbook ansible/playbook.yml --tags privacy -K
-ansible-playbook ansible/playbook.yml --tags i2p -K
 ansible-playbook ansible/playbook.yml --tags monerod -K
 ansible-playbook ansible/playbook.yml --tags users -K
 ansible-playbook ansible/playbook.yml --tags wallet -K
@@ -100,15 +99,15 @@ Each phase can be worked on independently without re-running the entire installa
 Available tags correspond to phases:
 - =base= - Phase 1: Base system
 - =wireguard= - Phase 2: WireGuard VPN
-- =privacy= - Phase 3: Privacy (Tor, git)
-- =i2p= - Phase 4: I2P network privacy
+- =privacy= - Phase 3: Privacy infrastructure (Tor, I2P) and wrappers (git, SSH)
 - =monerod= - Phase 5: Monero full node
 - =users= - Phase 6: User accounts
-- =mining= - Phase 7: Mining
-- =firewall= - Phase 8: Firewall
-- =monitoring= - Phase 9: Monitoring
-- =backup= - Phase 10: Backup
-- =verify= - Phase 11: Verification
+- =wallet= - Phase 7: Monero wallet
+- =mining= - Phase 8: Mining
+- =firewall= - Phase 9: Firewall
+- =monitoring= - Phase 10: Monitoring
+- =backup= - Phase 11: Backup
+- =verify= - Phase 12: Verification
 
 * Pre-flight Validation
 #+INCLUDE: "00a-validation.org"
@@ -122,11 +121,11 @@ Available tags correspond to phases:
 * Phase 2: WireGuard Secure Access
 #+INCLUDE: "02-wireguard.org"
 
-* Phase 3: Privacy Configuration
-#+INCLUDE: "03-privacy.org"
+* Phase 3: Privacy Infrastructure
+#+INCLUDE: "03-privacy-infra.org"
 
-* Phase 4: I2P Network Privacy
-#+INCLUDE: "04-i2p.org"
+* Phase 4: Privacy Wrappers
+#+INCLUDE: "04-privacy-wrappers.org"
 
 * Phase 5: Monero Full Node
 #+INCLUDE: "05-monerod.org"
@@ -144,13 +143,13 @@ Available tags correspond to phases:
 #+INCLUDE: "09-firewall.org"
 
 * Phase 10: Monitoring
-#+INCLUDE: "09-monitoring.org"
+#+INCLUDE: "10-monitoring.org"
 
 * Phase 11: Backup & Recovery
-#+INCLUDE: "10-backup.org"
+#+INCLUDE: "11-backup.org"
 
 * Phase 12: Verification & Testing
-#+INCLUDE: "11-verification.org"
+#+INCLUDE: "12-verification.org"
 
 * Update Management
 #+INCLUDE: "97-updates.org"

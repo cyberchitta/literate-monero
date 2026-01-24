@@ -1,0 +1,346 @@
+** Overview
+
+This phase configures privacy wrappers for applications - routing specific tools through the privacy infrastructure installed in Phase 3:
+- Configure git to route through Tor
+- Configure SSH to route through Tor
+- Generate SSH keys for git hosting
+- Set up workspace directory
+
+**Pattern established:** This shows how to take any application/workflow and route it through Tor. Currently focused on development tools (git, SSH), but the same pattern applies to any privacy-sensitive workflow.
+
+**Prerequisites:** Phase 3 (privacy-infra) must be complete - Tor daemon must be running with SOCKS proxy on port {{ tor_socks_port }}.
+
+** Threat Model for Development Operations
+
+**What this protects:**
+- ✓ IP hidden from GitHub/GitLab (Tor routing)
+- ✓ Git commits don't leak location
+- ✓ SSH connections routed through Tor
+
+**What this doesn't protect:**
+- GitHub/GitLab knows your account (if you're logged in)
+- Commit metadata (name, email) is in git config
+- Repository content is visible to hosting provider
+
+Trade-off: Operational privacy for development, not anonymity from hosting providers.
+
+** Git Privacy Configuration
+
+*** Git Configuration Template
+
+#+begin_src gitconfig :tangle ../configs/templates/anon-gitconfig.j2
+[user]
+	name = {{ anon_git_name }}
+	email = {{ anon_git_email }}
+
+[http]
+	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+[https]
+	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+
+[core]
+	editor = vim
+	autocrlf = input
+
+[init]
+	defaultBranch = main
+
+[pull]
+	rebase = false
+
+[push]
+	default = simple
+
+[commit]
+	gpgsign = false
+
+# Avoid leaking system information
+[advice]
+	detachedHead = false
+#+end_src
+
+*** SSH Configuration Template
+
+#+begin_src sshconfig :tangle ../configs/templates/anon-ssh-config.j2
+# SSH configuration for privacy-first git operations
+# Routes all git traffic through Tor SOCKS proxy
+
+Host github.com
+    HostName github.com
+    User git
+    Port 22
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    IdentityFile ~/.ssh/id_ed25519_github
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 10
+
+Host gitlab.com
+    HostName gitlab.com
+    User git
+    Port 22
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    IdentityFile ~/.ssh/id_ed25519_gitlab
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 10
+
+# Catch-all for other git hosts
+Host *.github.com *.gitlab.com
+    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+#+end_src
+
+*** Deploy Privacy Configuration
+
+#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+    # ------------------------------------------------------------------------
+    # Privacy Wrappers for Applications
+    # ------------------------------------------------------------------------
+
+    - name: Ensure primary user .ssh directory exists
+      file:
+        path: "/home/{{ dev_user }}/.ssh"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0700'
+      tags: [privacy, config]
+
+    - name: Deploy git configuration for privacy
+      template:
+        src: ../configs/templates/anon-gitconfig.j2
+        dest: "/home/{{ dev_user }}/.gitconfig"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0644'
+      tags: [privacy, config]
+
+    - name: Deploy SSH configuration for Tor routing
+      template:
+        src: ../configs/templates/anon-ssh-config.j2
+        dest: "/home/{{ dev_user }}/.ssh/config"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0600'
+      tags: [privacy, config]
+
+    - name: Create workspace directory
+      file:
+        path: "/home/{{ dev_user }}/projects"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      tags: [privacy, config]
+#+end_src
+
+*** Generate SSH Keys Script
+
+#+begin_src bash :tangle ../configs/templates/generate-git-keys.sh.j2
+#!/bin/bash
+# Generate SSH keys for git hosting (see 04-privacy-wrappers.org)
+
+set -euo pipefail
+
+if [ "$(whoami)" != "{{ dev_user }}" ]; then
+    echo "ERROR: Run as {{ dev_user }} user"
+    exit 1
+fi
+
+SERVICE="${1:-}"
+
+if [ -z "$SERVICE" ]; then
+    echo "Usage: $0 <service>"
+    echo "Examples: $0 github | $0 gitlab"
+    exit 1
+fi
+
+KEY_FILE="$HOME/.ssh/id_ed25519_$SERVICE"
+
+if [ -f "$KEY_FILE" ]; then
+    read -p "Key exists. Overwrite? (y/N) " -n 1 -r
+    echo
+    [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
+fi
+
+ssh-keygen -t ed25519 -C "{{ anon_git_email }}" -f "$KEY_FILE" -N ""
+
+echo ""
+echo "=== Public Key (add to $SERVICE) ==="
+cat "${KEY_FILE}.pub"
+echo ""
+#+end_src
+
+** Deploy Helper Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+    # ------------------------------------------------------------------------
+    # Privacy Wrapper Helper Scripts
+    # ------------------------------------------------------------------------
+
+    - name: Deploy privacy wrapper helper scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - generate-git-keys.sh
+      tags: [privacy, scripts]
+#+end_src
+
+** Verify Privacy Wrappers
+
+#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+    # ------------------------------------------------------------------------
+    # Privacy Wrappers Verification
+    # ------------------------------------------------------------------------
+
+    - name: Check git configuration
+      stat:
+        path: "/home/{{ dev_user }}/.gitconfig"
+      register: git_config
+      tags: [privacy, verify]
+
+    - name: Check SSH config
+      stat:
+        path: "/home/{{ dev_user }}/.ssh/config"
+      register: ssh_config
+      tags: [privacy, verify]
+
+    - name: Display privacy wrappers status
+      debug:
+        msg:
+          - "=== Privacy Wrappers Configuration Complete ==="
+          - ""
+          - "Git config: {% if git_config.stat.exists %}Installed{% else %}Not found{% endif %}"
+          - "  Name: {{ anon_git_name }}"
+          - "  Email: {{ anon_git_email }}"
+          - "  HTTP/HTTPS proxy: socks5://127.0.0.1:{{ tor_socks_port }}"
+          - ""
+          - "SSH config: {% if ssh_config.stat.exists %}Installed{% else %}Not found{% endif %}"
+          - "  Routes: github.com, gitlab.com through Tor"
+          - ""
+          - "Workspace: /home/{{ dev_user }}/projects"
+          - ""
+          - "Next steps:"
+          - "1. Generate SSH keys: /usr/local/bin/generate-git-keys.sh github"
+          - "2. Save public key for later (add to GitHub when ready)"
+          - "3. Test: ssh -T git@github.com"
+          - ""
+          - "Git operations will route through Tor automatically"
+          - ""
+      tags: [privacy, verify]
+#+end_src
+
+** Notes
+
+*** Quick Operations
+
+#+begin_example
+# Generate SSH keys for git hosting
+/usr/local/bin/generate-git-keys.sh github
+/usr/local/bin/generate-git-keys.sh gitlab
+
+# Test SSH connection through Tor
+ssh -T git@github.com
+
+# Clone repository (automatically uses Tor)
+cd ~/projects
+git clone git@github.com:user/repo.git
+#+end_example
+
+*** How Git Routing Works
+
+**HTTP/HTTPS operations (git clone https://...):**
+- Git uses HTTP proxy settings from `.gitconfig`
+- All traffic routes through Tor SOCKS proxy
+- Your IP is hidden from GitHub/GitLab
+
+**SSH operations (git clone git@...):**
+- SSH uses ProxyCommand from `.ssh/config`
+- netcat tunnels connection through Tor SOCKS proxy
+- Your IP is hidden from GitHub/GitLab
+
+**Test routing:**
+```bash
+# Should show GitHub authentication success (not your real IP)
+ssh -T git@github.com
+```
+
+*** SSH Keys for Git Hosting
+
+**Purpose:** These keys authenticate git operations (push, pull) to GitHub/GitLab.
+
+**Not the same as:** Server access keys (configured in Phase 2: WireGuard)
+
+**Security model:**
+- Keys generated locally
+- Public key uploaded to GitHub/GitLab (in your account settings)
+- Private key stays on your system
+- All git operations route through Tor
+
+**Adding keys to GitHub:**
+1. Generate: `/usr/local/bin/generate-git-keys.sh github`
+2. Copy public key output
+3. Log into GitHub via Tor Browser
+4. Settings → SSH and GPG keys → New SSH key
+5. Paste public key
+6. Test: `ssh -T git@github.com`
+
+*** Git Identity
+
+Configured in `.gitconfig`:
+- Name: {{ anon_git_name }}
+- Email: {{ anon_git_email }}
+
+This appears in commit metadata. Set to pseudonym for privacy.
+
+**Note:** Commit content and messages still reveal information about you. This wrapper provides network-level privacy (IP hidden), not content anonymity.
+
+*** Extending the Pattern
+
+This phase demonstrates the pattern for routing applications through Tor. To add privacy wrappers for other tools:
+
+1. Identify the tool's network configuration
+2. Route through SOCKS proxy (127.0.0.1:{{ tor_socks_port }})
+3. Create wrapper script if needed
+4. Add to this phase
+
+**Example tools that could use this pattern:**
+- IRC client (route through Tor)
+- Email client (route through Tor)
+- RSS reader (route through Tor)
+- Chat applications (route through Tor)
+
+All follow the same pattern: configure to use `socks5://127.0.0.1:{{ tor_socks_port }}`.
+
+*** Troubleshooting
+
+**Git operations fail:**
+```bash
+# Check Tor is running
+check-privacy.sh
+
+# Test Tor SOCKS proxy
+curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip
+
+# Restart Tor
+sudo systemctl restart tor
+```
+
+**SSH to GitHub fails:**
+```bash
+# Verbose SSH output
+ssh -vT git@github.com
+
+# Check SSH config syntax
+ssh -G github.com | grep -i proxy
+```
+
+**Key authentication fails:**
+```bash
+# Verify key exists
+ls -la ~/.ssh/id_ed25519_github*
+
+# Check key is in SSH config
+grep -A 5 "github.com" ~/.ssh/config
