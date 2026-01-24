@@ -393,7 +393,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
         fi
 
         # Check if window with this title pattern exists
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | contains(\"$TITLE_PATTERN\"))) | .address" | head -1)
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == ${BROWSER_PID} and (.title | contains(\"$TITLE_PATTERN\"))) | .address" | head -1)
 
         if [ -n "$WINDOW" ]; then
             # Window exists - focus it
@@ -404,7 +404,7 @@ if BROWSER_PID=$(pgrep -f "profile.*github-auth"); then
         fi
     else
         # Just focus any existing window
-        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID) | .address" | head -1)
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == ${BROWSER_PID}) | .address" | head -1)
         if [ -n "$WINDOW" ]; then
             hyprctl dispatch focuswindow "address:$WINDOW"
         fi
