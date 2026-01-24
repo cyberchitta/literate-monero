@@ -110,6 +110,12 @@ PrivateKey = {{ wg_server_privkey['content'] | b64decode | trim }}
 ** Deploy WireGuard Configuration
 
 #+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+    - name: Extract existing WireGuard peer configurations
+      shell: awk '/^\[Peer\]/ {found=1} found {print}' /etc/wireguard/wg0.conf 2>/dev/null || true
+      register: existing_peers
+      changed_when: false
+      tags: [wireguard, config]
+
     - name: Deploy WireGuard configuration
       template:
         src: ../configs/templates/wg0.conf.j2
@@ -117,6 +123,14 @@ PrivateKey = {{ wg_server_privkey['content'] | b64decode | trim }}
         mode: '0600'
         owner: root
         group: root
+      tags: [wireguard, config]
+
+    - name: Restore existing peer configurations
+      blockinfile:
+        path: /etc/wireguard/wg0.conf
+        block: "{{ existing_peers.stdout }}"
+        marker: "# {mark} ANSIBLE MANAGED PEERS"
+      when: existing_peers.stdout | length > 0
       tags: [wireguard, config]
 
     - name: Enable IP forwarding for WireGuard
