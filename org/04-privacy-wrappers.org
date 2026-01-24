@@ -418,13 +418,23 @@ else
 fi
 #+end_src
 
-*** GitHub Browser Script
+*** Generic App Launcher Script
 
-#+begin_src bash :tangle ../configs/templates/github-browser.sh.j2
+#+begin_src bash :tangle ../configs/templates/github-auth-app.sh.j2
 #!/bin/bash
-# Open GitHub in shared Tor Browser profile
-# Focuses any existing window in the profile
-/usr/local/bin/github-auth-browser.sh https://github.com focus
+# Generic launcher for GitHub-authenticated apps
+# Usage: github-auth-app.sh <url> [title-pattern]
+
+URL="${1:-https://github.com}"
+TITLE_PATTERN="${2:-}"
+
+if [ -z "$TITLE_PATTERN" ]; then
+    # Focus mode - any window in profile
+    /usr/local/bin/github-auth-browser.sh "$URL" focus
+else
+    # Own window mode - match specific title
+    /usr/local/bin/github-auth-browser.sh "$URL" own-window "$TITLE_PATTERN"
+fi
 #+end_src
 
 *** Deploy Scripts
@@ -441,41 +451,66 @@ fi
         mode: '0755'
       tags: [privacy-wrappers, browser]
 
-    - name: Deploy GitHub browser script
+    - name: Deploy generic GitHub-auth app launcher
       template:
-        src: ../configs/templates/github-browser.sh.j2
-        dest: /usr/local/bin/github-browser.sh
+        src: ../configs/templates/github-auth-app.sh.j2
+        dest: /usr/local/bin/github-auth-app.sh
         mode: '0755'
       tags: [privacy-wrappers, browser]
-#+end_src
 
-*** Download GitHub Icon
-
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
-    - name: Download GitHub icon
-      get_url:
-        url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-        dest: /usr/share/icons/github.png
-        mode: '0644'
+    - name: Create app icons directory
+      file:
+        path: /usr/share/icons/github-auth-apps
+        state: directory
+        mode: '0755'
       tags: [privacy-wrappers, browser]
-#+end_src
 
-*** GitHub Desktop Entry
+    - name: Download app icons
+      get_url:
+        url: "{{ item.icon_url }}"
+        dest: "/usr/share/icons/github-auth-apps/{{ item.icon_name }}"
+        mode: '0644'
+      loop: "{{ github_auth_apps }}"
+      failed_when: false
+      tags: [privacy-wrappers, browser]
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
-    - name: Create GitHub desktop entry
+    - name: Create desktop entries for GitHub-auth apps
       copy:
         content: |
           [Desktop Entry]
-          Name=GitHub
-          GenericName=GitHub Browser
-          Comment=Open GitHub in Tor Browser
-          Exec=/usr/local/bin/github-browser.sh
-          Icon=/usr/share/icons/github.png
+          Name={{ item.name }}
+          GenericName={{ item.name }}
+          Comment=Open {{ item.name }} in Tor Browser (GitHub auth)
+          Exec=/usr/local/bin/github-auth-app.sh "{{ item.url }}" "{{ item.title_pattern }}"
+          Icon=/usr/share/icons/github-auth-apps/{{ item.icon_name }}
           Terminal=false
           Type=Application
-          Categories=Network;Development;
-        dest: /usr/share/applications/github.desktop
+          Categories={{ item.categories }}
+        dest: "/usr/share/applications/{{ item.name | lower }}.desktop"
         mode: '0644'
+      loop: "{{ github_auth_apps }}"
       tags: [privacy-wrappers, browser]
 #+end_src
+
+*** Usage
+
+All GitHub-authenticated apps are configured in `group_vars/all.yml` under `github_auth_apps`.
+
+**Adding a new app:**
+
+1. Add entry to `github_auth_apps` array in `00-configuration.org`
+2. Re-tangle: `./tangle.sh`
+3. Re-run Phase 4: `ansible-playbook playbook.yml --tags privacy-wrappers`
+
+**App behavior:**
+
+- **GitHub** (no title_pattern): Opens/focuses any window in shared profile
+- **Element** (with title_pattern): Opens own window if doesn't exist, focuses if exists
+- All apps share same Tor circuit and GitHub authentication session
+
+**Shared profile benefits:**
+
+- Single GitHub login works across all apps
+- Consistent Tor exit node for all GitHub-auth traffic
+- Session isolation from main Tor Browser
+- Easy to add more apps (Zulip, GitLab, etc.)

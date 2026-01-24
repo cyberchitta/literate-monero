@@ -157,6 +157,26 @@ backup_exclude_patterns:
   - "*.log"
   - "*.cache"
   - ".git"
+
+# ----------------------------------------------------------------------------
+# GitHub-Authenticated Applications
+# ----------------------------------------------------------------------------
+
+# Applications that use GitHub for authentication and share Tor Browser profile
+github_auth_apps:
+  - name: "GitHub"
+    url: "https://github.com"
+    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+    icon_name: "github.png"
+    title_pattern: ""  # Focus any window in profile
+    categories: "Network;Development;"
+
+  - name: "Element"
+    url: "https://app.element.io"
+    icon_url: "https://element.io/images/logo-mark-primary.svg"
+    icon_name: "element.svg"
+    title_pattern: "Element"
+    categories: "Network;InstantMessaging;"
 #+end_src
 
 ** Configuration Notes
