@@ -159,24 +159,16 @@ backup_exclude_patterns:
   - ".git"
 
 # ----------------------------------------------------------------------------
-# GitHub-Authenticated Applications
+# OAuth Browser Configuration
 # ----------------------------------------------------------------------------
 
-# Applications that use GitHub for authentication and share Tor Browser profile
-github_auth_apps:
-  - name: "GitHub"
-    url: "https://github.com"
-    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-    icon_name: "github.png"
-    title_pattern: "GitHub"
-    categories: "Network;Development;"
-
-  - name: "Element"
-    url: "https://app.element.io"
-    icon_url: "https://app.element.io/vector-icons/144.5a63bf2.png"
-    icon_name: "element.png"
-    title_pattern: "Element"
-    categories: "Network;InstantMessaging;"
+# OAuth provider for Tor Browser authentication
+oauth_provider:
+  name: "github"
+  url: "https://github.com"
+  title_pattern: "GitHub"
+  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+  icon_name: "github.png"
 #+end_src
 
 ** Configuration Notes

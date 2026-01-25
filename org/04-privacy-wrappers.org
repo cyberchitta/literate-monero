@@ -347,28 +347,24 @@ ls -la ~/.ssh/id_ed25519_github*
 grep -A 5 "github.com" ~/.ssh/config
 ```
 
-** GitHub-Authenticated Applications
+** OAuth Applications
 
-This section configures desktop applications that use GitHub for authentication (GitHub, Element, etc.) to run in a shared Tor Browser profile. All apps share the same Tor circuit and GitHub session.
-
-*** Helper Script
-
-#+begin_src bash :tangle ../configs/templates/github-auth-browser.sh.j2
+#+begin_src bash :tangle ../configs/templates/oauth-browser.sh.j2
 #!/bin/bash
-# github-auth-browser.sh
-# Manages shared Tor Browser profile for GitHub-authenticated apps
+# oauth-browser.sh
+# Launch Tor Browser with OAuth provider-specific profile
 #
 # Usage:
-#   github-auth-browser.sh <url> <title-pattern>
+#   oauth-browser.sh <provider> <url> <title-pattern>
 #
-# Arguments:
-#   url            - URL to open (default: https://github.com)
-#   title-pattern  - String to match in window title (required)
+# Example:
+#   oauth-browser.sh github https://github.com GitHub
 
-PROFILE_DIR="$HOME/.tor-browser-profiles/github-auth"
+PROVIDER="${1:-github}"
+URL="${2:-https://github.com}"
+TITLE_PATTERN="${3:-}"
+PROFILE_DIR="$HOME/.tor-browser-profiles/${PROVIDER}-auth"
 TOR_BROWSER="/opt/tor-browser/Browser/start-tor-browser"
-URL="${1:-https://github.com}"
-TITLE_PATTERN="${2:-}"
 
 mkdir -p "$PROFILE_DIR"
 
@@ -382,25 +378,23 @@ user_pref("extensions.torlauncher.control_port", 9151);
 user_pref("extensions.torlauncher.socks_port", 9150);
 USER_EOF
 
-# Validate title pattern
-if [ -z "$TITLE_PATTERN" ]; then
-    echo "Error: title-pattern required" >&2
-    exit 1
-fi
-
-# Get parent firefox PID for github-auth profile (not child content processes)
-BROWSER_PID=$(ps aux | grep "firefox.real.*profile.*github-auth" | grep -v grep | grep -v contentproc | awk '{print $2}' | head -1)
+# Get parent firefox PID for this profile
+BROWSER_PID=$(ps aux | grep "firefox.real.*profile.*${PROVIDER}-auth" | grep -v grep | grep -v contentproc | awk '{print $2}' | head -1)
 
 if [ -n "$BROWSER_PID" ]; then
-    # Browser running - check if window for this title pattern exists
-    WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | test(\"$TITLE_PATTERN\"; \"i\"))) | .address" | head -1)
+    # Browser running
+    if [ -n "$TITLE_PATTERN" ]; then
+        # Try to find window matching title pattern
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID and (.title | test(\"$TITLE_PATTERN\"; \"i\"))) | .address" | head -1)
+    fi
+
+    if [ -z "$WINDOW" ]; then
+        # No specific match - focus any window from this profile
+        WINDOW=$(hyprctl clients -j | jq -r ".[] | select(.pid == $BROWSER_PID) | .address" | head -1)
+    fi
 
     if [ -n "$WINDOW" ]; then
-        # Window exists - focus it
         hyprctl dispatch focuswindow "address:$WINDOW"
-    else
-        # Window doesn't exist - create new window via remote command
-        "$TOR_BROWSER" --profile "$PROFILE_DIR" -new-window "$URL" 2>/dev/null || true
     fi
 else
     # Browser not running - start it
@@ -408,99 +402,48 @@ else
 fi
 #+end_src
 
-*** Generic App Launcher Script
-
-#+begin_src bash :tangle ../configs/templates/github-auth-app.sh.j2
-#!/bin/bash
-# Generic launcher for GitHub-authenticated apps
-# Usage: github-auth-app.sh <url> [title-pattern]
-
-URL="${1:-https://github.com}"
-TITLE_PATTERN="${2:-}"
-
-if [ -z "$TITLE_PATTERN" ]; then
-    # Focus mode - any window in profile
-    /usr/local/bin/github-auth-browser.sh "$URL" focus
-else
-    # Own window mode - match specific title
-    /usr/local/bin/github-auth-browser.sh "$URL" own-window "$TITLE_PATTERN"
-fi
-#+end_src
-
 *** Deploy Scripts
 
 #+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
     # ------------------------------------------------------------------------
-    # GitHub-Authenticated Browser Infrastructure
+    # OAuth Browser Infrastructure
     # ------------------------------------------------------------------------
 
-    - name: Deploy GitHub-auth browser helper script
+    - name: Deploy OAuth browser script
       template:
-        src: ../configs/templates/github-auth-browser.sh.j2
-        dest: /usr/local/bin/github-auth-browser.sh
-        mode: '0755'
-      tags: [privacy-wrappers, browser]
-
-    - name: Deploy generic GitHub-auth app launcher
-      template:
-        src: ../configs/templates/github-auth-app.sh.j2
-        dest: /usr/local/bin/github-auth-app.sh
+        src: ../configs/templates/oauth-browser.sh.j2
+        dest: /usr/local/bin/oauth-browser.sh
         mode: '0755'
       tags: [privacy-wrappers, browser]
 
     - name: Create app icons directory
       file:
-        path: /usr/share/icons/github-auth-apps
+        path: /usr/share/icons/oauth-apps
         state: directory
         mode: '0755'
       tags: [privacy-wrappers, browser]
 
-    - name: Download app icons
+    - name: Download OAuth provider icon
       get_url:
-        url: "{{ item.icon_url }}"
-        dest: "/usr/share/icons/github-auth-apps/{{ item.icon_name }}"
+        url: "{{ oauth_provider.icon_url }}"
+        dest: "/usr/share/icons/oauth-apps/{{ oauth_provider.icon_name }}"
         mode: '0644'
-      loop: "{{ github_auth_apps }}"
       failed_when: false
       tags: [privacy-wrappers, browser]
 
-    - name: Create desktop entries for GitHub-auth apps
+    - name: Create desktop entry for OAuth browser
       copy:
         content: |
           [Desktop Entry]
-          Name={{ item.name }}
-          GenericName={{ item.name }}
-          Comment=Open {{ item.name }} in Tor Browser (GitHub auth)
-          Exec=/usr/local/bin/github-auth-app.sh "{{ item.url }}" "{{ item.title_pattern }}"
-          Icon=/usr/share/icons/github-auth-apps/{{ item.icon_name }}
+          Name=GitHub Auth Browser
+          GenericName=GitHub Auth Browser
+          Comment=Tor Browser with GitHub OAuth (shared session for GitHub, Element, etc.)
+          Exec=/usr/local/bin/oauth-browser.sh {{ oauth_provider.name }} {{ oauth_provider.url }} {{ oauth_provider.title_pattern }}
+          Icon=/usr/share/icons/oauth-apps/{{ oauth_provider.icon_name }}
           Terminal=false
           Type=Application
-          Categories={{ item.categories }}
-        dest: "/usr/share/applications/{{ item.name | lower }}.desktop"
+          Categories=Network;Development;
+        dest: /usr/share/applications/github-auth-browser.desktop
         mode: '0644'
-      loop: "{{ github_auth_apps }}"
       tags: [privacy-wrappers, browser]
 #+end_src
-
-*** Usage
-
-All GitHub-authenticated apps are configured in `group_vars/all.yml` under `github_auth_apps`.
-
-**Adding a new app:**
-
-1. Add entry to `github_auth_apps` array in `00-configuration.org`
-2. Re-tangle: `./tangle.sh`
-3. Re-run Phase 4: `ansible-playbook playbook.yml --tags privacy-wrappers`
-
-**App behavior:**
-
-- **GitHub** (no title_pattern): Opens/focuses any window in shared profile
-- **Element** (with title_pattern): Opens own window if doesn't exist, focuses if exists
-- All apps share same Tor circuit and GitHub authentication session
-
-**Shared profile benefits:**
-
-- Single GitHub login works across all apps
-- Consistent Tor exit node for all GitHub-auth traffic
-- Session isolation from main Tor Browser
-- Easy to add more apps (Zulip, GitLab, etc.)
