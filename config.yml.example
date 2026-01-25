@@ -121,12 +121,6 @@ firewall_allowed_ports:
 # Optional: Advanced Configuration
 # ----------------------------------------------------------------------------
 
-# Automatic security updates (recommended)
-auto_security_updates: true
-
-# Automatic package updates (use with caution)
-auto_package_updates: false
-
 # Disk space alert threshold (percentage)
 disk_alert_threshold: 90
 

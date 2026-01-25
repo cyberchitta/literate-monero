@@ -3,9 +3,11 @@
 This phase sets up the base system:
 - System updates
 - Essential packages
+- Brave browser installation
 - System configuration (timezone, locale, hostname)
 - Kernel parameters
 - Verification of disk encryption
+- Cleanup of unwanted packages
 
 ** Playbook Header
 
@@ -29,9 +31,7 @@ All phases append to the same playbook. This starts the main play.
   tasks:
 #+end_src
 
-** Essential Packages
-
-Install tools needed for system administration and development.
+** Deploy System Version
 
 #+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
     - name: Deploy system version
@@ -40,23 +40,13 @@ Install tools needed for system administration and development.
         dest: /etc/literate-monero-version
         mode: '0644'
       tags: [base, version]
+#+end_src
 
-    - name: Remove unwanted pre-installed packages
-      community.general.pacman:
-        name:
-          - 1password
-          - basecamp
-          - hey
-          - libreoffice-fresh
-          - neovim
-          - kdenlive
-          - spotify
-          - signal-desktop  # Remove by default - requires phone number
-          - obs-studio
-          - discord  # Proprietary, poor Tor support, centralized
-      state: absent
-      tags: [base, cleanup]
+** Essential Packages
 
+Install tools needed for system administration and development.
+
+#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
     - name: Install essential system packages
       community.general.pacman:
         name:
@@ -78,6 +68,20 @@ Install tools needed for system administration and development.
           - openbsd-netcat
         state: present
       tags: [base, packages]
+#+end_src
+
+** Brave Browser
+
+Install Brave browser from AUR as privacy-focused alternative to Chromium.
+
+#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+    - name: Install Brave browser from AUR
+      command: yay -S --noconfirm brave-bin
+      become: yes
+      become_user: dev
+      args:
+        creates: /usr/bin/brave
+      tags: [base, browser]
 #+end_src
 
 ** Enable Cron Service
@@ -229,7 +233,41 @@ Display system information for verification.
       tags: [base, info]
 #+end_src
 
+** Cleanup Unwanted Packages
+
+Remove pre-installed packages that aren't needed for this privacy-focused setup.
+Done at the end after all desired software is installed.
+
+#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+    - name: Remove unwanted pre-installed packages
+      community.general.pacman:
+        name:
+          - 1password
+          - basecamp
+          - chromium          # Brave installed as replacement
+          - hey
+          - libreoffice-fresh
+          - neovim
+          - kdenlive
+          - spotify
+          - signal-desktop    # Requires phone number
+          - obs-studio
+          - discord           # Proprietary, poor Tor support
+        state: absent
+      tags: [base, cleanup]
+#+end_src
+
 ** Notes
+
+*** Brave Browser
+
+Brave is installed from the AUR (Arch User Repository) using yay. It provides:
+- Built-in ad/tracker blocking
+- Chromium-based (familiar interface, web compatibility)
+- Privacy-focused by default
+- Tor integration (via "New Private Window with Tor")
+
+Brave replaces the default Chromium installation. Tor Browser (installed in Phase 3) remains the primary tool for privacy-critical operations.
 
 *** Huge Pages
 
