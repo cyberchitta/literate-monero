@@ -516,6 +516,7 @@ ShowTrayIcon=false
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
         mode: '0600'
+        force: no  # Preserve user customizations on re-runs
       tags: [privacy, keepassxc, config]
 #+end_src
 
