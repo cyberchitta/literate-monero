@@ -2,27 +2,7 @@
 
 This phase sets up the Monero full node (monerod) - core infrastructure for sovereign cryptocurrency validation.
 
-**Why run monerod:**
-- Trustless validation: Verify the entire blockchain yourself
-- Network privacy: Transactions broadcast via I2P (IP unlinkability)
-- No intermediaries: Direct P2P participation, no reliance on third parties
-- Agent-ready: Same infrastructure works for humans and autonomous agents
-
-**Network privacy model:**
-- Blockchain sync: Clearnet (intentional - sybil attack protection)
-- Transaction broadcast: I2P primary, Tor fallback (IP privacy)
-- P2P inbound: I2P hidden service (anonymous node-to-node)
-
-**Resource requirements:**
-- Disk: 250GB+ (blockchain size, grows ~40GB/year)
-- RAM: 2-4GB
-- Bandwidth: 500MB-1GB/day ongoing
-- Initial sync: 6-24 hours
-
-**After installation:**
-Mining setup phase will automatically use this local monerod instance via ZMQ port 18083.
-
-Reference: https://monerodocs.org/interacting/monero-network-ports/
+See Appendix G: Why Run Each Component (Monero Full Node) for rationale and resource requirements.
 
 ** Install monerod
 
@@ -221,17 +201,7 @@ Reference: https://monerodocs.org/interacting/monero-network-ports/
 The ban list blocks known spy nodes that attempt to link IP addresses to transactions.
 Updates are **automated weekly** (Sundays at 3 AM) with safety checks.
 
-**Why automated updates without GPG verification:**
-
-The ban list is cryptographically signed by multiple MRL developers, but we don't verify
-signatures in automated updates due to a bootstrapping problem: GPG keys themselves must
-be fetched from potentially compromised hosts. Our security model relies on:
-
-1. HTTPS transport security (GitHub's TLS)
-2. Size validation (>50% change triggers manual review, detects corruption/attacks)
-3. Manual verification available for high-security operators (see Notes section below)
-
-For manual GPG verification: https://github.com/Boog900/monero-ban-list#signatures
+See Appendix G: GPG Signature Verification (Ban List) for security rationale.
 
 #+begin_src yaml :tangle ../ansible/fragments/05-monerod.yml
     - name: Download Monero spy node ban list
@@ -742,59 +712,6 @@ The ban list blocks known spy nodes that attempt to link IP addresses to transac
 **MRL issue:** https://github.com/monero-project/meta/issues/1124
 
 *Security model:*
-
-**Why we don't verify GPG signatures automatically:**
-
-The ban list is cryptographically signed by MRL developers (boog900, jeffro256), but automated signature verification has a bootstrapping problem:
-
-1. GPG keys must be fetched from the same potentially compromised sources as the ban list
-2. If GitHub is compromised to serve malicious ban lists, it's also compromised to serve malicious GPG keys
-3. Automated signature verification provides no additional security over HTTPS alone
-
-**Our approach:**
-- HTTPS transport security (GitHub's TLS protects download integrity)
-- Size validation (>50% change triggers manual review, detects corruption/attacks)
-- Manual GPG verification available for high-security operators (see instructions below)
-
-This is a pragmatic security trade-off: automated signatures would add complexity without meaningful protection, while manual verification remains available for those who need it.
-
-#+begin_example
-# Check automated update status
-tail /var/log/monero-banlist.log
-
-# Manual update (if needed)
-sudo update-monero-banlist.sh
-
-# View current ban list
-cat /etc/monero/ban_list.txt | wc -l  # Count entries
-#+end_example
-
-*Manual GPG verification (optional):*
-
-For maximum security, verify signatures manually:
-
-#+begin_example
-# Download ban list and signatures
-cd /tmp
-wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/ban_list.txt
-wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/sigs/boog900.sig
-wget https://raw.githubusercontent.com/Boog900/monero-ban-list/main/sigs/jeffro256.sig
-
-# Import GPG keys (verify fingerprints out-of-band!)
-gpg --fetch-keys https://github.com/Cuprate/cuprate/raw/main/misc/gpg_keys/boog900.asc
-gpg --fetch-keys https://github.com/monero-project/monero/raw/master/utils/gpg_keys/jeffro256.asc
-
-# Verify signatures
-gpg --verify boog900.sig ban_list.txt
-gpg --verify jeffro256.sig ban_list.txt
-
-# If verified, copy to production
-sudo cp ban_list.txt /etc/monero/ban_list.txt
-sudo systemctl restart monerod
-#+end_example
-
-The ban list complements Fluorine Fermi's algorithmic peer selection.
-Both provide defense-in-depth against network surveillance.
 
 ** Network Privacy
 

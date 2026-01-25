@@ -6,11 +6,7 @@ This phase sets up Monero mining to demonstrate the full sovereign node stack:
 - Deploy systemd services
 - Configure mining to run 24/7 with low priority
 
-**Why mine:**
-- Demonstrates trustless participation in Monero network
-- P2Pool integration shows decentralized pool architecture
-- Contributes to network security
-- Mining runs at low priority - can be disabled later if desired
+See Appendix G: Why Run Each Component (Mining) for rationale.
 
 **Important:** P2Pool will start and XMRig will show hashrate, but **no shares will be found**
 until monerod completes its initial blockchain sync (6-24 hours). This is normal. Monitor sync
@@ -250,16 +246,9 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       tags: [mining]
 #+end_src
 
-** XMRig MSR Access Configuration
+*** XMRig MSR Access
 
-XMRig requires access to Model-Specific Registers (MSR) for optimal RandomX mining performance.
-
-**What MSR access enables:**
-- Hardware-level CPU cache optimizations
-- Reduced memory latency for RandomX algorithm
-- 5-15% hashrate improvement
-
-**Security consideration:** MSR access allows low-level CPU control. The mining user is granted this via udev rules and Linux capabilities, not via sudo/root access.
+See Appendix G: XMRig MSR Access for security rationale.
 
 ** Install P2Pool
 
@@ -548,19 +537,7 @@ WantedBy=multi-user.target
 
 *** P2Pool vs Traditional Pools
 
-*P2Pool* is a decentralized mining pool:
-- No central server
-- Payouts directly from blockchain
-- No pool fees (except miner donation)
-- More resistant to censorship
-- Requires running monerod (which we do)
-
-*P2Pool Types*:
-- normal: Main pool (hashrate > 100 kH/s)
-- mini: For smaller miners (< 100 kH/s) - recommended for most home systems
-- nano: For very low hashrate (experimental)
-
-Set `p2pool_type` in config.yml.
+See Appendix G: Why Run Each Component (Mining) for pool comparison and configuration.
 
 *** P2Pool and Monerod Sync
 

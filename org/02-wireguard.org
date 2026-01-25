@@ -4,11 +4,7 @@ This phase installs WireGuard, generates keys, configures the tunnel, and sets u
 
 ** SSH Keys Note
 
-This phase provisions keys for **server access** (laptop → server SSH login).
-
-**Separate workflow:** Git hosting keys for GitHub/GitLab are generated later in Phase 6
-after privacy configuration (Tor, git over Tor, etc.). Those keys authenticate git push
-operations through Tor tunnel.
+See Appendix G: Component-Specific Rationale (SSH Key Separation) for server vs git key workflows.
 
 ** Prerequisites
 

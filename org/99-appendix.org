@@ -455,3 +455,158 @@ Trading operational privacy (IP hidden, git operations routed through Tor) for a
 This system separates IP/location from operations and transactions. It does not pretend anonymity from institutional services you choose to use (GitHub, exchanges, etc.). Maximum privacy comes from self-hosting and P2P-only operations, which has different trade-offs.
 
 Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+
+* Appendix G: Design Rationale
+
+** Why Run Each Component
+
+*** Monero Full Node (monerod)
+
+- **Trustless validation:** Verify entire blockchain yourself
+- **Network privacy:** Transactions broadcast via I2P (IP unlinkability)
+- **No intermediaries:** Direct P2P participation, no reliance on third parties
+- **Agent-ready:** Same infrastructure works for humans and autonomous agents
+
+Resource requirements: 250GB+ disk, 2-4GB RAM, 500MB-1GB/day bandwidth, 6-24 hour initial sync.
+
+Reference: https://monerodocs.org/interacting/monero-network-ports/
+
+*** Mining (P2Pool + XMRig)
+
+**Why mine:**
+- Demonstrates trustless participation in Monero network
+- P2Pool integration shows decentralized pool architecture
+- Contributes to network security
+- Mining runs at low priority - can be disabled later if desired
+
+**P2Pool vs Traditional Pools:**
+
+*P2Pool* is a decentralized mining pool:
+- No central server
+- Payouts directly from blockchain
+- No pool fees (except miner donation)
+- More resistant to censorship
+- Requires running monerod (which we do)
+
+*Traditional pools* are centralized:
+- Operator controls payouts
+- Takes fees
+- Subject to regulatory pressure
+- Single point of failure
+
+P2Pool types: normal (>100 kH/s), mini (<100 kH/s, recommended), nano (experimental).
+
+Reference: https://github.com/SChernykh/p2pool
+
+** Security & Cryptography Decisions
+
+*** GPG Signature Verification (Ban List)
+
+**Why we don't verify signatures automatically:**
+
+The ban list is cryptographically signed by MRL developers, but automated signature verification has a bootstrapping problem:
+
+1. GPG keys must be fetched from same potentially compromised sources as ban list
+2. If GitHub is compromised to serve malicious ban lists, it's also compromised to serve malicious GPG keys
+3. Automated signature verification provides no additional security over HTTPS alone
+
+**Our approach:**
+- HTTPS transport security (GitHub's TLS protects download integrity)
+- Size validation (>50% change triggers manual review, detects corruption/attacks)
+- Manual GPG verification available for high-security operators
+
+This is pragmatic security: automated signatures add complexity without meaningful protection. Manual verification remains available for those who need it.
+
+Manual verification: https://github.com/Boog900/monero-ban-list#signatures
+
+*** XMRig MSR Access
+
+XMRig requires Model-Specific Register (MSR) access for optimal RandomX mining performance.
+
+**What MSR access enables:**
+- Hardware-level CPU cache optimizations
+- Reduced memory latency for RandomX algorithm
+- 5-15% hashrate improvement
+
+**Security consideration:** MSR access allows low-level CPU control. Mining user granted this via udev rules and Linux capabilities, not via sudo/root access.
+
+** Component-Specific Rationale
+
+*** SSH Key Separation
+
+Two separate SSH key workflows:
+
+1. **Server access keys** (Phase 2: WireGuard)
+   - Authentication for server login (laptop → server)
+   - Provisioned during infrastructure setup
+
+2. **Git hosting keys** (Phase 4: Privacy Wrappers)
+   - Authentication for git operations (push/pull)
+   - Generated after privacy configuration
+   - Routed through Tor SOCKS proxy
+
+Keep separate for role-based isolation and to allow rotating keys independently.
+
+*** Trezor Hardware Wallet Limitations
+
+**Critical:** Trezor Suite does NOT support Monero transactions directly.
+
+Trezor supports:
+- Device firmware updates
+- PIN/passphrase management
+- General device management
+
+Monero transactions:
+- Use Feather Wallet (installed separately)
+- Feather communicates directly with Trezor hardware for signing
+- Trezor recovery seed only works with Trezor devices (incompatible with Ledger, software wallets)
+
+Trezor uses SLIP-0010 key derivation (BIP39 seed), incompatible with standard Monero formats (25-word Legacy, 16-word Polyseed, 13-word MyMonero).
+
+For portability: Use standard Monero wallet with Polyseed (16-word) or Legacy (25-word). These work across Feather, Cake Wallet, Monero GUI.
+
+References:
+- https://trezor.io/learn/a/monero-xmr
+- https://docs.featherwallet.org/guides/hardware-wallet
+- https://docs.featherwallet.org/guides/seed-scheme
+
+** Update & Version Management
+
+*** Why Atomic Updates with Rollback
+
+All component updates (monerod, P2Pool, XMRig) use atomic symlink switching:
+
+1. **New version** installed to `/opt/<component>-<version>/`
+2. **Current symlink** `/opt/<component>` points to active version
+3. **Update** re-points symlink to new version
+4. **Failure** rolls back by re-pointing symlink to old version
+5. **Instant** switch, no re-download/rebuild on rollback
+
+Old versions kept in `/opt/<component>-<version>/` for quick recovery.
+
+Symlink-based updates provide instant atomic switches with zero-downtime rollback.
+
+** Network Architecture
+
+### P2Pool Network Requirements
+
+P2Pool requires port {{ p2pool_p2p_port }} open (TCP+UDP) for peer communication.
+
+**Mining works without this**, but you won't contribute to pool decentralization.
+
+Forward this port if behind NAT/router for maximum pool participation.
+
+Port varies by type: normal (37889), mini (37888), nano (37890).
+
+### Blockchain Sync on Clearnet
+
+Monerod syncs blockchain via clearnet (not Tor/I2P). **This is intentional.**
+
+Downloading blockchain data doesn't reveal which transactions are yours. Syncing through Tor would:
+- Create sybil attack surface
+- Significantly slow sync
+- Provide no privacy benefit (download ≠ transaction broadcast)
+
+Privacy comes from I2P broadcast (primary) + Tor fallback when *sending* transactions.
+
+Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md

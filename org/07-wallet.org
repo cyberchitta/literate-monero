@@ -135,18 +135,7 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
       tags: [wallet, gui, verify]
 #+end_src
 
-** Install Trezor Hardware Wallet Support
-
-Trezor hardware wallets provide secure key storage - private keys never leave the device.
-
-**Important:** Trezor Suite does NOT support Monero transactions. It's used only for:
-- Device firmware updates
-- PIN/passphrase management
-- General device management
-
-For Monero operations with Trezor, use Feather Wallet (installed above). Feather communicates directly with Trezor hardware for signing Monero transactions.
-
-Reference: https://docs.featherwallet.org/guides/hardware-wallet
+See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
 #+begin_src yaml :tangle ../ansible/fragments/07-wallet.yml
     - name: Check if Trezor Suite is installed
