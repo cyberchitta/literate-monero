@@ -59,7 +59,8 @@ backup_path "/home/{{ dev_user }}/.ssh" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/.gnupg" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/.gitconfig" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/Documents" "$BACKUP_PATH/home/{{ dev_user }}"
-backup_path "/home/{{ dev_user }}/.local/share/feather" "$BACKUP_PATH/home/{{ dev_user }}/.local/share"
+backup_path "/home/{{ dev_user }}/Monero/wallets" "$BACKUP_PATH/home/{{ dev_user }}/Monero"
+backup_path "/home/{{ dev_user }}/.config/feather" "$BACKUP_PATH/home/{{ dev_user }}/.config"
 
 # Mining Configuration
 echo "--- Mining Configuration ---"
@@ -87,7 +88,7 @@ Critical configs backed up:
 - User GPG keys: /home/{{ dev_user }}/.gnupg
 - Git config: /home/{{ dev_user }}/.gitconfig
 - KeePassXC databases: /home/{{ dev_user }}/Documents/*.kdbx (encrypted blobs)
-- Feather wallets: /home/{{ dev_user }}/.local/share/feather (encrypted blobs)
+- Feather wallet files: `/home/{{ dev_user }}/Monero/wallets/` (encrypted by wallet password)
 - XMRig config: /opt/xmrig/build/config.json
 
 NOT backed up (Ansible regenerates):
@@ -448,7 +449,8 @@ sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
 
 **Encrypted data (safe to backup):**
 - KeePassXC databases: `~/Documents/*.kdbx` (encrypted with master password)
-- Feather wallets: `~/.local/share/feather` (encrypted with wallet password)
+- Monero wallets: `~/Monero/wallets/` (encrypted with wallet password)
+- Feather config: `~/.config/feather` (settings only, seed phrases should be in KeePassXC)
 
 **Mining configuration:**
 - XMRig config: `/opt/xmrig/build/config.json`
