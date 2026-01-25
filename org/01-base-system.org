@@ -41,6 +41,22 @@ Install tools needed for system administration and development.
         mode: '0644'
       tags: [base, version]
 
+    - name: Remove unwanted pre-installed packages
+      community.general.pacman:
+        name:
+          - 1password
+          - basecamp
+          - hey
+          - libreoffice-fresh
+          - neovim
+          - kdenlive
+          - spotify
+          - signal-desktop  # Remove by default - requires phone number
+          - obs-studio
+          - discord  # Proprietary, poor Tor support, centralized
+      state: absent
+      tags: [base, cleanup]
+
     - name: Install essential system packages
       community.general.pacman:
         name:
