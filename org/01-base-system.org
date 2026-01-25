@@ -252,7 +252,6 @@ Done at the end after all desired software is installed.
           - spotify
           - signal-desktop    # Requires phone number
           - obs-studio
-          - discord           # Proprietary, poor Tor support
         state: absent
       tags: [base, cleanup]
 #+end_src
