@@ -258,15 +258,9 @@ Done at the end after all desired software is installed.
 
 ** Notes
 
-*** Brave Browser
+** Brave Browser
 
-Brave is installed from the AUR (Arch User Repository) using yay. It provides:
-- Built-in ad/tracker blocking
-- Chromium-based (familiar interface, web compatibility)
-- Privacy-focused by default
-- Tor integration (via "New Private Window with Tor")
-
-Brave replaces the default Chromium installation. Tor Browser (installed in Phase 3) remains the primary tool for privacy-critical operations.
+See Installation section above for setup. Tor Browser remains the primary tool for privacy-critical operations.
 
 *** Huge Pages
 

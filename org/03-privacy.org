@@ -721,41 +721,9 @@ To update:
 
 Checksums are verified automatically during download.
 
-*** KeePassXC Password & TOTP Manager
+*** KeePassXC Configuration
 
-KeePassXC stores passwords and TOTP seeds in a single encrypted `.kdbx` database.
-
-**Database location:** Store KeePassXC databases in `~/Documents/`
-- All `.kdbx` files automatically backed up daily
-- Protected by disk encryption (LUKS)
-- Upload to cloud via Tor Browser for off-site backup
-
-**Keyboard shortcuts (no browser extension needed):**
-- =Ctrl+B= — Copy username
-- =Ctrl+C= — Copy password
-- =Ctrl+T= — Copy TOTP code
-- =Ctrl+Shift+V= — Auto-type into focused window
-
-Clipboard auto-clears after 10 seconds.
-
-**Setup:**
-#+begin_example
-keepassxc  # Launch, create new database with strong master password
-# Default save location: ~/Documents/
-# Add entries, right-click → TOTP → Set up TOTP for 2FA seeds
-#+end_example
-
-**Configuration (pre-configured):**
-- Database timeout disabled (locks only on app close)
-- Default save location: `~/Documents/`
-- Browser integration disabled (use keyboard shortcuts)
-- Protected by disk encryption (LUKS) when system is off
-
-**Backup:**
-- All `.kdbx` files in `~/Documents/` backed up automatically
-- Upload `.kdbx` to cloud drive via Tor Browser for off-site backup
-- File is encrypted locally—cloud drive sees only opaque blob
-- Manual off-site backup when critical data changes
+See Appendix: KeePassXC Setup for comprehensive password management guide.
 
 *** GitHub Browser Infrastructure
 
