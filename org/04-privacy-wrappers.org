@@ -12,17 +12,7 @@ This phase configures privacy wrappers for applications - routing specific tools
 
 ** Threat Model for Development Operations
 
-**What this protects:**
-- ✓ IP hidden from GitHub/GitLab (Tor routing)
-- ✓ Git commits don't leak location
-- ✓ SSH connections routed through Tor
-
-**What this doesn't protect:**
-- GitHub/GitLab knows your account (if you're logged in)
-- Commit metadata (name, email) is in git config
-- Repository content is visible to hosting provider
-
-Trade-off: Operational privacy for development, not anonymity from hosting providers.
+See Appendix F: Threat Models for what this protects and trade-offs.
 
 ** Git Privacy Configuration
 

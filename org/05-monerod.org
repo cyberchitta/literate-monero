@@ -796,23 +796,11 @@ sudo systemctl restart monerod
 The ban list complements Fluorine Fermi's algorithmic peer selection.
 Both provide defense-in-depth against network surveillance.
 
-*** Network Privacy
+** Network Privacy
 
-Monerod uses a defense-in-depth approach:
+Monero uses defense-in-depth: blockchain sync on clearnet, transactions via I2P primary + Tor fallback, P2P via I2P hidden service.
 
-1. **Blockchain sync:** Clearnet (IPv4/IPv6)
-   - Intentional design (sybil attack protection)
-   - Downloading blocks doesn't reveal your transactions
-
-2. **Transaction broadcast:** I2P primary, Tor fallback
-   - Prevents IP leaking when sending transactions
-   - Double anonymity layer
-
-3. **P2P connections:** I2P hidden service
-   - Other I2P users can connect to you anonymously
-   - Contributes to network decentralization
-
-Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+See Appendix F: Threat Models for detailed architecture rationale.
 
 *** Troubleshooting
 

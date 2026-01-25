@@ -15,14 +15,7 @@ All network routing infrastructure is established here. Application-specific wra
 
 **Note on account management:** For high-security operations (crypto wallets, account registration), use hardware wallet + Tor Browser. Future documentation will cover hardware wallet setup.
 
-** Threat Model
-
-Network-level privacy for operations:
-- ✓ IP hidden from web services (Tor routing)
-- ✓ Browser fingerprinting minimized (Tor Browser)
-- ✓ P2P network privacy (I2P for Monero)
-
-Trade-offs: AI services may know identity (paid accounts), package managers reveal tech stack. Focus is operational privacy, not theoretical anonymity.
+See Appendix F: Threat Models for security model and trade-offs.
 
 ** Configuration Variables
 

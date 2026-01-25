@@ -278,7 +278,7 @@ All detailed troubleshooting, commands, and configuration:
 ** System Won't Boot
 
 1. Boot from Omarchy USB
-2. Unlock encrypted partition  
+2. Unlock encrypted partition
 3. Mount root and check logs
 4. Restore from backup if needed
 
@@ -418,3 +418,40 @@ cd ansible
 ./assemble-playbook.sh
 ansible-playbook playbook.yml --tags monerod
 #+end_example
+
+* Appendix F: Threat Models & Design Rationale
+
+** System Threat Model
+
+This system prioritizes **operational privacy** for specific activities, not theoretical anonymity from all observers.
+
+*** What This Protects
+
+- IP address hidden from web services (Tor routing)
+- Transaction broadcast location hidden (I2P/Tor for Monero)
+- Git operations routed through Tor (IP hidden from GitHub/GitLab)
+- SSH connections encrypted and routed through Tor
+- Browser fingerprinting minimized (Tor Browser)
+- P2P connections anonymous (I2P inbound via hidden service)
+
+*** What This Does NOT Protect
+
+- GitHub/GitLab knows your account identity (if logged in)
+- Blockchain sync uses clearnet (intentional - sybil protection)
+- Commit metadata (name, email) visible in git history
+- Service content is visible to hosting providers
+- AI services know identity if you use paid accounts
+- Package managers reveal installed software stack
+
+*** Design Rationale
+
+**Blockchain sync on clearnet (not Tor/I2P):**
+Downloading blockchain data doesn't reveal which transactions are yours. Syncing through Tor would create sybil attack surface and slow sync significantly. Privacy comes from I2P broadcast + Tor fallback when *sending* transactions.
+
+**Git account visible to GitHub:**
+Trading operational privacy (IP hidden, git operations routed through Tor) for account-level privacy (which account owns commits). GitHub doesn't see your IP, but sees your account. This is the stated trade-off.
+
+**Focus: Operational Privacy, Not Anonymity**
+This system separates IP/location from operations and transactions. It does not pretend anonymity from institutional services you choose to use (GitHub, exchanges, etc.). Maximum privacy comes from self-hosting and P2P-only operations, which has different trade-offs.
+
+Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
