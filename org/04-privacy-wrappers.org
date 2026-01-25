@@ -306,32 +306,4 @@ All follow the same pattern: configure to use `socks5://127.0.0.1:{{ tor_socks_p
 
 *** Troubleshooting
 
-**Git operations fail:**
-```bash
-# Check Tor is running
-check-privacy.sh
-
-# Test Tor SOCKS proxy
-curl --socks5 127.0.0.1:{{ tor_socks_port }} https://check.torproject.org/api/ip
-
-# Restart Tor
-sudo systemctl restart tor
-```
-
-**SSH to GitHub fails:**
-```bash
-# Verbose SSH output
-ssh -vT git@github.com
-
-# Check SSH config syntax
-ssh -G github.com | grep -i proxy
-```
-
-**Key authentication fails:**
-```bash
-# Verify key exists
-ls -la ~/.ssh/id_ed25519_github*
-
-# Check key is in SSH config
-grep -A 5 "github.com" ~/.ssh/config
-```
+See Appendix H: Phase-Specific Quick Fixes (Privacy Wrappers) for detailed troubleshooting.

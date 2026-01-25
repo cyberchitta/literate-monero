@@ -610,3 +610,410 @@ Downloading blockchain data doesn't reveal which transactions are yours. Syncing
 Privacy comes from I2P broadcast (primary) + Tor fallback when *sending* transactions.
 
 Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
+
+* Appendix H: Troubleshooting & Quick Fixes
+
+** Generic Troubleshooting Patterns
+
+All services follow the same troubleshooting workflow:
+
+*** Check Service Status
+
+#+begin_example
+# Is service running?
+sudo systemctl status <service>
+
+# What's the status?
+sudo systemctl is-active <service>
+
+# Enable on boot
+sudo systemctl enable <service>
+
+# Start/stop/restart
+sudo systemctl {start|stop|restart} <service>
+#+end_example
+
+*** View Service Logs
+
+#+begin_example
+# Last 50 lines
+sudo journalctl -u <service> -n 50
+
+# Follow in real-time (like tail -f)
+sudo journalctl -u <service> -f
+
+# Last hour
+sudo journalctl -u <service> --since "1 hour ago"
+
+# Errors only
+sudo journalctl -u <service> -p err
+
+# Last boot
+sudo journalctl -u <service> -b
+#+end_example
+
+*** Reload Configuration After Changes
+
+#+begin_example
+# If you edit a service file
+sudo systemctl daemon-reload
+
+# If you edit a config file
+sudo systemctl restart <service>
+
+# If you edit Ansible, re-tangle and re-run
+cd ansible
+./tangle-all.sh
+./assemble-playbook.sh
+ansible-playbook playbook.yml --tags <phase> -K
+#+end_example
+
+*** Test Network Connectivity
+
+#+begin_example
+# Check internet
+ping -c 3 8.8.8.8
+
+# Check DNS
+host google.com
+
+# Check specific port
+nc -zv <host> <port>
+
+# Check if service is listening
+sudo ss -tulpn | grep <port>
+#+end_example
+
+** Phase-Specific Quick Fixes
+
+*** Phase 2: WireGuard
+
+**SSH can't connect:**
+#+begin_example
+# Check WireGuard is running
+sudo systemctl status wg-quick@wg0
+
+# Check firewall rules
+sudo ufw status | grep 22
+
+# Verify SSH key exists
+ls -la ~/.ssh/id_rsa.pub
+
+# Test SSH verbose
+ssh -vv <user>@<server>
+#+end_example
+
+**WireGuard interface missing:**
+#+begin_example
+sudo wg-quick up wg0
+sudo wg show
+#+end_example
+
+***Phase 3: Privacy (Tor, I2P)
+
+**Tor SOCKS proxy not working:**
+#+begin_example
+# Check Tor running
+sudo systemctl status tor
+
+# Test proxy
+curl --socks5 127.0.0.1:9050 https://check.torproject.org/api/ip
+
+# Check port listening
+sudo ss -tulpn | grep 9050
+
+# Restart
+sudo systemctl restart tor
+#+end_example
+
+**I2P SAM bridge not responding:**
+#+begin_example
+# Check I2P running
+sudo systemctl status i2pd
+
+# Test SAM bridge
+echo -e "HELLO VERSION\n" | nc 127.0.0.1 7656
+
+# Check port listening
+sudo ss -tulpn | grep 7656
+
+# Restart
+sudo systemctl restart i2pd
+#+end_example
+
+**Tor Browser won't start:**
+#+begin_example
+# Verify installed
+ls -la /opt/tor-browser/
+
+# Check permissions
+ls -la /usr/local/bin/tor-browser
+
+# Run manually to see errors
+/opt/tor-browser/Browser/start-tor-browser
+#+end_example
+
+*** Phase 4: Privacy Wrappers (Git, SSH)
+
+**Git operations fail through Tor:**
+#+begin_example
+# Verify Tor SOCKS proxy working
+curl --socks5 127.0.0.1:9050 https://check.torproject.org/api/ip
+
+# Check git config
+cat ~/.gitconfig | grep proxy
+
+# Test git connection
+GIT_TRACE=1 git clone git@github.com:user/repo.git
+
+# Restart Tor
+sudo systemctl restart tor
+#+end_example
+
+**SSH to GitHub fails:**
+#+begin_example
+# Verbose SSH output
+ssh -vvv git@github.com
+
+# Check SSH config
+cat ~/.ssh/config
+
+# Verify SSH key exists
+ls -la ~/.ssh/id_ed25519_github*
+
+# Test netcat proxy
+nc -X 5 -x 127.0.0.1:9050 github.com 22
+
+# Restart Tor
+sudo systemctl restart tor
+#+end_example
+
+*** Phase 5: Monero Full Node
+
+**monerod won't start:**
+#+begin_example
+# Check logs
+sudo journalctl -u monerod -n 100
+
+# Verify config syntax
+sudo /opt/monero/monerod --help | head -20
+
+# Check ports
+sudo ss -tulpn | grep 18080
+
+# Restart
+sudo systemctl restart monerod
+#+end_example
+
+**Blockchain sync stuck:**
+#+begin_example
+# Check current height
+sudo monerod-status.sh
+
+# Check peer count
+curl http://127.0.0.1:18081/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
+  -H 'Content-Type: application/json' | jq '.result | {height, target_height, incoming_connections_count, outgoing_connections_count}'
+
+# Check bandwidth limits aren't too low
+grep "limit-rate" /etc/monerod.conf
+
+# Restart with verbose logging
+sudo systemctl stop monerod
+sudo /opt/monero/monerod --config-file /etc/monerod.conf --log-level 2
+#+end_example
+
+**RPC not responding:**
+#+begin_example
+# Check service running
+sudo systemctl status monerod
+
+# Check port listening
+sudo ss -tulpn | grep 18081
+
+# Test RPC directly
+curl http://127.0.0.1:18081/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
+  -H 'Content-Type: application/json'
+
+# Wait for sync to progress
+sudo monerod-status.sh
+#+end_example
+
+**ZMQ port not listening (breaks P2Pool):**
+#+begin_example
+# Check if ZMQ configured
+grep zmq-pub /etc/monerod.conf
+
+# Check port listening
+sudo ss -tulpn | grep 18083
+
+# Verify in config
+sudo systemctl cat monerod | grep zmq
+
+# Restart monerod
+sudo systemctl restart monerod
+
+# Wait and check again
+sleep 10
+sudo ss -tulpn | grep 18083
+#+end_example
+
+*** Phase 7: Mining (P2Pool, XMRig)
+
+**P2Pool won't start:**
+#+begin_example
+# Check monerod is running and synced
+sudo monerod-status.sh
+
+# Check P2Pool logs
+sudo journalctl -u p2pool -n 100
+
+# Verify config
+sudo systemctl cat p2pool | grep ExecStart
+
+# Restart
+sudo systemctl restart p2pool
+#+end_example
+
+**XMRig shows no hashrate:**
+#+begin_example
+# Check XMRig running
+sudo systemctl status xmrig
+
+# Check logs for errors
+sudo journalctl -u xmrig -n 50
+
+# Verify wallet address configured
+grep wallet /opt/xmrig/build/config.json
+
+# Check P2Pool is responding
+sudo systemctl status p2pool
+
+# Restart both
+sudo systemctl restart p2pool
+sudo systemctl restart xmrig
+#+end_example
+
+**Mining not starting after monerod sync:**
+#+begin_example
+# Verify monerod fully synced
+sudo monerod-status.sh
+# Should show: "✓ Blockchain synced"
+
+# Wait 60 seconds for P2Pool to detect sync
+sleep 60
+
+# Restart mining services
+sudo systemctl restart p2pool
+sudo systemctl restart xmrig
+
+# Monitor
+sudo journalctl -u xmrig -f
+#+end_example
+
+*** Phase 8: Firewall
+
+**Locked out of SSH:**
+#+begin_example
+# Physical console access (emergency only)
+# Connect keyboard/monitor to server
+
+# Check firewall status
+sudo ufw status
+
+# Allow SSH (if locked out somehow)
+sudo ufw allow 22/tcp
+
+# Reset firewall (DANGEROUS - opens everything)
+sudo ufw --force reset
+#+end_example
+
+**Port not accessible from outside:**
+#+begin_example
+# Check firewall allows port
+sudo ufw status | grep <port>
+
+# Check service listening
+sudo ss -tulpn | grep <port>
+
+# If behind NAT/router, check port forward
+# (requires router admin access)
+
+# Test from remote machine
+nc -zv <server-ip> <port>
+#+end_example
+
+** Common Error Messages
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Connection refused" | Service not running | `sudo systemctl start <service>` |
+| "Address already in use" | Port conflict | Find what's using port: `sudo ss -tulpn \| grep <port>` |
+| "Permission denied" | Running as wrong user | Use `sudo` or `su -` to correct user |
+| "Config error" | Syntax error in config | Check logs: `sudo journalctl -u <service> -n 20` |
+| "Can't connect to X" | Network/firewall issue | Test connectivity: `ping`, `nc -zv` |
+| "Out of memory" | System under-resourced | Check: `free -h`, `top` |
+| "Disk full" | Storage exhausted | Check: `df -h`, remove old logs/backups |
+
+** When All Else Fails
+
+**1. Check the logs (always start here):**
+#+begin_example
+sudo journalctl -u <service> -n 100
+#+end_example
+
+**2. Restart the service:**
+#+begin_example
+sudo systemctl restart <service>
+#+end_example
+
+**3. Check system resources:**
+#+begin_example
+free -h              # Memory
+df -h /              # Disk
+top -b -n 1          # CPU
+#+end_example
+
+**4. Review official documentation:**
+- Monero: https://monerodocs.org
+- Tor: https://support.torproject.org
+- P2Pool: https://github.com/SChernykh/p2pool
+- Ansible: https://docs.ansible.com
+
+**5. Restore from backup:**
+#+begin_example
+sudo restore.sh /srv/backups/backup_<date>.tar.gz
+#+end_example
+
+**6. Rollback a recent change:**
+#+begin_example
+git log --oneline
+git checkout <previous-commit> -- org/
+cd ansible && ./tangle-all.sh && ./assemble-playbook.sh
+ansible-playbook playbook.yml --tags <phase>
+#+end_example
+
+** Reporting Issues
+
+When asking for help, always include:
+1. **Service logs:** `sudo journalctl -u <service> -n 100`
+2. **System status:** `free -h && df -h && systemctl status`
+3. **What you did:** "Ran phase X, then Y failed"
+4. **Error message:** Exact text from logs or screen
+5. **Your configuration:** Relevant parts of `config.yml`
+
+Example issue report:
+#+begin_example
+monerod won't sync past height 2,800,000.
+
+Service status: running
+Logs: journalctl -u monerod shows "SYNCHRONIZATION FAILED"
+Connections: 2 incoming, 5 outgoing
+Bandwidth limits: 8192 KB/s down, 2048 KB/s up
+
+What I did: Installed Phase 5 yesterday, it synced fine for 24 hours,
+then stopped progressing.
+
+Config: default monerod settings from config.yml.example
+#+end_example

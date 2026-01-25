@@ -661,19 +661,7 @@ sudo verify-backup.sh
 
 *** Common Issues
 
-*Mining not starting:*
-#+begin_example
-# Check wallet address
-grep wallet /opt/xmrig/build/config.json
-
-# Check service status
-sudo systemctl status xmrig
-sudo journalctl -u xmrig -n 50
-
-# Restart services
-sudo systemctl restart p2pool
-sudo systemctl restart xmrig
-#+end_example
+See Appendix H: Troubleshooting & Quick Fixes.
 
 *Tor not routing:*
 #+begin_example

@@ -721,17 +721,6 @@ See Appendix F: Threat Models for detailed architecture rationale.
 
 *** Troubleshooting
 
-For detailed troubleshooting, see:
-- Official monerod docs: https://monerodocs.org
-- Blockchain sync: https://monerodocs.org/interacting/monero-blockchain-syncing/
-- Network ports: https://monerodocs.org/interacting/monero-network-ports/
+See Appendix H: Phase-Specific Quick Fixes (Monero Full Node) for detailed troubleshooting.
 
-**Common issues:**
-
-*Slow sync:* Expected (6-24 hours). Adjust bandwidth limits in config.yml if needed.
-
-*I2P not working:* Check `sudo i2p-status.sh`. Ensure I2P phase (04) completed successfully.
-
-*High disk usage:* Blockchain is ~160GB and grows ~40GB/year. Monitor with `du -sh /opt/monerod`.
-
-*RPC not responding:* Wait for initial sync to progress. Check `journalctl -u monerod -f`.
+Official docs: https://monerodocs.org

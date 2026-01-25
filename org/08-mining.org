@@ -541,35 +541,7 @@ See Appendix G: Why Run Each Component (Mining) for pool comparison and configur
 
 *** P2Pool and Monerod Sync
 
-**During monerod's initial sync (6-24 hours):**
-
-P2Pool and XMRig will start successfully, but:
-- XMRig shows "connected" to P2Pool ✓
-- Hashrate appears in logs ✓
-- **No shares found/accepted** (expected)
-
-This is normal. P2Pool waits for monerod to finish syncing before participating in mining.
-
-Monitor sync progress:
-#+begin_example
-# Check if monerod is still syncing
-sudo monerod-status.sh
-
-# Watch for: "✓ Blockchain synced"
-# Once synced, you'll see "share found" in P2Pool logs
-
-# Monitor P2Pool
-sudo journalctl -u p2pool -f
-#+end_example
-
-**Making mining optional later:**
-
-If you want validation-only (no mining), this can be made conditional:
-1. Add `mining_enabled: false` to config.yml
-2. Add `when:` guards to mining phase tasks
-3. Re-run playbook
-
-For now, mining is enabled to demonstrate the full stack.
+See Appendix H: Phase-Specific Quick Fixes (Mining) for sync troubleshooting.
 
 *** P2Pool Network Requirements
 
