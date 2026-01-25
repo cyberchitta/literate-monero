@@ -244,7 +244,7 @@ Done at the end after all desired software is installed.
         name:
           - 1password
           - basecamp
-          - chromium          # Brave installed as replacement
+          - omarchy-chromium  # Brave installed as replacement
           - hey
           - libreoffice-fresh
           - neovim
