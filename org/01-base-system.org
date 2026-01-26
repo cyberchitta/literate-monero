@@ -3,7 +3,6 @@
 This phase sets up the base system:
 - System updates
 - Essential packages
-- Brave browser installation
 - System configuration (timezone, locale, hostname)
 - Kernel parameters
 - Verification of disk encryption
@@ -68,20 +67,6 @@ Install tools needed for system administration and development.
           - openbsd-netcat
         state: present
       tags: [base, packages]
-#+end_src
-
-** Brave Browser
-
-Install Brave browser from AUR as privacy-focused alternative to Chromium.
-
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
-    - name: Install Brave browser from AUR
-      command: yay -S --noconfirm brave-bin
-      become: yes
-      become_user: dev
-      args:
-        creates: /usr/bin/brave
-      tags: [base, browser]
 #+end_src
 
 ** Enable Cron Service
@@ -244,7 +229,6 @@ Done at the end after all desired software is installed.
         name:
           - 1password
           - basecamp
-          - omarchy-chromium  # Brave installed as replacement
           - hey
           - libreoffice-fresh
           - neovim
@@ -257,10 +241,6 @@ Done at the end after all desired software is installed.
 #+end_src
 
 ** Notes
-
-** Brave Browser
-
-See Installation section above for setup. Tor Browser remains the primary tool for privacy-critical operations.
 
 *** Huge Pages
 

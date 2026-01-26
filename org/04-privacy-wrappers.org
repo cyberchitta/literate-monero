@@ -322,7 +322,7 @@ disable_wifi
 
 ** Browser Dispatch Configuration
 
-Configure domain-based browser routing. Domains listed here open in Brave with KYCIdentity profile for services requiring real identity authentication. All other URLs route to Tor Browser (privacy-first default).
+Configure domain-based browser routing. Domains listed here open in Chromium with kyc-identity profile for services requiring real identity authentication. All other URLs route to Tor Browser (privacy-first default).
 
 #+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
     # ------------------------------------------------------------------------
@@ -331,15 +331,18 @@ Configure domain-based browser routing. Domains listed here open in Brave with K
 
     - name: Configure browser dispatch domains
       copy:
-        content: "{{ browser_dispatch_config | to_json }}"
+        content: |
+          {
+            "kyc_domains": [
+              "chatgpt.com",
+              "claude.ai",
+              "github.com"
+            ],
+            "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"
+          }
         dest: /etc/browser-dispatch.json
         mode: '0644'
-      vars:
-        browser_dispatch_config:
-          kyc_domains:
-            - chatgpt.com
-            - claude.ai
-            - github.com
+        force: no
       tags: [privacy-wrappers, browser-dispatch]
 
     - name: Verify browser dispatch configuration
@@ -355,7 +358,7 @@ Configure domain-based browser routing. Domains listed here open in Brave with K
           - ""
           - "{{ browser_dispatch_config_content.stdout }}"
           - ""
-          - "KYC domains route to: Brave (KYCIdentity profile)"
+          - "KYC domains route to: Chromium (kyc-identity profile)"
           - "All other domains route to: Tor Browser"
           - ""
       tags: [privacy-wrappers, browser-dispatch, verify]
@@ -378,7 +381,7 @@ ansible-playbook playbook.yml --tags privacy-wrappers,browser-dispatch
 Test URL routing manually:
 
 #+begin_example
-# Should open in Brave KYCIdentity profile
+# Should open in Chromium kyc-identity profile
 /usr/local/bin/browser-dispatch https://github.com
 
 # Should open in Tor Browser

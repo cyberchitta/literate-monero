@@ -453,6 +453,7 @@ echo ""
 
 import sys
 import json
+import os
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -462,12 +463,12 @@ def load_config() -> dict:
     config_file = Path("/etc/browser-dispatch.json")
 
     if not config_file.exists():
-        return {"kyc_domains": []}
+        return {"kyc_domains": [], "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"}
 
     try:
         return json.loads(config_file.read_text())
     except (json.JSONDecodeError, OSError):
-        return {"kyc_domains": []}
+        return {"kyc_domains": [], "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"}
 
 
 def main() -> None:
@@ -479,14 +480,13 @@ def main() -> None:
     config = load_config()
 
     kyc_domains = {d.lower() for d in config.get("kyc_domains", [])}
+    kyc_profile_dir = config.get("kyc_profile_dir", "/home/dev/.config/chromium/kyc-identity")
 
     if domain in kyc_domains:
-        # KYC identity sites → Brave with KYCIdentity profile
-        import os
-        os.execvp("brave", ["brave", "--profile-directory=KYCIdentity", url])
+        # KYC identity sites → Chromium with kyc-identity profile
+        os.execvp("chromium", ["chromium", f"--user-data-dir={kyc_profile_dir}", url])
     else:
         # Privacy-first default → Tor Browser
-        import os
         os.execvp("tor-browser", ["tor-browser", url])
 
 
@@ -571,10 +571,10 @@ StartupNotify=true
           - "  - All URLs → Tor Browser (privacy-first default)"
           - ""
           - "After Phase 4 configuration:"
-          - "  - KYC domains → Brave with KYCIdentity profile"
+          - "  - KYC domains → Chromium with kyc-identity profile"
           - "  - All other URLs → Tor Browser"
           - ""
-          - "Brave profiles auto-create on first use (no manual setup needed)"
+          - "Chromium profiles auto-create on first use (no manual setup needed)"
           - ""
       tags: [privacy, browser-dispatch, verify]
 #+end_src
