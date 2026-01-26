@@ -231,7 +231,7 @@ Done at the end after all desired software is installed.
           - basecamp
           - hey
           - libreoffice-fresh
-          - neovim
+          - omarchy-nvim
           - kdenlive
           - spotify
           - signal-desktop    # Requires phone number
