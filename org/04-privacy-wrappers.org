@@ -229,17 +229,15 @@ Automatically disables both when the application exits.
 
 #+begin_src bash :tangle ../configs/templates/localsend-wrapper.sh.j2
 #!/bin/bash
-# localsend-wrapper.sh - Enable firewall ports around LocalSend
-
 set -euo pipefail
 
-sudo ufw allow 53317/udp comment "LocalSend transfer"
-sudo ufw allow 53317/tcp comment "LocalSend transfer"
+ufw allow 53317/udp comment "LocalSend transfer"
+ufw allow 53317/tcp comment "LocalSend transfer"
 
 /usr/bin/localsend "$@"
 
-sudo ufw delete allow 53317/udp
-sudo ufw delete allow 53317/tcp
+ufw delete allow 53317/udp
+ufw delete allow 53317/tcp
 #+end_src
 
 ** Deploy LocalSend Wrapper
@@ -250,6 +248,15 @@ sudo ufw delete allow 53317/tcp
         src: ../configs/templates/localsend-wrapper.sh.j2
         dest: /usr/local/bin/localsend-wrapper.sh
         mode: '0755'
+      tags: [privacy-wrappers, localsend]
+
+    - name: Allow localsend wrapper to run without password prompt
+      lineinfile:
+        path: /etc/sudoers.d/localsend
+        line: "dev ALL=(ALL) NOPASSWD: /usr/local/bin/localsend-wrapper.sh"
+        create: yes
+        mode: '0440'
+        validate: 'visudo -cf %s'
       tags: [privacy-wrappers, localsend]
 
     - name: Update LocalSend desktop entry to use wrapper
