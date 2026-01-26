@@ -229,52 +229,17 @@ Automatically disables both when the application exits.
 
 #+begin_src bash :tangle ../configs/templates/localsend-wrapper.sh.j2
 #!/bin/bash
-# localsend-wrapper.sh - Enable WiFi and firewall ports around LocalSend
+# localsend-wrapper.sh - Enable firewall ports around LocalSend
 
 set -euo pipefail
 
-get_last_wifi() {
-    sudo iwctl known-networks list | sed -n '5p' | xargs | awk '{print $2}'
-}
+sudo ufw allow 53317/udp comment "LocalSend transfer"
+sudo ufw allow 53317/tcp comment "LocalSend transfer"
 
-enable_localsend() {
-    sudo ufw allow 5353/udp comment "LocalSend discovery"
-    sudo ufw allow 5353/tcp comment "LocalSend discovery"
-    sudo ufw allow 53317/tcp comment "LocalSend transfer"
-    echo "LocalSend ports enabled"
-}
+/usr/bin/localsend "$@"
 
-disable_localsend() {
-    sudo ufw delete allow 5353/udp
-    sudo ufw delete allow 5353/tcp
-    sudo ufw delete allow 53317/tcp
-    echo "LocalSend ports disabled"
-}
-
-enable_wifi() {
-    sudo ip link set wlan0 up
-    sleep 2
-    NETWORK=$(get_last_wifi)
-    sudo iwctl station wlan0 connect "$NETWORK"
-    echo "WiFi enabled and connected to $NETWORK"
-}
-
-disable_wifi() {
-    sudo iwctl station wlan0 disconnect
-    sudo ip link set wlan0 down
-    echo "WiFi disabled"
-}
-
-# Enable ports and wifi
-enable_localsend
-enable_wifi
-
-# Start LocalSend
-localsend_app "$@"
-
-# Disable on exit
-disable_localsend
-disable_wifi
+sudo ufw delete allow 53317/udp
+sudo ufw delete allow 53317/tcp
 #+end_src
 
 ** Deploy LocalSend Wrapper
