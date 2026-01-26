@@ -320,6 +320,71 @@ disable_wifi
       tags: [privacy-wrappers, localsend, verify]
 #+end_src
 
+** Browser Dispatch Configuration
+
+Configure domain-based browser routing. Domains listed here open in Brave with KYCIdentity profile for services requiring real identity authentication. All other URLs route to Tor Browser (privacy-first default).
+
+#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+    # ------------------------------------------------------------------------
+    # Browser Dispatch Configuration
+    # ------------------------------------------------------------------------
+
+    - name: Configure browser dispatch domains
+      copy:
+        content: "{{ browser_dispatch_config | to_json }}"
+        dest: /etc/browser-dispatch.json
+        mode: '0644'
+      vars:
+        browser_dispatch_config:
+          kyc_domains:
+            - chatgpt.com
+            - claude.ai
+            - github.com
+      tags: [privacy-wrappers, browser-dispatch]
+
+    - name: Verify browser dispatch configuration
+      shell: cat /etc/browser-dispatch.json
+      register: browser_dispatch_config_content
+      changed_when: false
+      tags: [privacy-wrappers, browser-dispatch, verify]
+
+    - name: Display browser dispatch configuration
+      debug:
+        msg:
+          - "=== Browser Dispatch Configuration ==="
+          - ""
+          - "{{ browser_dispatch_config_content.stdout }}"
+          - ""
+          - "KYC domains route to: Brave (KYCIdentity profile)"
+          - "All other domains route to: Tor Browser"
+          - ""
+      tags: [privacy-wrappers, browser-dispatch, verify]
+#+end_src
+
+** Notes
+
+*** Adding Domains
+
+To add or modify KYC domains, edit the =kyc_domains= list in the YAML block above, then re-run:
+
+#+begin_example
+cd ansible
+./tangle-all.sh && ./assemble-playbook.sh
+ansible-playbook playbook.yml --tags privacy-wrappers,browser-dispatch
+#+end_example
+
+*** Testing Dispatcher
+
+Test URL routing manually:
+
+#+begin_example
+# Should open in Brave KYCIdentity profile
+/usr/local/bin/browser-dispatch https://github.com
+
+# Should open in Tor Browser
+/usr/local/bin/browser-dispatch https://example.com
+#+end_example
+
 ** Notes
 
 *** Quick Operations

@@ -443,6 +443,142 @@ echo ""
       tags: [privacy, browser]
 #+end_src
 
+** Browser Dispatcher
+
+*** Dispatcher Script Template
+
+#+begin_src python :tangle ../configs/templates/browser-dispatch.j2
+#!/usr/bin/env python3
+"""Browser dispatcher with domain-based routing for privacy-first browsing."""
+
+import sys
+import json
+from urllib.parse import urlparse
+from pathlib import Path
+
+
+def load_config() -> dict:
+    """Load dispatcher configuration."""
+    config_file = Path("/etc/browser-dispatch.json")
+
+    if not config_file.exists():
+        return {"kyc_domains": []}
+
+    try:
+        return json.loads(config_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"kyc_domains": []}
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        sys.exit(1)
+
+    url = sys.argv[1]
+    domain = urlparse(url).netloc.lower()
+    config = load_config()
+
+    kyc_domains = {d.lower() for d in config.get("kyc_domains", [])}
+
+    if domain in kyc_domains:
+        # KYC identity sites → Brave with KYCIdentity profile
+        import os
+        os.execvp("brave", ["brave", "--profile-directory=KYCIdentity", url])
+    else:
+        # Privacy-first default → Tor Browser
+        import os
+        os.execvp("tor-browser", ["tor-browser", url])
+
+
+if __name__ == "__main__":
+    main()
+#+end_src
+
+*** Desktop Entry Template
+
+#+begin_src conf :tangle ../configs/templates/browser-dispatch.desktop.j2
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Browser Dispatcher
+GenericName=Web Browser
+Comment=Privacy-first browser dispatcher
+Exec=/usr/local/bin/browser-dispatch %u
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+#+end_src
+
+*** Deploy Browser Dispatcher
+
+#+begin_src yaml :tangle ../ansible/fragments/03-privacy.yml
+    # ------------------------------------------------------------------------
+    # Browser Dispatcher
+    # ------------------------------------------------------------------------
+
+    - name: Deploy browser dispatcher script
+      template:
+        src: ../configs/templates/browser-dispatch.j2
+        dest: /usr/local/bin/browser-dispatch
+        mode: '0755'
+      tags: [privacy, browser-dispatch]
+
+    - name: Create initial browser dispatch config
+      copy:
+        content: |
+          {
+            "kyc_domains": []
+          }
+        dest: /etc/browser-dispatch.json
+        mode: '0644'
+        force: no
+      tags: [privacy, browser-dispatch]
+
+    - name: Deploy browser dispatcher desktop entry
+      template:
+        src: ../configs/templates/browser-dispatch.desktop.j2
+        dest: /usr/share/applications/browser-dispatch.desktop
+        mode: '0644'
+      tags: [privacy, browser-dispatch]
+
+    - name: Set browser dispatcher as default browser
+      become: yes
+      become_user: "{{ dev_user }}"
+      shell: |
+        xdg-settings set default-web-browser browser-dispatch.desktop
+        xdg-mime default browser-dispatch.desktop x-scheme-handler/http
+        xdg-mime default browser-dispatch.desktop x-scheme-handler/https
+        xdg-mime default browser-dispatch.desktop text/html
+      tags: [privacy, browser-dispatch]
+
+    - name: Verify browser dispatcher installation
+      stat:
+        path: /usr/local/bin/browser-dispatch
+      register: browser_dispatch_installed
+      tags: [privacy, browser-dispatch, verify]
+
+    - name: Display browser dispatcher status
+      debug:
+        msg:
+          - "=== Browser Dispatcher Installed ==="
+          - ""
+          - "Script: {% if browser_dispatch_installed.stat.exists %}Installed{% else %}Not found{% endif %}"
+          - "Config: /etc/browser-dispatch.json (empty - populate in Phase 4)"
+          - ""
+          - "Current behavior:"
+          - "  - All URLs → Tor Browser (privacy-first default)"
+          - ""
+          - "After Phase 4 configuration:"
+          - "  - KYC domains → Brave with KYCIdentity profile"
+          - "  - All other URLs → Tor Browser"
+          - ""
+          - "Brave profiles auto-create on first use (no manual setup needed)"
+          - ""
+      tags: [privacy, browser-dispatch, verify]
+#+end_src
+
 ** KeePassXC
 
 *** Install KeePassXC
