@@ -458,24 +458,20 @@ fi
 echo ""
 
 # Sync status via RPC
-SYNC_INFO=$(curl -s --max-time 5 http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc \
-  -d '{"jsonrpc":"2.0","id":"0","method":"sync_info"}' \
+INFO=$(curl -s --max-time 5 http://127.0.0.1:18081/json_rpc \
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
   -H 'Content-Type: application/json' | jq -r '.result')
 
-if [ -n "$SYNC_INFO" ] && [ "$SYNC_INFO" != "null" ]; then
-  HEIGHT=$(echo "$SYNC_INFO" | jq -r '.height')
-  TARGET_HEIGHT=$(echo "$SYNC_INFO" | jq -r '.target_height')
+if [ -n "$INFO" ] && [ "$INFO" != "null" ]; then
+  HEIGHT=$(echo "$INFO" | jq -r '.height')
+  SYNCHRONIZED=$(echo "$INFO" | jq -r '.synchronized')
 
-  if [ "$HEIGHT" -eq "$TARGET_HEIGHT" ]; then
+  if [ "$SYNCHRONIZED" = "true" ]; then
     echo -e "${GREEN}✓ Blockchain synced${NC}"
     echo "  Current height: $HEIGHT"
   else
-    REMAINING=$((TARGET_HEIGHT - HEIGHT))
-    PERCENT=$(awk "BEGIN {printf \"%.2f\", ($HEIGHT / $TARGET_HEIGHT) * 100}")
-    echo -e "${YELLOW}⚠ Syncing blockchain${NC}"
-    echo "  Current: $HEIGHT"
-    echo "  Target: $TARGET_HEIGHT"
-    echo "  Remaining: $REMAINING blocks ($PERCENT% complete)"
+    echo -e "${YELLOW}⚠ Still syncing${NC}"
+    echo "  Current height: $HEIGHT"
   fi
 else
   echo -e "${YELLOW}⚠ Could not fetch sync status${NC}"
@@ -485,7 +481,7 @@ fi
 echo ""
 
 # Connection info
-INFO=$(curl -s --max-time 5 http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc \
+INFO=$(curl -s --max-time 5 http://127.0.0.1:18081/json_rpc \
   -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
   -H 'Content-Type: application/json' | jq -r '.result')
 
@@ -503,7 +499,7 @@ fi
 echo ""
 
 # Disk usage
-DISK_USAGE=$(du -sh {{ monerod_data_dir }} 2>/dev/null | cut -f1)
+DISK_USAGE=$(du -sh /opt/monerod 2>/dev/null | cut -f1)
 echo "--- Storage ---"
 echo "  Blockchain size: ${DISK_USAGE:-calculating...}"
 
