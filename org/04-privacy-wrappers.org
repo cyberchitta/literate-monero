@@ -231,13 +231,13 @@ Automatically disables both when the application exits.
 #!/bin/bash
 set -euo pipefail
 
-ufw allow 53317/udp comment "LocalSend transfer"
-ufw allow 53317/tcp comment "LocalSend transfer"
+sudo ufw allow 53317/udp comment "LocalSend transfer"
+sudo ufw allow 53317/tcp comment "LocalSend transfer"
 
 /usr/bin/localsend "$@"
 
-ufw delete allow 53317/udp
-ufw delete allow 53317/tcp
+sudo ufw delete allow 53317/udp
+sudo ufw delete allow 53317/tcp
 #+end_src
 
 ** Deploy LocalSend Wrapper
@@ -248,22 +248,6 @@ ufw delete allow 53317/tcp
         src: ../configs/templates/localsend-wrapper.sh.j2
         dest: /usr/local/bin/localsend-wrapper.sh
         mode: '0755'
-      tags: [privacy-wrappers, localsend]
-
-    - name: Allow localsend wrapper to run without password prompt
-      lineinfile:
-        path: /etc/sudoers.d/localsend
-        line: "dev ALL=(ALL) NOPASSWD: /usr/local/bin/localsend-wrapper.sh"
-        create: yes
-        mode: '0440'
-        validate: 'visudo -cf %s'
-      tags: [privacy-wrappers, localsend]
-
-    - name: Update LocalSend desktop entry to use wrapper
-      lineinfile:
-        path: /usr/share/applications/localsend.desktop
-        regexp: '^Exec=localsend$'
-        line: 'Exec=/usr/local/bin/localsend-wrapper.sh'
       tags: [privacy-wrappers, localsend]
 
     - name: Verify LocalSend wrapper installed
@@ -280,10 +264,8 @@ ufw delete allow 53317/tcp
           - "Wrapper: {% if localsend_wrapper.stat.exists %}Installed{% else %}Not found{% endif %}"
           - ""
           - "Behavior:"
-          - "  - Enables WiFi (connects to last known network)"
-          - "  - Opens firewall ports (5353 UDP/TCP, 53317 TCP)"
+          - "  - Opens firewall ports (53317 TCP/UDP)"
           - "  - Launches LocalSend"
-          - "  - Disables WiFi on exit"
           - "  - Closes firewall ports on exit"
           - ""
           - "Launch from app menu or command line:"
