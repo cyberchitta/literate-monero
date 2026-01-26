@@ -222,6 +222,104 @@ echo ""
       tags: [privacy-wrappers, verify]
 #+end_src
 
+** LocalSend Wrapper
+
+Wrapper script to enable WiFi and firewall ports only while LocalSend is running.
+Automatically disables both when the application exits.
+
+#+begin_src bash :tangle ../configs/templates/localsend-wrapper.sh.j2
+#!/bin/bash
+# localsend-wrapper.sh - Enable WiFi and firewall ports around LocalSend
+
+set -euo pipefail
+
+get_last_wifi() {
+    sudo iwctl known-networks list | sed -n '5p' | xargs | awk '{print $2}'
+}
+
+enable_localsend() {
+    sudo ufw allow 5353/udp comment "LocalSend discovery"
+    sudo ufw allow 5353/tcp comment "LocalSend discovery"
+    sudo ufw allow 53317/tcp comment "LocalSend transfer"
+    echo "LocalSend ports enabled"
+}
+
+disable_localsend() {
+    sudo ufw delete allow 5353/udp
+    sudo ufw delete allow 5353/tcp
+    sudo ufw delete allow 53317/tcp
+    echo "LocalSend ports disabled"
+}
+
+enable_wifi() {
+    sudo ip link set wlan0 up
+    sleep 2
+    NETWORK=$(get_last_wifi)
+    sudo iwctl station wlan0 connect "$NETWORK"
+    echo "WiFi enabled and connected to $NETWORK"
+}
+
+disable_wifi() {
+    sudo iwctl station wlan0 disconnect
+    sudo ip link set wlan0 down
+    echo "WiFi disabled"
+}
+
+# Enable ports and wifi
+enable_localsend
+enable_wifi
+
+# Start LocalSend
+localsend_app "$@"
+
+# Disable on exit
+disable_localsend
+disable_wifi
+#+end_src
+
+** Deploy LocalSend Wrapper
+
+#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+    - name: Deploy LocalSend wrapper script
+      template:
+        src: ../configs/templates/localsend-wrapper.sh.j2
+        dest: /usr/local/bin/localsend-wrapper.sh
+        mode: '0755'
+      tags: [privacy-wrappers, localsend]
+
+    - name: Update LocalSend desktop entry to use wrapper
+      lineinfile:
+        path: /usr/share/applications/localsend.desktop
+        regexp: '^Exec=localsend$'
+        line: 'Exec=/usr/local/bin/localsend-wrapper.sh'
+      tags: [privacy-wrappers, localsend]
+
+    - name: Verify LocalSend wrapper installed
+      stat:
+        path: /usr/local/bin/localsend-wrapper.sh
+      register: localsend_wrapper
+      tags: [privacy-wrappers, localsend, verify]
+
+    - name: Display LocalSend wrapper status
+      debug:
+        msg:
+          - "=== LocalSend Wrapper Installed ==="
+          - ""
+          - "Wrapper: {% if localsend_wrapper.stat.exists %}Installed{% else %}Not found{% endif %}"
+          - ""
+          - "Behavior:"
+          - "  - Enables WiFi (connects to last known network)"
+          - "  - Opens firewall ports (5353 UDP/TCP, 53317 TCP)"
+          - "  - Launches LocalSend"
+          - "  - Disables WiFi on exit"
+          - "  - Closes firewall ports on exit"
+          - ""
+          - "Launch from app menu or command line:"
+          - "  /usr/local/bin/localsend-wrapper.sh"
+          - ""
+      tags: [privacy-wrappers, localsend, verify]
+#+end_src
+
 ** Notes
 
 *** Quick Operations
