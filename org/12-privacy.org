@@ -441,6 +441,7 @@ echo ""
 import sys
 import json
 import os
+import subprocess
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -456,6 +457,43 @@ def load_config() -> dict:
         return json.loads(config_file.read_text())
     except (json.JSONDecodeError, OSError):
         return {"browser_profiles": []}
+
+
+def focus_tor_browser() -> bool:
+    """Try to focus existing Tor Browser window. Returns True if found."""
+    try:
+        # Check if Tor Browser process is running
+        result = subprocess.run(
+            ["pgrep", "-f", "tor-browser"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            # Get list of windows from Hyprland
+            windows = subprocess.run(
+                ["hyprctl", "clients", "-j"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            clients = json.loads(windows.stdout)
+
+            # Find Tor Browser window
+            for client in clients:
+                if "tor browser" in client.get("class", "").lower() or \
+                   "tor browser" in client.get("title", "").lower():
+                    # Focus this window
+                    address = client.get("address")
+                    subprocess.run(
+                        ["hyprctl", "dispatch", "focuswindow", f"address:{address}"],
+                        check=False
+                    )
+                    return True
+        return False
+    except Exception:
+        return False
 
 
 def main() -> None:
@@ -477,7 +515,12 @@ def main() -> None:
             os.execvp("chromium", ["chromium", f"--user-data-dir={profile_dir}", url])
 
     # No match found - default to Tor Browser (privacy-first)
-    os.execvp("tor-browser", ["tor-browser", url])
+    # Try to focus existing window, otherwise launch new instance
+    if not focus_tor_browser():
+        os.execvp("tor-browser", ["tor-browser"])
+    else:
+        # Window focused, exit successfully
+        sys.exit(0)
 
 
 if __name__ == "__main__":
