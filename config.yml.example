@@ -128,6 +128,25 @@ disk_alert_threshold: 90
 log_retention_days: 30
 
 # ----------------------------------------------------------------------------
+# Browser Profile Configuration
+# ----------------------------------------------------------------------------
+
+# Browser profiles for domain-based routing
+# Each profile gets its own Chromium data directory at ~/.config/chromium/{profile_name}
+# Domains not in any profile route to Tor Browser (privacy-first default)
+browser_profiles:
+  - name: kyc-identity
+    domains:
+      - chatgpt.com
+      - claude.ai
+      - github.com
+  # Add more profiles as needed:
+  # - name: work-profile
+  #   domains:
+  #     - company-intranet.com
+  #     - slack.com
+
+# ----------------------------------------------------------------------------
 # WireGuard Configuration
 # ----------------------------------------------------------------------------
 

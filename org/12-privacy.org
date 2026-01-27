@@ -436,7 +436,7 @@ echo ""
 
 #+begin_src python :tangle ../configs/templates/browser-dispatch.j2
 #!/usr/bin/env python3
-"""Browser dispatcher with domain-based routing for privacy-first browsing."""
+"""Browser dispatcher with profile-based domain routing for privacy-first browsing."""
 
 import sys
 import json
@@ -450,12 +450,12 @@ def load_config() -> dict:
     config_file = Path("/etc/browser-dispatch.json")
 
     if not config_file.exists():
-        return {"kyc_domains": [], "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"}
+        return {"browser_profiles": []}
 
     try:
         return json.loads(config_file.read_text())
     except (json.JSONDecodeError, OSError):
-        return {"kyc_domains": [], "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"}
+        return {"browser_profiles": []}
 
 
 def main() -> None:
@@ -466,15 +466,18 @@ def main() -> None:
     domain = urlparse(url).netloc.lower()
     config = load_config()
 
-    kyc_domains = {d.lower() for d in config.get("kyc_domains", [])}
-    kyc_profile_dir = config.get("kyc_profile_dir", "/home/dev/.config/chromium/kyc-identity")
+    # Check each profile for matching domain
+    for profile in config.get('browser_profiles', []):
+        profile_name = profile.get('name', '')
+        profile_domains = {d.lower() for d in profile.get('domains', [])}
 
-    if domain in kyc_domains:
-        # KYC identity sites → Chromium with kyc-identity profile
-        os.execvp("chromium", ["chromium", f"--user-data-dir={kyc_profile_dir}", url])
-    else:
-        # Privacy-first default → Tor Browser
-        os.execvp("tor-browser", ["tor-browser", url])
+        if domain in profile_domains:
+            # Route to Chromium with this profile
+            profile_dir = f"/home/dev/.config/chromium/{profile_name}"
+            os.execvp("chromium", ["chromium", f"--user-data-dir={profile_dir}", url])
+
+    # No match found - default to Tor Browser (privacy-first)
+    os.execvp("tor-browser", ["tor-browser", url])
 
 
 if __name__ == "__main__":
@@ -510,17 +513,6 @@ StartupNotify=true
         src: ../configs/templates/browser-dispatch.j2
         dest: /usr/local/bin/browser-dispatch
         mode: '0755'
-      tags: [privacy, browser-dispatch]
-
-    - name: Create initial browser dispatch config
-      copy:
-        content: |
-          {
-            "kyc_domains": []
-          }
-        dest: /etc/browser-dispatch.json
-        mode: '0644'
-        force: no
       tags: [privacy, browser-dispatch]
 
     - name: Deploy browser dispatcher desktop entry

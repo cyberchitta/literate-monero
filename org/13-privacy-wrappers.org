@@ -287,16 +287,11 @@ Configure domain-based browser routing. Domains listed here open in Chromium wit
       copy:
         content: |
           {
-            "kyc_domains": [
-              "chatgpt.com",
-              "claude.ai",
-              "github.com"
-            ],
-            "kyc_profile_dir": "/home/dev/.config/chromium/kyc-identity"
+            "browser_profiles": {{ browser_profiles | default([]) | to_nice_json }}
           }
         dest: /etc/browser-dispatch.json
         mode: '0644'
-        force: no
+        force: yes
       tags: [privacy-wrappers, browser-dispatch]
 
     - name: Verify browser dispatch configuration
@@ -312,8 +307,10 @@ Configure domain-based browser routing. Domains listed here open in Chromium wit
           - ""
           - "{{ browser_dispatch_config_content.stdout }}"
           - ""
-          - "KYC domains route to: Chromium (kyc-identity profile)"
-          - "All other domains route to: Tor Browser"
+          - "Profile routing:"
+          - "{% for profile in browser_profiles | default([]) %}  {{ profile.name }}: {{ profile.domains | join(', ') }}{% endfor %}"
+          - "{% if not browser_profiles | default([]) %}  (no profiles configured - all traffic to Tor Browser){% endif %}"
+          - "  Default: Tor Browser (privacy-first)"
           - ""
       tags: [privacy-wrappers, browser-dispatch, verify]
 #+end_src
