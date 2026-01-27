@@ -139,7 +139,6 @@ browser_profiles:
     domains:
       - chatgpt.com
       - claude.ai
-      - github.com
   # Add more profiles as needed:
   # - name: work-profile
   #   domains:
