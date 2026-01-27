@@ -55,12 +55,9 @@ backup_path "/etc/monerod.conf" "$BACKUP_PATH/etc"
 
 # User Data
 echo "--- User Data ---"
-backup_path "/home/{{ dev_user }}/.ssh" "$BACKUP_PATH/home/{{ dev_user }}"
-backup_path "/home/{{ dev_user }}/.gnupg" "$BACKUP_PATH/home/{{ dev_user }}"
+backup_path "/home/{{ dev_user }}/.secrets" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/.gitconfig" "$BACKUP_PATH/home/{{ dev_user }}"
 backup_path "/home/{{ dev_user }}/Documents" "$BACKUP_PATH/home/{{ dev_user }}"
-backup_path "/home/{{ dev_user }}/Monero/wallets" "$BACKUP_PATH/home/{{ dev_user }}/Monero"
-backup_path "/home/{{ dev_user }}/.config/feather" "$BACKUP_PATH/home/{{ dev_user }}/.config"
 
 # Mining Configuration
 echo "--- Mining Configuration ---"
@@ -84,11 +81,9 @@ Critical configs backed up:
 - Tor: /etc/tor/torrc
 - I2P: /etc/i2pd/tunnels.d
 - Monerod: /etc/monerod.conf
-- User SSH keys: /home/{{ dev_user }}/.ssh
-- User GPG keys: /home/{{ dev_user }}/.gnupg
+- Secrets: /home/{{ dev_user }}/.secrets (SSH keys, GPG keys, wallets)
 - Git config: /home/{{ dev_user }}/.gitconfig
 - KeePassXC databases: /home/{{ dev_user }}/Documents/*.kdbx (encrypted blobs)
-- Feather wallet files: `/home/{{ dev_user }}/Monero/wallets/` (encrypted by wallet password)
 - XMRig config: /opt/xmrig/build/config.json
 
 NOT backed up (Ansible regenerates):
@@ -201,8 +196,44 @@ if [ -n "$RESTORE_PATH" ]; then
         ;;
       home)
         echo "Restoring user data..."
-        rsync -av "$EXTRACTED_DIR/home/{{ dev_user }}/" "/home/{{ dev_user }}/"
-        chown -R {{ dev_user }}:{{ dev_user }} "/home/{{ dev_user }}/.ssh" "/home/{{ dev_user }}/.gnupg" "/home/{{ dev_user }}/.gitconfig"
+
+        # Restore .secrets first
+        if [ -d "$EXTRACTED_DIR/home/{{ dev_user }}/.secrets" ]; then
+          echo "  Restoring secrets..."
+          rsync -av "$EXTRACTED_DIR/home/{{ dev_user }}/.secrets/" "/home/{{ dev_user }}/.secrets/"
+          chown -R {{ dev_user }}:{{ dev_user }} "/home/{{ dev_user }}/.secrets"
+          chmod 700 "/home/{{ dev_user }}/.secrets"
+
+          # Create symlinks (only if they don't exist)
+          echo "  Creating symlinks..."
+
+          if [ ! -L "/home/{{ dev_user }}/.ssh" ]; then
+            [ -e "/home/{{ dev_user }}/.ssh" ] && echo "  WARNING: ~/.ssh exists but is not a symlink"
+            ln -s "/home/{{ dev_user }}/.secrets/ssh" "/home/{{ dev_user }}/.ssh"
+          fi
+
+          if [ ! -L "/home/{{ dev_user }}/.gnupg" ]; then
+            [ -e "/home/{{ dev_user }}/.gnupg" ] && echo "  WARNING: ~/.gnupg exists but is not a symlink"
+            ln -s "/home/{{ dev_user }}/.secrets/gnupg" "/home/{{ dev_user }}/.gnupg"
+          fi
+
+          if [ ! -L "/home/{{ dev_user }}/.bitmonero" ]; then
+            [ -e "/home/{{ dev_user }}/.bitmonero" ] && echo "  WARNING: ~/.bitmonero exists but is not a symlink"
+            ln -s "/home/{{ dev_user }}/.secrets/wallets/bitmonero" "/home/{{ dev_user }}/.bitmonero"
+          fi
+
+          mkdir -p "/home/{{ dev_user }}/Monero"
+          if [ ! -L "/home/{{ dev_user }}/Monero/wallets" ]; then
+            [ -e "/home/{{ dev_user }}/Monero/wallets" ] && echo "  WARNING: ~/Monero/wallets exists but is not a symlink"
+            ln -s "/home/{{ dev_user }}/.secrets/wallets/feather" "/home/{{ dev_user }}/Monero/wallets"
+          fi
+
+          echo "✓ Restored secrets and created symlinks"
+        fi
+
+        # Restore other user data (Documents, .gitconfig, etc.)
+        rsync -av --exclude='.secrets' "$EXTRACTED_DIR/home/{{ dev_user }}/" "/home/{{ dev_user }}/"
+        chown -R {{ dev_user }}:{{ dev_user }} "/home/{{ dev_user }}/.gitconfig" "/home/{{ dev_user }}/Documents"
         echo "✓ Restored user data to /home/{{ dev_user }}"
         ;;
       mining)

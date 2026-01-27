@@ -129,29 +129,35 @@ Available tags correspond to phases:
 * Phase 13: Privacy Wrappers
 #+INCLUDE: "13-privacy-wrappers.org"
 
-* Phase 14: Monero Full Node
-#+INCLUDE: "14-monerod.org"
+* Phase 14: Application Sandboxing
+#+INCLUDE: "14-sandbox.org"
 
-* Phase 15: User Account Setup
-#+INCLUDE: "15-users.org"
+* Phase 15: Monero Full Node
+#+INCLUDE: "15-monerod.org"
 
-* Phase 16: Monero Wallet
-#+INCLUDE: "16-wallet.org"
+* Phase 16: User Account Setup
+#+INCLUDE: "16-users.org"
 
-* Phase 17: Monero Mining Setup
-#+INCLUDE: "17-mining.org"
+* Phase 17: Monero Wallet
+#+INCLUDE: "17-wallet.org"
 
-* Phase 80: Firewall Setup (Finalization)
-#+INCLUDE: "80-firewall.org"
+* Phase 18: Monero Mining Setup
+#+INCLUDE: "18-mining.org"
 
-* Phase 81: Monitoring (Finalization)
-#+INCLUDE: "81-monitoring.org"
+* Phase 80: Secrets Isolation (Finalization)
+#+INCLUDE: "80-secrets-isolation.org"
 
-* Phase 82: Backup & Recovery (Finalization)
-#+INCLUDE: "82-backup.org"
+* Phase 81: Firewall Setup (Finalization)
+#+INCLUDE: "81-firewall.org"
 
-* Phase 83: Verification & Testing (Finalization)
-#+INCLUDE: "83-verification.org"
+* Phase 82: Monitoring (Finalization)
+#+INCLUDE: "82-monitoring.org"
+
+* Phase 83: Backup & Recovery (Finalization)
+#+INCLUDE: "83-backup.org"
+
+* Phase 84: Verification & Testing (Finalization)
+#+INCLUDE: "84-verification.org"
 
 * Update Management
 #+INCLUDE: "97-updates.org"

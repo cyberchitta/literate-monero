@@ -33,7 +33,6 @@ tramp
 
 # Secrets
 *vault*
-*secret*
 *password*
 *.pem
 *.key

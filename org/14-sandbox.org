@@ -1,0 +1,156 @@
+** Overview
+
+This phase installs application sandboxing infrastructure using bubblewrap to isolate untrusted applications from sensitive credentials.
+
+**Sandboxed by default:**
+- Claude Code (CLI via bunx)
+
+**How it works:**
+- Bubblewrap uses Linux namespaces (same foundation as containers)
+- Mount tmpfs over `/home/dev/.secrets/` to hide it from sandboxed apps
+- Apps see normal filesystem except `.secrets/` appears empty
+- No modifications to sandboxed applications needed
+
+**Prerequisites:** None - installs bubblewrap and bun
+
+** Install Bubblewrap
+
+#+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
+    # ------------------------------------------------------------------------
+    # Application Sandboxing Infrastructure
+    # ------------------------------------------------------------------------
+
+    - name: Install bubblewrap
+      community.general.pacman:
+        name:
+          - bubblewrap
+        state: present
+      tags: [sandbox]
+#+end_src
+
+** Claude Code Sandboxing
+
+#+begin_src bash :tangle ../configs/templates/claude-code-sandboxed.sh.j2
+#!/bin/bash
+# Sandboxed Claude Code launcher
+# Generated from org/14-sandbox.org
+
+# Check if bunx is available
+if ! command -v bunx &> /dev/null; then
+  echo "Error: bunx not found. Install bun first."
+  exit 1
+fi
+
+exec bwrap \
+  --ro-bind / / \
+  --dev /dev \
+  --proc /proc \
+  --tmpfs /home/{{ dev_user }}/.secrets \
+  --bind /home/{{ dev_user }}/projects /home/{{ dev_user }}/projects \
+  --unshare-all \
+  --share-net \
+  --die-with-parent \
+  bunx @anthropic-ai/claude-code "$@"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
+    - name: Install bun (for Claude Code)
+      community.general.pacman:
+        name:
+          - bun
+        state: present
+      tags: [sandbox, claude-code]
+
+    - name: Deploy Claude Code sandbox wrapper
+      template:
+        src: ../configs/templates/claude-code-sandboxed.sh.j2
+        dest: /usr/local/bin/claude-code-sandboxed
+        mode: '0755'
+      tags: [sandbox, claude-code]
+
+    - name: Create shell alias for sandboxed Claude Code
+      lineinfile:
+        path: "/home/{{ dev_user }}/.bashrc"
+        line: "alias claude-code='claude-code-sandboxed'"
+        create: yes
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      tags: [sandbox, claude-code]
+#+end_src
+
+** Verify Sandbox Infrastructure
+
+#+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
+    - name: Verify bubblewrap installed
+      command: which bwrap
+      register: bwrap_check
+      changed_when: false
+      tags: [sandbox, verify]
+
+    - name: Verify bunx available
+      command: which bunx
+      register: bunx_check
+      changed_when: false
+      failed_when: false
+      tags: [sandbox, verify]
+
+    - name: Display sandbox infrastructure status
+      debug:
+        msg:
+          - "=== Sandbox Infrastructure Complete ==="
+          - ""
+          - "Bubblewrap: {% if bwrap_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
+          - "Bunx: {% if bunx_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
+          - ""
+          - "Wrapper installed:"
+          - "  /usr/local/bin/claude-code-sandboxed"
+          - ""
+          - "Usage:"
+          - "  claude-code-sandboxed [options]"
+          - "  # Or use alias: claude-code"
+          - ""
+          - "The wrapper runs Claude Code via bunx with:"
+          - "  - Full filesystem access (except .secrets/)"
+          - "  - Write access to ~/projects only"
+          - "  - Network access enabled"
+          - "  - .secrets/ directory hidden"
+          - ""
+          - "Secrets isolation happens in Phase 80"
+          - ""
+      tags: [sandbox, verify]
+#+end_src
+
+** Notes
+
+*** How Sandboxing Works
+
+Bubblewrap creates a new namespace where:
+- Most filesystem is read-only bind-mounted
+- `/home/dev/projects` is bind-mounted read-write (for Claude Code edits)
+- `/home/dev/.secrets/` is replaced with empty tmpfs
+- App sees everything except secrets
+
+*** Claude Code Usage
+
+#+begin_example
+# Sandboxed (via wrapper)
+claude-code-sandboxed
+
+# Or via alias
+claude-code
+
+# Without sandbox (not recommended)
+bunx @anthropic-ai/claude-code
+#+end_example
+
+*** Testing Sandbox
+
+After Phase 80 creates `.secrets/`:
+
+#+begin_example
+# Without sandbox - sees secrets
+ls -la ~/.ssh
+
+# With sandbox - sees nothing
+bwrap --ro-bind / / --tmpfs ~/.secrets ls -la ~/.ssh
+#+end_example
