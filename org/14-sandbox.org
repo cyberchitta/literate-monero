@@ -46,7 +46,8 @@ exec bwrap \
   --dev /dev \
   --proc /proc \
   --tmpfs /home/{{ dev_user }}/.secrets \
-  --bind /home/{{ dev_user }}/projects /home/{{ dev_user }}/projects \
+  --bind /home/{{ dev_user }} /home/{{ dev_user }} \
+  --bind /tmp /tmp \
   --unshare-all \
   --share-net \
   --die-with-parent \
