@@ -16,7 +16,7 @@ SSH firewall rules are managed by the WireGuard phase because they depend on the
 
 ** Firewall Setup
 
-#+begin_src yaml :tangle ../ansible/fragments/80-firewall.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-firewall.yml
     # ------------------------------------------------------------------------
     # Firewall Setup
     # ------------------------------------------------------------------------
@@ -56,7 +56,7 @@ SSH firewall rules are managed by the WireGuard phase because they depend on the
 
 ** Verify Security Setup
 
-#+begin_src yaml :tangle ../ansible/fragments/80-firewall.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-firewall.yml
     - name: Check firewall status
       command: ufw status verbose
       register: ufw_status

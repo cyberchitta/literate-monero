@@ -6,7 +6,7 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
 
 ** Install monerod
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     # ------------------------------------------------------------------------
     # Monero Full Node
     # ------------------------------------------------------------------------
@@ -145,7 +145,7 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
 
 ** Create Data Directory
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Create monerod data directory
       file:
         path: "{{ monerod_data_dir }}"
@@ -167,7 +167,7 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
 
 ** Load I2P Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Wait for I2P address file to exist
       wait_for:
         path: /etc/monero/i2p-address.txt
@@ -203,7 +203,7 @@ Updates are **automated weekly** (Sundays at 3 AM) with safety checks.
 
 See Appendix G: GPG Signature Verification (Ban List) for security rationale.
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Download Monero spy node ban list
       get_url:
         url: https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt
@@ -349,7 +349,7 @@ check-updates=disabled
 
 ** Deploy Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Deploy monerod configuration
       template:
         src: ../configs/templates/monerod.conf.j2
@@ -399,7 +399,7 @@ WantedBy=multi-user.target
 
 ** Deploy Service
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Deploy monerod systemd service
       template:
         src: ../configs/templates/monerod.service.j2
@@ -423,7 +423,7 @@ WantedBy=multi-user.target
 
 ** Firewall Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Allow Monero P2P port through firewall
       community.general.ufw:
         rule: allow
@@ -513,7 +513,7 @@ echo ""
 
 ** Deploy Status Script
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Deploy monerod status script
       template:
         src: ../configs/templates/monerod-status.sh.j2
@@ -571,7 +571,7 @@ fi
 
 Deploy the script and set up weekly updates.
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Deploy ban list update script
       template:
         src: ../configs/templates/update-monero-banlist.sh.j2
@@ -592,7 +592,7 @@ Deploy the script and set up weekly updates.
 
 ** Verification
 
-#+begin_src yaml :tangle ../ansible/fragments/14-monerod.yml
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     - name: Wait for monerod to start
       pause:
         seconds: 10

@@ -107,7 +107,7 @@ This Jinja2 template configures XMRig with variables from configuration.org.
 
 ** Install Build Dependencies
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     # ------------------------------------------------------------------------
     # Monero Mining Setup
     # ------------------------------------------------------------------------
@@ -163,7 +163,7 @@ This Jinja2 template configures XMRig with variables from configuration.org.
 
 ** Build XMRig
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     - name: Set versioned XMRig directory
       set_fact:
         xmrig_versioned_dir: "{{ xmrig_install_dir }}-{{ xmrig_version }}"
@@ -252,7 +252,7 @@ See Appendix G: XMRig MSR Access for security rationale.
 
 ** Install P2Pool
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     - name: Install P2Pool dependencies
       community.general.pacman:
         name:
@@ -341,7 +341,7 @@ See Appendix G: XMRig MSR Access for security rationale.
 
 ** Deploy XMRig Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     - name: Deploy XMRig configuration
       template:
         src: ../configs/templates/xmrig-config.json.j2
@@ -410,7 +410,7 @@ WantedBy=multi-user.target
 
 ** Deploy Systemd Services
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     - name: Deploy P2Pool systemd service
       template:
         src: ../configs/templates/p2pool.service.j2
@@ -483,7 +483,7 @@ WantedBy=multi-user.target
 
 ** Verify Mining
 
-#+begin_src yaml :tangle ../ansible/fragments/17-mining.yml
+#+begin_src yaml :tangle ../ansible/fragments/18-mining.yml
     - name: Wait for mining to start
       pause:
         seconds: 10

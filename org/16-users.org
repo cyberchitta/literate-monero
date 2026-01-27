@@ -6,7 +6,7 @@ This phase configures the mining user account:
 
 ** Create Service User Accounts
 
-#+begin_src yaml :tangle ../ansible/fragments/15-users.yml
+#+begin_src yaml :tangle ../ansible/fragments/16-users.yml
     - name: Create mining user (no login shell)
       user:
         name: "{{ mining_user }}"
@@ -47,7 +47,7 @@ This phase configures the mining user account:
 
 Each service gets its own data directory with appropriate permissions.
 
-#+begin_src yaml :tangle ../ansible/fragments/15-users.yml
+#+begin_src yaml :tangle ../ansible/fragments/16-users.yml
     - name: Create mining data directory
       file:
         path: "{{ mining_data_dir }}"
@@ -80,7 +80,7 @@ Each service gets its own data directory with appropriate permissions.
 
 Set CPU and memory limits using systemd cgroups.
 
-#+begin_src yaml :tangle ../ansible/fragments/15-users.yml
+#+begin_src yaml :tangle ../ansible/fragments/16-users.yml
     - name: Create systemd user slice for mining
       copy:
         content: |
@@ -102,7 +102,7 @@ Set CPU and memory limits using systemd cgroups.
 
 ** Verify User Creation
 
-#+begin_src yaml :tangle ../ansible/fragments/15-users.yml
+#+begin_src yaml :tangle ../ansible/fragments/16-users.yml
     - name: Verify users exist
       shell: |
         id {{ item }} 2>/dev/null && echo "exists" || echo "missing"

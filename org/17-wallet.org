@@ -16,7 +16,7 @@ Wallet creation is a user operation - see official documentation for usage.
 
 The wallet binaries are already in `/opt/monero` from monerod installation.
 
-#+begin_src yaml :tangle ../ansible/fragments/16-wallet.yml
+#+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
     # ------------------------------------------------------------------------
     # Monero Wallet
     # ------------------------------------------------------------------------
@@ -52,7 +52,7 @@ The wallet binaries are already in `/opt/monero` from monerod installation.
 
 Feather Wallet doesn't have a stable AUR package, so we install from official GitHub releases.
 
-#+begin_src yaml :tangle ../ansible/fragments/16-wallet.yml
+#+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
     - name: Check if Feather Wallet is installed
       stat:
         path: /opt/feather/feather
@@ -137,7 +137,7 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
 See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
-#+begin_src yaml :tangle ../ansible/fragments/16-wallet.yml
+#+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
     - name: Check if Trezor Suite is installed
       stat:
         path: /opt/trezor/trezor-suite
@@ -225,7 +225,7 @@ See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
 ** Configure Wallet Directory
 
-#+begin_src yaml :tangle ../ansible/fragments/16-wallet.yml
+#+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
     - name: Create Monero wallet directory
       file:
         path: "/home/{{ dev_user }}/.bitmonero"
@@ -238,7 +238,7 @@ See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
 ** Verify Wallet Setup
 
-#+begin_src yaml :tangle ../ansible/fragments/16-wallet.yml
+#+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
     - name: Test monerod RPC connectivity for wallet
       uri:
         url: "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc"
