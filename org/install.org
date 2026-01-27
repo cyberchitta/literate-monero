@@ -111,47 +111,47 @@ Available tags correspond to phases:
 - =backup= - Phase 11: Backup
 - =verify= - Phase 12: Verification
 
-* Pre-flight Validation
-#+INCLUDE: "00a-validation.org"
-
-* Phase 0: Configuration
+* Configuration
 #+INCLUDE: "00-configuration.org"
 
-* Phase 1: Base System Setup
-#+INCLUDE: "01-base-system.org"
+* Pre-flight Validation
+#+INCLUDE: "01-validation.org"
 
-* Phase 2: WireGuard Secure Access
-#+INCLUDE: "02-wireguard.org"
+* Phase 10: Base System Setup
+#+INCLUDE: "10-base-system.org"
 
-* Phase 3: Privacy Foundation
-#+INCLUDE: "03-privacy.org"
+* Phase 11: WireGuard Secure Access
+#+INCLUDE: "11-wireguard.org"
 
-* Phase 4: Privacy Wrappers
-#+INCLUDE: "04-privacy-wrappers.org"
+* Phase 12: Privacy Foundation
+#+INCLUDE: "12-privacy.org"
 
-* Phase 5: Monero Full Node
-#+INCLUDE: "05-monerod.org"
+* Phase 13: Privacy Wrappers
+#+INCLUDE: "13-privacy-wrappers.org"
 
-* Phase 6: User Account Setup
-#+INCLUDE: "06-users.org"
+* Phase 14: Monero Full Node
+#+INCLUDE: "14-monerod.org"
 
-* Phase 7: Monero Wallet
-#+INCLUDE: "07-wallet.org"
+* Phase 15: User Account Setup
+#+INCLUDE: "15-users.org"
 
-* Phase 8: Monero Mining Setup
-#+INCLUDE: "08-mining.org"
+* Phase 16: Monero Wallet
+#+INCLUDE: "16-wallet.org"
 
-* Phase 9: Firewall Setup
-#+INCLUDE: "09-firewall.org"
+* Phase 17: Monero Mining Setup
+#+INCLUDE: "17-mining.org"
 
-* Phase 10: Monitoring
-#+INCLUDE: "10-monitoring.org"
+* Phase 80: Firewall Setup (Finalization)
+#+INCLUDE: "80-firewall.org"
 
-* Phase 11: Backup & Recovery
-#+INCLUDE: "11-backup.org"
+* Phase 81: Monitoring (Finalization)
+#+INCLUDE: "81-monitoring.org"
 
-* Phase 12: Verification & Testing
-#+INCLUDE: "12-verification.org"
+* Phase 82: Backup & Recovery (Finalization)
+#+INCLUDE: "82-backup.org"
+
+* Phase 83: Verification & Testing (Finalization)
+#+INCLUDE: "83-verification.org"
 
 * Update Management
 #+INCLUDE: "97-updates.org"
