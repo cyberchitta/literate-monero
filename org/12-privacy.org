@@ -423,19 +423,6 @@ echo ""
         mode: '0644'
       tags: [privacy, browser]
 
-    - name: Set Tor Browser as default browser
-      copy:
-        content: |
-          [Default Applications]
-          x-scheme-handler/http=tor-browser.desktop
-          x-scheme-handler/https=tor-browser.desktop
-          text/html=tor-browser.desktop
-        dest: "/home/{{ dev_user }}/.config/mimeapps.list"
-        owner: "{{ dev_user }}"
-        group: "{{ dev_user }}"
-        mode: '0644'
-      tags: [privacy, browser]
-
     - name: Clean up Tor Browser download
       file:
         path: /tmp/tor-browser.tar.xz
