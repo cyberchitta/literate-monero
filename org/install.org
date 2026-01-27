@@ -65,10 +65,12 @@ ansible-playbook ansible/playbook.yml --tags base -K
 ansible-playbook ansible/playbook.yml --tags wireguard -K
 ansible-playbook ansible/playbook.yml --tags privacy -K
 ansible-playbook ansible/playbook.yml --tags privacy-wrappers -K
+ansible-playbook ansible/playbook.yml --tags sandbox -K
 ansible-playbook ansible/playbook.yml --tags monerod -K
 ansible-playbook ansible/playbook.yml --tags users -K
 ansible-playbook ansible/playbook.yml --tags wallet -K
 ansible-playbook ansible/playbook.yml --tags mining -K
+ansible-playbook ansible/playbook.yml --tags secrets-isolation -K
 ansible-playbook ansible/playbook.yml --tags firewall -K
 ansible-playbook ansible/playbook.yml --tags monitoring -K
 ansible-playbook ansible/playbook.yml --tags backup -K
@@ -98,18 +100,20 @@ If you need to modify or fix a specific phase:
 Each phase can be worked on independently without re-running the entire installation.
 
 Available tags correspond to phases:
-- =base= - Phase 1: Base system
-- =wireguard= - Phase 2: WireGuard VPN
-- =privacy= - Phase 3: Privacy infrastructure (Tor, I2P, browsers)
-- =privacy-wrappers= - Phase 4: Privacy wrappers (git, SSH routing)
-- =monerod= - Phase 5: Monero full node
-- =users= - Phase 6: User accounts
-- =wallet= - Phase 7: Monero wallet
-- =mining= - Phase 8: Mining
-- =firewall= - Phase 9: Firewall
-- =monitoring= - Phase 10: Monitoring
-- =backup= - Phase 11: Backup
-- =verify= - Phase 12: Verification
+- =base= - Phase 10: Base system
+- =wireguard= - Phase 11: WireGuard VPN
+- =privacy= - Phase 12: Privacy infrastructure (Tor, I2P, browsers)
+- =privacy-wrappers= - Phase 13: Privacy wrappers (git, SSH routing)
+- =sandbox= - Phase 14: Application sandboxing
+- =monerod= - Phase 15: Monero full node
+- =users= - Phase 16: User accounts
+- =wallet= - Phase 17: Monero wallet
+- =mining= - Phase 18: Mining
+- =secrets-isolation= - Phase 80: Secrets isolation (finalization)
+- =firewall= - Phase 81: Firewall (finalization)
+- =monitoring= - Phase 82: Monitoring (finalization)
+- =backup= - Phase 83: Backup (finalization)
+- =verify= - Phase 84: Verification (finalization)
 
 * Configuration
 #+INCLUDE: "00-configuration.org"
