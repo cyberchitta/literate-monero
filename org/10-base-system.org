@@ -12,7 +12,7 @@ This phase sets up the base system:
 
 All phases append to the same playbook. This starts the main play.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
 ---
 # ============================================================================
 # Literate Monero Installation Playbook
@@ -32,7 +32,7 @@ All phases append to the same playbook. This starts the main play.
 
 ** Deploy System Version
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Deploy system version
       copy:
         content: "{{ system_version }}"
@@ -45,7 +45,7 @@ All phases append to the same playbook. This starts the main play.
 
 Install tools needed for system administration and development.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Install essential system packages
       community.general.pacman:
         name:
@@ -73,7 +73,7 @@ Install tools needed for system administration and development.
 
 Enable cronie for scheduled tasks (used by monitoring and backup).
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Enable and start cronie service
       systemd:
         name: cronie
@@ -86,7 +86,7 @@ Enable cronie for scheduled tasks (used by monitoring and backup).
 
 Set timezone, locale, and hostname.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Set system timezone
       community.general.timezone:
         name: "{{ system_timezone }}"
@@ -124,7 +124,7 @@ Set timezone, locale, and hostname.
 
 Configure kernel parameters for mining optimization (huge pages).
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Set kernel parameters for mining
       sysctl:
         name: "{{ item.name }}"
@@ -148,7 +148,7 @@ Configure kernel parameters for mining optimization (huge pages).
 
 Configure swap with low swappiness for server workload.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Set swappiness
       sysctl:
         name: vm.swappiness
@@ -170,7 +170,7 @@ Configure swap with low swappiness for server workload.
 
 Check that the root partition is encrypted with LUKS.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Check if root partition is encrypted
       shell: |
         if lsblk -f | grep -q crypto_LUKS; then
@@ -198,7 +198,7 @@ Check that the root partition is encrypted with LUKS.
 
 Display system information for verification.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Gather system facts
       setup:
       tags: [base, info]
@@ -223,7 +223,7 @@ Display system information for verification.
 Remove pre-installed packages that aren't needed for this privacy-focused setup.
 Done at the end after all desired software is installed.
 
-#+begin_src yaml :tangle ../ansible/fragments/01-base-system.yml
+#+begin_src yaml :tangle ../ansible/fragments/10-base-system.yml
     - name: Remove unwanted pre-installed packages
       community.general.pacman:
         name:

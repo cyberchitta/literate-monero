@@ -82,7 +82,7 @@ Host *.github.com *.gitlab.com
 
 *** Deploy Privacy Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+#+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     # ------------------------------------------------------------------------
     # Privacy Wrappers for Applications
     # ------------------------------------------------------------------------
@@ -163,7 +163,7 @@ echo ""
 
 ** Deploy Helper Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+#+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     # ------------------------------------------------------------------------
     # Privacy Wrapper Helper Scripts
     # ------------------------------------------------------------------------
@@ -180,7 +180,7 @@ echo ""
 
 ** Verify Privacy Wrappers
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+#+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     # ------------------------------------------------------------------------
     # Privacy Wrappers Verification
     # ------------------------------------------------------------------------
@@ -242,7 +242,7 @@ sudo ufw delete allow 53317/tcp
 
 ** Deploy LocalSend Wrapper
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+#+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     - name: Deploy LocalSend wrapper script
       template:
         src: ../configs/templates/localsend-wrapper.sh.j2
@@ -278,7 +278,7 @@ sudo ufw delete allow 53317/tcp
 
 Configure domain-based browser routing. Domains listed here open in Chromium with kyc-identity profile for services requiring real identity authentication. All other URLs route to Tor Browser (privacy-first default).
 
-#+begin_src yaml :tangle ../ansible/fragments/04-privacy-wrappers.yml
+#+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     # ------------------------------------------------------------------------
     # Browser Dispatch Configuration
     # ------------------------------------------------------------------------

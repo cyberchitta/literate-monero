@@ -532,7 +532,7 @@ echo "Security audit completed"
 
 ** Deploy Verification Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+#+begin_src yaml :tangle ../ansible/fragments/83-verification.yml
     # ------------------------------------------------------------------------
     # Verification & Testing
     # ------------------------------------------------------------------------
@@ -551,7 +551,7 @@ echo "Security audit completed"
 
 ** Run System Verification
 
-#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+#+begin_src yaml :tangle ../ansible/fragments/83-verification.yml
     - name: Run comprehensive system check
       command: /usr/local/bin/system-check.sh
       register: system_check
@@ -573,7 +573,7 @@ echo "Security audit completed"
 
 ** Final Installation Summary
 
-#+begin_src yaml :tangle ../ansible/fragments/11-verification.yml
+#+begin_src yaml :tangle ../ansible/fragments/83-verification.yml
     - name: Display final installation summary
       debug:
         msg:

@@ -12,7 +12,7 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
 
 ** Install WireGuard
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     # ------------------------------------------------------------------------
     # WireGuard Secure Access
     # ------------------------------------------------------------------------
@@ -29,7 +29,7 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
 
 WireGuard uses public-key cryptography. Each peer has a private/public key pair.
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Check if WireGuard server keys exist
       stat:
         path: /etc/wireguard/server-private.key
@@ -105,7 +105,7 @@ PrivateKey = {{ wg_server_privkey['content'] | b64decode | trim }}
 
 ** Deploy WireGuard Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Deploy WireGuard configuration
       template:
         src: ../configs/templates/wg0.conf.j2
@@ -135,7 +135,7 @@ PrivateKey = {{ wg_server_privkey['content'] | b64decode | trim }}
 
 ** Firewall Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Allow WireGuard port through firewall
       community.general.ufw:
         rule: allow
@@ -152,7 +152,7 @@ SSH access has two phases:
 - wireguard_only: false (default): SSH open on port 22 for initial setup
 - wireguard_only: true: SSH only via WireGuard tunnel (set after verifying WireGuard works)
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Configure SSH firewall rules based on WireGuard phase
       block:
         # Initial setup - SSH port open
@@ -205,7 +205,7 @@ SSH access has two phases:
 
 ** Verify SSH Access Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Verify SSH firewall rules
       shell: ufw status numbered | grep "{{ ssh_port }}/tcp"
       register: ssh_rules
@@ -249,7 +249,7 @@ SSH access has two phases:
 
 ** Start WireGuard Service
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Enable and start WireGuard
       systemd:
         name: wg-quick@wg0
@@ -495,7 +495,7 @@ echo ""
 
 ** Deploy Helper Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Deploy WireGuard helper scripts
       template:
         src: "../configs/templates/{{ item }}.j2"
@@ -514,7 +514,7 @@ echo ""
 
 **Not covered here:** Git hosting keys (GitHub/GitLab) are generated separately in Phase 3 after privacy configuration.
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Ensure .ssh directory exists for dev user
       file:
         path: "/home/{{ dev_user }}/.ssh"
@@ -559,7 +559,7 @@ echo ""
 
 Now that keys are provisioned and verified, apply full SSH hardening.
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Harden SSH configuration (after keys verified)
       lineinfile:
         path: /etc/ssh/sshd_config
@@ -577,7 +577,7 @@ Now that keys are provisioned and verified, apply full SSH hardening.
 
 ** Verify WireGuard Installation
 
-#+begin_src yaml :tangle ../ansible/fragments/02-wireguard.yml
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
     - name: Check WireGuard service status
       systemd:
         name: wg-quick@wg0

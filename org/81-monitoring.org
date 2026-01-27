@@ -42,7 +42,7 @@ Seal=yes
 
 ** Deploy Journald Configuration
 
-#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-monitoring.yml
     # ------------------------------------------------------------------------
     # Monitoring
     # ------------------------------------------------------------------------
@@ -218,7 +218,7 @@ echo "========================================"
 
 ** Deploy Monitoring Scripts
 
-#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-monitoring.yml
     - name: Deploy monitoring scripts
       template:
         src: "../configs/templates/{{ item }}.j2"
@@ -234,7 +234,7 @@ echo "========================================"
 
 ** Cron Jobs for Monitoring
 
-#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-monitoring.yml
     - name: Create cron job for disk monitoring
       cron:
         name: "Disk space monitoring"
@@ -292,7 +292,7 @@ echo "  logs-all         - All system logs"
 echo "  logs-errors      - Error logs only"
 #+end_src
 
-#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-monitoring.yml
     - name: Deploy log aliases
       template:
         src: ../configs/templates/log-aliases.sh.j2
@@ -303,7 +303,7 @@ echo "  logs-errors      - Error logs only"
 
 ** Verify Monitoring Setup
 
-#+begin_src yaml :tangle ../ansible/fragments/09-monitoring.yml
+#+begin_src yaml :tangle ../ansible/fragments/81-monitoring.yml
     - name: Test monitoring scripts
       command: "/usr/local/bin/{{ item }}"
       loop:
