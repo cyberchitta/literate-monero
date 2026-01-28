@@ -46,6 +46,7 @@ exec bwrap \
   --dev /dev \
   --proc /proc \
   --tmpfs /home/{{ dev_user }}/.secrets \
+  --tmpfs /home/{{ dev_user }}/.config/chromium \
   --bind /home/{{ dev_user }} /home/{{ dev_user }} \
   --bind /tmp /tmp \
   --unshare-all \
@@ -111,10 +112,11 @@ exec bwrap \
           - "  # Or use alias: claude-code"
           - ""
           - "The wrapper runs Claude Code via bunx with:"
-          - "  - Full filesystem access (except .secrets/)"
+          - "  - Full filesystem access (except .secrets/ and Chromium profiles)"
           - "  - Write access to ~/projects only"
           - "  - Network access enabled"
           - "  - .secrets/ directory hidden"
+          - "  - Chromium profiles hidden (~/.config/chromium)"
           - ""
           - "Secrets isolation happens in Phase 80"
           - ""
