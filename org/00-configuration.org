@@ -144,31 +144,7 @@ kernel_params:
   - { name: "vm.nr_hugepages", value: "1280" }  # For huge pages
 
 # Swap configuration
-swap_size_mb: 8192
 swappiness: 10  # Low swappiness for server workload
-
-# ----------------------------------------------------------------------------
-# Backup Configuration
-# ----------------------------------------------------------------------------
-
-# Backup exclusions (still used by rsync)
-backup_exclude_patterns:
-  - "*.tmp"
-  - "*.log"
-  - "*.cache"
-  - ".git"
-
-# ----------------------------------------------------------------------------
-# OAuth Browser Configuration
-# ----------------------------------------------------------------------------
-
-# OAuth provider for Tor Browser authentication
-oauth_provider:
-  name: "github"
-  url: "https://github.com"
-  title_pattern: "GitHub"
-  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-  icon_name: "github.png"
 #+end_src
 
 ** Configuration Notes
