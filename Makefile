@@ -30,7 +30,7 @@ PLAYBOOK := $(ANSIBLE_DIR)/playbook.yml
 all: $(PLAYBOOK)
 
 # Tangle phase org files to fragments
-$(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org | $(FRAGMENTS_DIR)
+$(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org ../config.yml | $(FRAGMENTS_DIR)
 	@echo "Tangling $< to $@..."
 	@emacs --batch \
 		--eval "(setq org-src-preserve-indentation t)" \
