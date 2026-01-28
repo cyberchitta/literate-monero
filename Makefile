@@ -38,14 +38,19 @@ $(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org | $(FRAGMENTS_DIR)
 		--eval "(find-file \"$<\")" \
 		--eval "(org-babel-tangle)"
 
-# Tangle configuration from 00-configuration.org
-$(CONFIGS): $(CONFIG_ORG) | $(GROUP_VARS_DIR)
+# Tangle configuration from 00-configuration.org (creates all 3 files at once)
+.INTERMEDIATE: .config-tangled
+
+$(CONFIGS): .config-tangled
+
+.config-tangled: $(CONFIG_ORG) | $(GROUP_VARS_DIR)
 	@echo "Tangling configuration..."
 	@emacs --batch \
 		--eval "(setq org-src-preserve-indentation t)" \
 		--eval "(require 'org)" \
 		--eval "(find-file \"$<\")" \
 		--eval "(org-babel-tangle)"
+	@touch .config-tangled $(CONFIGS)
 
 # Tangle validation from 01-validation.org
 $(VALIDATE): $(VALIDATE_ORG)
