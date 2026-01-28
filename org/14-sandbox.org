@@ -66,9 +66,10 @@ exec bwrap \
       tags: [sandbox, claude-code]
 
     - name: Verify native Claude Code installation
-      command: which claude
-      register: claude_check
+      command: claude --version
+      register: claude_version
       changed_when: false
+      failed_when: claude_version.rc != 0
       become: yes
       become_user: "{{ dev_user }}"
       tags: [sandbox, claude-code]
@@ -99,22 +100,13 @@ exec bwrap \
       changed_when: false
       tags: [sandbox, verify]
 
-    - name: Verify native Claude Code available
-      command: which claude
-      register: claude_binary_check
-      changed_when: false
-      failed_when: false
-      become: yes
-      become_user: "{{ dev_user }}"
-      tags: [sandbox, verify]
-
     - name: Display sandbox infrastructure status
       debug:
         msg:
           - "=== Sandbox Infrastructure Complete ==="
           - ""
           - "Bubblewrap: {% if bwrap_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
-          - "Native Claude Code: {% if claude_binary_check.rc == 0 %}Installed at {{ claude_binary_check.stdout }}{% else %}Not found{% endif %}"
+          - "Native Claude Code: {% if claude_check.rc == 0 %}Installed ({{ claude_check.stdout }}){% else %}Not found{% endif %}"
           - ""
           - "Wrapper installed:"
           - "  /usr/local/bin/claude-code-sandboxed"
