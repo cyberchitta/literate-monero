@@ -35,9 +35,9 @@ This phase installs application sandboxing infrastructure using bubblewrap to is
 # Sandboxed Claude Code launcher
 # Generated from org/14-sandbox.org
 
-# Check if bunx is available
-if ! command -v bunx &> /dev/null; then
-  echo "Error: bunx not found. Install bun first."
+# Check if claude is available
+if ! command -v claude &> /dev/null; then
+  echo "Error: claude not found. Install with: curl -fsSL https://claude.ai/install.sh | bash"
   exit 1
 fi
 
@@ -52,15 +52,25 @@ exec bwrap \
   --unshare-all \
   --share-net \
   --die-with-parent \
-  bunx @anthropic-ai/claude-code "$@"
+  claude "$@"
 #+end_src
 
 #+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
-    - name: Install bun (for Claude Code)
-      community.general.pacman:
-        name:
-          - bun
-        state: present
+    - name: Install native Claude Code
+      shell: |
+        curl -fsSL https://claude.ai/install.sh | bash
+      args:
+        creates: /home/{{ dev_user }}/.local/bin/claude
+      become: yes
+      become_user: "{{ dev_user }}"
+      tags: [sandbox, claude-code]
+
+    - name: Verify native Claude Code installation
+      command: which claude
+      register: claude_check
+      changed_when: false
+      become: yes
+      become_user: "{{ dev_user }}"
       tags: [sandbox, claude-code]
 
     - name: Deploy Claude Code sandbox wrapper
@@ -89,11 +99,13 @@ exec bwrap \
       changed_when: false
       tags: [sandbox, verify]
 
-    - name: Verify bunx available
-      command: which bunx
-      register: bunx_check
+    - name: Verify native Claude Code available
+      command: which claude
+      register: claude_binary_check
       changed_when: false
       failed_when: false
+      become: yes
+      become_user: "{{ dev_user }}"
       tags: [sandbox, verify]
 
     - name: Display sandbox infrastructure status
@@ -102,7 +114,7 @@ exec bwrap \
           - "=== Sandbox Infrastructure Complete ==="
           - ""
           - "Bubblewrap: {% if bwrap_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
-          - "Bunx: {% if bunx_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
+          - "Native Claude Code: {% if claude_binary_check.rc == 0 %}Installed at {{ claude_binary_check.stdout }}{% else %}Not found{% endif %}"
           - ""
           - "Wrapper installed:"
           - "  /usr/local/bin/claude-code-sandboxed"
@@ -111,7 +123,7 @@ exec bwrap \
           - "  claude-code-sandboxed [options]"
           - "  # Or use alias: claude-code"
           - ""
-          - "The wrapper runs Claude Code via bunx with:"
+          - "The wrapper runs native Claude Code with:"
           - "  - Full filesystem access (except .secrets/ and Chromium profiles)"
           - "  - Write access to ~/projects only"
           - "  - Network access enabled"
