@@ -22,7 +22,9 @@ Full Monero node infrastructure with defense-in-depth privacy:
 - **Monero wallet tools**: CLI/RPC wallets + Feather GUI + optional Trezor support
 - **KeePassXC**: Encrypted password and TOTP manager (no cloud, clipboard auto-clears)
 - **I2P**: Peer-to-peer network anonymity for Monero traffic
-- **Tor**: Anonymous git operations and web browsing  
+- **Tor**: Anonymous git operations and web browsing
+- **Browser dispatch**: Domain-based routing (Tor Browser by default, Chromium for KYC-required sites)
+- **Application sandboxing**: Bubblewrap isolation with secrets separation for sensitive apps
 - **WireGuard**: Secure remote access
 - **Optional**: P2Pool decentralized mining + XMRig CPU miner
 
