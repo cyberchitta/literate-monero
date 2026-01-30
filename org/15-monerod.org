@@ -165,35 +165,72 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
       tags: [monerod]
 #+end_src
 
-** Load I2P Configuration
+** I2P Configuration
+
+Create directory for I2P address storage. The actual address is fetched dynamically at monerod startup.
 
 #+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
-    - name: Wait for I2P address file to exist
-      wait_for:
-        path: /etc/monero/i2p-address.txt
-        timeout: 60
+    - name: Create monero config directory
+      file:
+        path: /etc/monero
+        state: directory
+        mode: '0755'
       tags: [monerod, config]
+#+end_src
 
-    - name: Load I2P address for monerod
-      slurp:
-        src: /etc/monero/i2p-address.txt
-      register: i2p_address_file
-      tags: [monerod, config, verify]
+** I2P Tunnel Wait Script
 
-    - name: Set monero_i2p_address fact
-      set_fact:
-        monero_i2p_address: "{{ i2p_address_file['content'] | b64decode | trim }}"
-      when: i2p_address_file['content'] | b64decode | trim != ""
-      tags: [monerod, config, verify]
+This script waits for the I2P tunnel to be ready and fetches the current address.
+I2P tunnels can take 1-5 minutes to establish on first startup or after i2pd restart.
 
-    - name: Verify I2P address is valid
-      assert:
-        that:
-          - monero_i2p_address is defined
-          - monero_i2p_address | length == 60  # .b32.i2p addresses are 52 chars + 8 for suffix
-        fail_msg: "Invalid I2P address: {{ monero_i2p_address | default('undefined') }}"
-        success_msg: "✓ I2P address loaded: {{ monero_i2p_address }}"
-      tags: [monerod, config]
+The script is called by monerod's systemd service ExecStartPre to ensure the tunnel
+exists before monerod attempts to use it.
+
+#+begin_src bash :tangle ../configs/templates/wait-for-i2p-tunnel.sh.j2
+#!/bin/bash
+# Wait for I2P tunnel to be ready and fetch address
+# Used by monerod.service ExecStartPre
+
+set -e
+
+MAX_WAIT=300  # 5 minutes max
+ELAPSED=0
+
+echo "Waiting for i2pd web console..."
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+  if curl -s --max-time 2 http://127.0.0.1:7070 >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+  ELAPSED=$((ELAPSED + 2))
+done
+
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+  echo "ERROR: i2pd web console not available after ${MAX_WAIT}s" >&2
+  exit 1
+fi
+
+echo "Waiting for monero-node I2P tunnel..."
+ELAPSED=0
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+  I2P_ADDR=$(curl -s --max-time 5 http://127.0.0.1:7070/?page=i2p_tunnels | \
+    grep -oP 'monero-node.*?([a-z0-9]{52}\.b32\.i2p)' | \
+    grep -oP '[a-z0-9]{52}\.b32\.i2p' | \
+    head -1)
+
+  if [ -n "$I2P_ADDR" ] && [[ "$I2P_ADDR" =~ ^[a-z0-9]{52}\.b32\.i2p$ ]]; then
+    echo "$I2P_ADDR" > /etc/monero/i2p-address.txt
+    chmod 644 /etc/monero/i2p-address.txt
+    echo "I2P tunnel ready: $I2P_ADDR"
+    exit 0
+  fi
+
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+done
+
+echo "ERROR: monero-node I2P tunnel not ready after ${MAX_WAIT}s" >&2
+exit 1
 #+end_src
 
 ** Download and Configure Spy Node Ban List
@@ -359,6 +396,13 @@ check-updates=disabled
         group: root
       notify: restart monerod
       tags: [monerod, config]
+
+    - name: Deploy I2P tunnel wait script
+      template:
+        src: ../configs/templates/wait-for-i2p-tunnel.sh.j2
+        dest: /usr/local/bin/wait-for-i2p-tunnel.sh
+        mode: '0755'
+      tags: [monerod, config]
 #+end_src
 
 ** monerod Systemd Service
@@ -366,8 +410,9 @@ check-updates=disabled
 #+begin_src ini :tangle ../configs/templates/monerod.service.j2
 [Unit]
 Description=Monero Full Node
-After=network-online.target
+After=network-online.target i2pd.service
 Wants=network-online.target
+Requires=i2pd.service
 
 [Service]
 Type=simple
@@ -375,10 +420,13 @@ User=root
 Group=root
 WorkingDirectory={{ monerod_data_dir }}
 
+# Wait for I2P tunnel to be ready before starting
+ExecStartPre=/usr/local/bin/wait-for-i2p-tunnel.sh
+
 ExecStart={{ monerod_install_dir }}/monerod \
     --config-file /etc/monerod.conf \
     --tx-proxy i2p,127.0.0.1:7656 \
-    --anonymous-inbound {{ monero_i2p_address }},127.0.0.1:18085,128 \
+    --anonymous-inbound $(cat /etc/monero/i2p-address.txt),127.0.0.1:18085,128 \
     --non-interactive
 
 Restart=always
@@ -649,7 +697,7 @@ Deploy the script and set up weekly updates.
           - "P2P port: 18080"
           - ""
           - "Privacy configuration:"
-          - "  I2P address: {{ monero_i2p_address }}"
+          - "  I2P address: Fetched dynamically at startup"
           - "  Transaction broadcast: I2P (primary) + Tor (fallback)"
           - "  Blockchain sync: Clearnet (sybil protection)"
           - "  Spy node protection: Ban list enabled ({{ ban_list_lines.stdout }} entries)"
