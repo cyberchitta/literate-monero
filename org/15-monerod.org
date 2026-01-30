@@ -442,6 +442,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
+ReadWritePaths=/etc/monero
 
 [Install]
 WantedBy=multi-user.target
