@@ -37,6 +37,7 @@ $(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org config.yml | $(FRAGMENTS_DIR)
 		--eval "(require 'org)" \
 		--eval "(find-file \"$<\")" \
 		--eval "(org-babel-tangle)"
+	@touch $@
 
 # Tangle configuration from 00-configuration.org (creates all 3 files at once)
 .INTERMEDIATE: .config-tangled
