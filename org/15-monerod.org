@@ -423,11 +423,11 @@ WorkingDirectory={{ monerod_data_dir }}
 # Wait for I2P tunnel to be ready before starting
 ExecStartPre=/usr/local/bin/wait-for-i2p-tunnel.sh
 
-ExecStart={{ monerod_install_dir }}/monerod \
+ExecStart=/bin/sh -c '{{ monerod_install_dir }}/monerod \
     --config-file /etc/monerod.conf \
     --tx-proxy i2p,127.0.0.1:7656 \
     --anonymous-inbound $(cat /etc/monero/i2p-address.txt),127.0.0.1:18085,128 \
-    --non-interactive
+    --non-interactive'
 
 Restart=always
 RestartSec=10
