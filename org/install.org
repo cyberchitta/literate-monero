@@ -145,8 +145,8 @@ Available tags correspond to phases:
 * Phase 17: Monero Wallet
 #+INCLUDE: "17-wallet.org"
 
-* Phase 18: Monero Mining Setup
-#+INCLUDE: "18-mining.org"
+* Phase 19: Monero Mining Setup
+#+INCLUDE: "19-mining.org"
 
 * Phase 80: Secrets Isolation (Finalization)
 #+INCLUDE: "80-secrets-isolation.org"
