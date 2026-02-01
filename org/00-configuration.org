@@ -85,6 +85,11 @@ p2pool_p2p_port: "{{ p2pool_port_map[p2pool_type] }}"
 p2pool_host: "127.0.0.1"
 p2pool_stratum_port: 3333
 
+# Wallet RPC
+
+monero_wallet_rpc_port: 18082
+monero_wallet_rpc_restricted: true
+
 # ----------------------------------------------------------------------------
 # WireGuard Configuration
 # ----------------------------------------------------------------------------

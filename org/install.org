@@ -145,6 +145,9 @@ Available tags correspond to phases:
 * Phase 17: Monero Wallet
 #+INCLUDE: "17-wallet.org"
 
+* Phase 18: Monero Wallet RPC
+#+INCLUDE: "18-wallet-rpc.org"
+
 * Phase 19: Monero Mining Setup
 #+INCLUDE: "19-mining.org"
 

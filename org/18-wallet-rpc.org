@@ -1,0 +1,113 @@
+** Monero Wallet RPC Service (port 18082)
+
+*** Overview
+Persistent JSON-RPC daemon listening on 127.0.0.1:18082.
+Starts with no wallet loaded.
+Wallet opening/switching is handled by consuming applications (Feather, scripts, etc.) via RPC calls.
+
+*** Prerequisites
+- monerod running and synced (phase 15)
+- Wallet software installed (phase 17)
+- Secrets isolation complete (phase 80)
+
+*** Playbook fragment
+#+begin_src yaml :tangle ../ansible/fragments/18-wallet-rpc.yml
+    - name: Deploy wallet RPC service (empty startup)
+      template:
+        src: ../configs/templates/monero-wallet-rpc.service.j2
+        dest: /etc/systemd/system/monero-wallet-rpc.service
+        mode: '0644'
+      notify: reload systemd
+      tags: [wallet-rpc]
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+      tags: [wallet-rpc]
+
+    - name: Enable and start wallet RPC
+      systemd:
+        name: monero-wallet-rpc
+        enabled: yes
+        state: started
+      tags: [wallet-rpc]
+#+end_src
+
+*** Service template
+#+begin_src ini :tangle ../configs/templates/monero-wallet-rpc.service.j2
+[Unit]
+Description=Monero Wallet RPC (127.0.0.1:{{ monero_wallet_rpc_port }})
+After=network-online.target monerod.service
+Wants=network-online.target monerod.service
+
+[Service]
+User={{ dev_user }}
+Group={{ dev_user }}
+Type=simple
+WorkingDirectory=/home/{{ dev_user }}/.bitmonero
+ExecStart=/usr/local/bin/monero-wallet-rpc \
+  --rpc-bind-ip 127.0.0.1 \
+  --rpc-bind-port {{ monero_wallet_rpc_port }} \
+  --confirm-external-bind \
+  --daemon-address 127.0.0.1:18081 \
+  --restricted-rpc={{ '1' if monero_wallet_rpc_restricted | default(true) else '0' }} \
+  --non-interactive \
+  --log-file /home/{{ dev_user }}/.bitmonero/logs/wallet-rpc.log \
+  --log-level 2 \
+  --trusted-daemon
+Restart=always
+RestartSec=10
+Nice=10
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/{{ dev_user }}/.bitmonero /home/{{ dev_user }}/.secrets
+
+[Install]
+WantedBy=multi-user.target
+#+end_src
+
+*** Verification
+#+begin_src yaml :tangle ../ansible/fragments/18-wallet-rpc.yml
+    - name: Wait for RPC startup
+      pause:
+        seconds: 5
+      tags: [wallet-rpc, verify]
+
+    - name: Check RPC port listening
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ monero_wallet_rpc_port }}"
+        timeout: 30
+      tags: [wallet-rpc, verify]
+
+    - name: Test RPC version (no wallet open)
+      uri:
+        url: "http://127.0.0.1:{{ monero_wallet_rpc_port }}/json_rpc"
+        method: POST
+        body_format: json
+        body: { "jsonrpc": "2.0", "id": "0", "method": "get_version" }
+        return_content: yes
+      register: rpc_test
+      failed_when: "'version' not in rpc_test.json.result"
+      tags: [wallet-rpc, verify]
+
+    - name: Show RPC status
+      debug:
+        msg:
+          - "Wallet RPC running on 127.0.0.1:{{ monero_wallet_rpc_port }}"
+          - "No wallet loaded at startup"
+          - "Open wallet via RPC: open_wallet method"
+          - "Example (curl):"
+          - "  curl http://127.0.0.1:{{ monero_wallet_rpc_port }}/json_rpc -d '{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"open_wallet\",\"params\":{\"filename\":\"/home/dev/Monero/wallets/my-wallet\",\"password\":\"your-pass\"}}' -H 'Content-Type: application/json'"
+          - "RPC version: {{ rpc_test.json.result.version }}"
+      tags: [wallet-rpc, verify]
+#+end_src
+
+*** Notes
+- Consumer apps (Feather, scripts) must call open_wallet to load a wallet
+- Feather: Settings → Node → Remote → http://127.0.0.1:{{ monero_wallet_rpc_port }}
+  (Feather handles open_wallet internally when you select a wallet)
+- Restricted mode on by default (cannot send txs)
+- To disable restricted mode: set monero_wallet_rpc_restricted: false in config
+#+end_src
