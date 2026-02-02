@@ -681,6 +681,42 @@ ShowTrayIcon=false
       tags: [privacy, keepassxc, config]
 #+end_src
 
+*** Secure Git Credential Storage with KeePassXC
+
+Store GitHub PAT in KeePassXC.
+
+**** Install git-credential-keepassxc helper (AUR)
+
+#+begin_src yaml :tangle ../ansible/fragments/12-privacy.yml
+    - name: Note - Install git-credential-keepassxc from AUR
+      debug:
+        msg: |
+          One-time manual step (run as {{ dev_user }}):
+          yay -S --noconfirm git-credential-keepassxc-git
+          (or paru -S --noconfirm git-credential-keepassxc-git)
+      tags: [privacy, keepassxc, git]
+#+end_src
+
+**** Configure git credential helper
+
+#+begin_src yaml :tangle ../ansible/fragments/12-privacy.yml
+    - name: Set git to use KeePassXC credential helper
+      become: yes
+      become_user: "{{ dev_user }}"
+      command: git config --global credential.helper '!git-credential-keepassxc'
+      changed_when: false
+      tags: [privacy, git, keepassxc]
+#+end_src
+
+**** KeePassXC usage for git
+
+- Unlock KeePassXC once after login (manual master password).
+- Create entry: Title "GitHub PAT", Username = github username, Password = classic PAT (repo scope).
+- First git push/fetch triggers KeePassXC popup → Allow (or Allow always).
+- No further typing needed during the session.
+
+Security: PAT stays encrypted in KeePassXC database.
+
 ** Privacy Verification Script
 
 #+begin_src bash :tangle ../configs/templates/check-privacy.sh.j2
