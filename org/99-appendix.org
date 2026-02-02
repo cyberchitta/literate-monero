@@ -611,6 +611,42 @@ Privacy comes from I2P broadcast (primary) + Tor fallback when *sending* transac
 
 Reference: https://github.com/monero-project/monero/blob/master/docs/ANONYMITY_NETWORKS.md
 
+** Monero Port Allocation
+
+Monero services use multiple TCP ports on localhost (127.0.0.1):
+
+| Port  | Service    | Protocol | Purpose                           |
+|-------+------------+----------+-----------------------------------|
+| 18080 | monerod    | P2P      | Public peer-to-peer network       |
+| 18081 | monerod    | HTTP     | Restricted RPC (safe)             |
+| 18082 | monerod    | HTTP     | Unrestricted RPC (auto-created)   |
+| 18083 | monerod    | ZMQ      | Pub/sub for P2Pool notifications  |
+| 18084 | wallet-rpc | HTTP     | Wallet RPC server                 |
+| 18085 | monerod    | TCP      | I2P anonymous inbound             |
+
+*** Restricted vs Unrestricted RPC
+
+When monerod is configured with =restricted-rpc=1=, it automatically creates **two RPC endpoints**:
+
+- **Port 18081** (restricted): Safe for untrusted access, limited commands
+- **Port 18082** (unrestricted): Full access, dangerous if exposed
+
+Our setup uses only the restricted port (18081). Port 18082 is bound but unused, serving as a safety mechanism - it exists but nothing connects to it.
+
+*** ZMQ Port (18083)
+
+Port 18083 is **NOT an HTTP endpoint**. It's a ZeroMQ pub/sub socket that P2Pool uses to receive block notifications from monerod.
+
+- Shows up in =netstat= as a listening TCP port
+- Cannot be accessed via HTTP (curl will fail)
+- P2Pool connects using ZMQ protocol, not HTTP
+
+*** Wallet RPC Port (18084)
+
+Standard Monero documentation suggests 18083 for wallet-rpc, but that port is used by ZMQ pub/sub in our configuration. Using 18084 avoids the conflict.
+
+This is why wallet-rpc uses a non-standard port in this setup.
+
 * Appendix H: Troubleshooting & Quick Fixes
 
 ** Generic Troubleshooting Patterns

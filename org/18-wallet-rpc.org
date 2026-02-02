@@ -49,11 +49,12 @@ ExecStart=/usr/local/bin/monero-wallet-rpc \
   --rpc-bind-ip 127.0.0.1 \
   --rpc-bind-port {{ monero_wallet_rpc_port }} \
   --daemon-address 127.0.0.1:18081 \
-  --restricted-rpc={{ '1' if monero_wallet_rpc_restricted | default(true) else '0' }} \
-  --non-interactive \
+  {% if monero_wallet_rpc_restricted | default(true) %}--restricted-rpc \
+  {% endif %}--non-interactive \
   --log-file /home/{{ dev_user }}/.bitmonero/logs/wallet-rpc.log \
   --log-level 2 \
-  --trusted-daemon
+  --trusted-daemon \
+  --wallet-dir /home/{{ dev_user }}/Monero/wallets
 Restart=always
 RestartSec=10
 Nice=10

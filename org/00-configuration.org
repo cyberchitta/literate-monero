@@ -87,7 +87,7 @@ p2pool_stratum_port: 3333
 
 # Wallet RPC
 
-monero_wallet_rpc_port: 18082
+monero_wallet_rpc_port: 18084
 monero_wallet_rpc_restricted: true
 
 # ----------------------------------------------------------------------------
