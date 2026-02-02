@@ -436,7 +436,6 @@ echo ""
 
 #+begin_src python :tangle ../configs/templates/browser-dispatch.j2
 #!/usr/bin/env python3
-"""Browser dispatcher with profile-based domain routing for privacy-first browsing."""
 import sys
 import json
 import os
@@ -473,16 +472,13 @@ def get_profile_directory(profile_name: str) -> str:
 
 
 def focus_tor_browser() -> bool:
-    """Try to focus existing Tor Browser window. Returns True if found."""
     try:
-        # Check if Tor Browser process is running
         result = subprocess.run(
             ["pgrep", "-f", "tor-browser"],
             capture_output=True,
             text=True
         )
         if result.returncode == 0:
-            # Get list of windows from Hyprland
             windows = subprocess.run(
                 ["hyprctl", "clients", "-j"],
                 capture_output=True,
@@ -490,11 +486,9 @@ def focus_tor_browser() -> bool:
                 check=True
             )
             clients = json.loads(windows.stdout)
-            # Find Tor Browser window
             for client in clients:
                 if "tor browser" in client.get("class", "").lower() or \
                    "tor browser" in client.get("title", "").lower():
-                    # Focus this window
                     address = client.get("address")
                     subprocess.run(
                         ["hyprctl", "dispatch", "focuswindow", f"address:{address}"],
@@ -512,24 +506,21 @@ def main() -> None:
     url = sys.argv[1]
     domain = urlparse(url).netloc.lower()
     config = load_config()
-    # Check each profile for matching domain
     for profile in config.get('browser_profiles', []):
         profile_name = profile.get('name', '')
         profile_domains = {d.lower() for d in profile.get('domains', [])}
         if domain in profile_domains:
-            # Look up directory name from display name
-            profile_dir = get_profile_directory(profile_name)
-            if profile_dir:
-                os.execvp("chromium", ["chromium", f"--profile-directory={profile_dir}", url])
+            if profile_name == 'mullvad-fallback':
+                os.execvp("mullvad-browser.sh", ["mullvad-browser.sh", url])
             else:
-                # Profile not found, fall through to Tor Browser
-                break
-    # No match found - default to Tor Browser (privacy-first)
-    # Try to focus existing window, otherwise launch new instance
+                profile_dir = get_profile_directory(profile_name)
+                if profile_dir:
+                    os.execvp("chromium", ["chromium", f"--profile-directory={profile_dir}", url])
+                else:
+                    break
     if not focus_tor_browser():
         os.execvp("tor-browser", ["tor-browser"])
     else:
-        # Window focused, exit successfully
         sys.exit(0)
 
 
@@ -609,6 +600,126 @@ StartupNotify=true
           - "Chromium profiles auto-create on first use (no manual setup needed)"
           - ""
       tags: [privacy, browser-dispatch, verify]
+#+end_src
+
+** Mullvad Browser Integration
+
+*** Browser Wrapper Script
+
+This script manages Mullvad VPN connection for browser sessions. Used by both browser dispatcher (automatic routing) and desktop launcher (manual fallback).
+
+#+begin_src bash :tangle ../configs/templates/mullvad-browser.sh.j2
+#!/bin/bash
+# Launch browser with Mullvad VPN
+# Generated from org/12-privacy.org
+# Used by: browser dispatcher + desktop launcher (DRY)
+
+set -euo pipefail
+
+# Check if Mullvad config exists
+if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
+  echo "Error: Mullvad not configured"
+  echo "See Phase 11 documentation for setup"
+  exit 1
+fi
+
+# Enable wg-mullvad if not already up
+CLEANUP_NEEDED=false
+if ! wg show wg-mullvad &>/dev/null 2>&1; then
+  sudo wg-quick up wg-mullvad
+  CLEANUP_NEEDED=true
+  sleep 2
+fi
+
+# Launch Chromium with mullvad-fallback profile
+chromium --profile-directory=mullvad-fallback "$@" &
+BROWSER_PID=$!
+
+# Wait for browser to exit
+wait $BROWSER_PID
+
+# Cleanup: Disable wg-mullvad if we enabled it
+if [ "$CLEANUP_NEEDED" = true ]; then
+  sudo wg-quick down wg-mullvad
+fi
+#+end_src
+
+*** Desktop Launcher
+
+Provides GUI icon for manual Tor fallback.
+
+#+begin_src conf :tangle ../configs/templates/mullvad-browser.desktop.j2
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mullvad Browser
+GenericName=Web Browser (Mullvad VPN)
+Comment=Browse with Mullvad VPN (Tor fallback)
+Exec=/usr/local/bin/mullvad-browser.sh
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;
+StartupNotify=true
+#+end_src
+
+*** Deploy Mullvad Browser Integration
+
+#+begin_src yaml :tangle ../ansible/fragments/12-privacy.yml
+    # ------------------------------------------------------------------------
+    # Mullvad Browser Integration
+    # ------------------------------------------------------------------------
+
+    - name: Deploy Mullvad browser wrapper
+      template:
+        src: ../configs/templates/mullvad-browser.sh.j2
+        dest: /usr/local/bin/mullvad-browser.sh
+        mode: '0755'
+      tags: [privacy, mullvad, browser]
+
+    - name: Deploy Mullvad browser desktop entry
+      template:
+        src: ../configs/templates/mullvad-browser.desktop.j2
+        dest: /usr/share/applications/mullvad-browser.desktop
+        mode: '0644'
+      tags: [privacy, mullvad, browser]
+
+    - name: Configure sudo access for Mullvad VPN control
+      copy:
+        content: |
+          # Allow dev user to control Mullvad VPN without password
+          {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up wg-mullvad
+          {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down wg-mullvad
+        dest: /etc/sudoers.d/mullvad-vpn
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      tags: [privacy, mullvad, security]
+
+    - name: Verify Mullvad browser integration
+      stat:
+        path: /usr/local/bin/mullvad-browser.sh
+      register: mullvad_browser_installed
+      tags: [privacy, mullvad, verify]
+
+    - name: Display Mullvad browser status
+      debug:
+        msg:
+          - "=== Mullvad Browser Integration ==="
+          - ""
+          - "Wrapper: {% if mullvad_browser_installed.stat.exists %}Installed{% else %}Not found{% endif %}"
+          - "Desktop launcher: /usr/share/applications/mullvad-browser.desktop"
+          - ""
+          - "Usage:"
+          - "  1. Automatic: Configure domains in browser_profiles (Phase 13)"
+          - "  2. Manual: Click 'Mullvad Browser' icon when Tor blocked"
+          - ""
+          - "Behavior:"
+          - "  - Enables wg-mullvad on launch"
+          - "  - Opens Chromium (mullvad-fallback profile)"
+          - "  - Disables wg-mullvad on exit"
+          - ""
+          - "Mullvad config status: {% if mullvad_config.stat.exists %}Configured{% else %}Not configured (see Phase 11){% endif %}"
+          - ""
+      tags: [privacy, mullvad, verify]
 #+end_src
 
 ** KeePassXC

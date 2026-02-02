@@ -139,6 +139,12 @@ browser_profiles:
     domains:
       - chatgpt.com
       - claude.ai
+
+  - name: mullvad-fallback
+    domains: []
+      # Add Tor-blocked domains here:
+      # - cloudflare-blocked-site.com
+      # - crypto-wallet-site.com
   # Add more profiles as needed:
   # - name: work-profile
   #   domains:

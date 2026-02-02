@@ -276,7 +276,11 @@ sudo ufw delete allow 53317/tcp
 
 ** Browser Dispatch Configuration
 
-Configure domain-based browser routing. Domains listed here open in Chromium with kyc-identity profile for services requiring real identity authentication. All other URLs route to Tor Browser (privacy-first default).
+Configure domain-based browser routing. Three routing tiers:
+
+1. **KYC domains** → Chromium (kyc-identity profile) - services requiring real identity
+2. **Mullvad domains** → Chromium via Mullvad VPN (mullvad-fallback profile) - Tor-blocked sites
+3. **Default** → Tor Browser - privacy-first for everything else
 
 #+begin_src yaml :tangle ../ansible/fragments/13-privacy-wrappers.yml
     # ------------------------------------------------------------------------
@@ -312,6 +316,10 @@ Configure domain-based browser routing. Domains listed here open in Chromium wit
           - "{% if not browser_profiles | default([]) %}  (no profiles configured - all traffic to Tor Browser){% endif %}"
           - "  Default: Tor Browser (privacy-first)"
           - ""
+          - "Mullvad fallback:"
+          - "  - Automatic: Add domains to mullvad-fallback profile"
+          - "  - Manual: Use 'Mullvad Browser' desktop launcher"
+          - ""
       tags: [privacy-wrappers, browser-dispatch, verify]
 #+end_src
 
@@ -319,7 +327,21 @@ Configure domain-based browser routing. Domains listed here open in Chromium wit
 
 *** Adding Domains
 
-To add or modify KYC domains, edit the =kyc_domains= list in the YAML block above, then re-run:
+To add or modify routing domains, edit the =browser_profiles= list in config.yml:
+```yaml
+browser_profiles:
+  - name: kyc-identity
+    domains:
+      - chatgpt.com
+      - claude.ai
+
+  - name: mullvad-fallback
+    domains:
+      - cloudflare-blocked-site.com
+      - crypto-wallet-site.com
+```
+
+Then re-run:
 
 #+begin_example
 cd ansible
@@ -333,11 +355,24 @@ Test URL routing manually:
 
 #+begin_example
 # Should open in Chromium kyc-identity profile
-/usr/local/bin/browser-dispatch https://github.com
+/usr/local/bin/browser-dispatch https://chatgpt.com
+
+# Should open in Chromium via Mullvad VPN
+/usr/local/bin/browser-dispatch https://cloudflare-blocked-site.com
 
 # Should open in Tor Browser
 /usr/local/bin/browser-dispatch https://example.com
 #+end_example
+
+*** Manual Mullvad Fallback
+
+When encountering unexpected Tor blocks:
+
+1. Close Tor Browser
+2. Click "Mullvad Browser" icon in app menu
+3. Navigate to site
+4. Close browser when done (auto-disconnects VPN)
+5. Optional: Add domain to mullvad-fallback list for future auto-routing
 
 ** Notes
 

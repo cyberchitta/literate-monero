@@ -630,6 +630,182 @@ Now that keys are provisioned and verified, apply full SSH hardening.
       tags: [wireguard, verify]
 #+end_src
 
+** Mullvad WireGuard (Tor Fallback)
+
+*** Overview
+
+Mullvad VPN provides a fallback connection method when Tor Browser encounters blocks (Cloudflare, crypto wallets, etc.).
+
+Uses standard WireGuard protocol - no Mullvad-specific software needed.
+
+*** Prerequisites
+
+1. Create Mullvad account at https://mullvad.net
+   - No personal info required
+   - Payment: crypto, cash, card
+   - €5/month, prepay up to 12+ months
+   - Account number: 16-digit identifier
+
+2. Generate WireGuard config
+   - Login to mullvad.net
+   - Account → WireGuard configuration
+   - Generate new key
+   - Download config file
+
+*** Deploy Mullvad WireGuard Config
+
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
+    - name: Check if Mullvad config exists
+      stat:
+        path: /etc/wireguard/wg-mullvad.conf
+      register: mullvad_config
+      tags: [wireguard, mullvad]
+
+    - name: Display Mullvad setup instructions
+      debug:
+        msg:
+          - "=== Mullvad WireGuard Setup (Optional) ==="
+          - ""
+          - "For Tor fallback when sites block Tor Browser:"
+          - ""
+          - "1. Create account: https://mullvad.net"
+          - "2. Generate WireGuard config at mullvad.net/account"
+          - "3. Save config as: /etc/wireguard/wg-mullvad.conf"
+          - "4. Set permissions: sudo chmod 600 /etc/wireguard/wg-mullvad.conf"
+          - ""
+          - "Multi-device: Generate separate config for each device"
+          - "  - Same account number"
+          - "  - Different WireGuard keys"
+          - "  - Up to 5 simultaneous connections"
+          - ""
+          - "Manual connection:"
+          - "  sudo wg-quick up wg-mullvad"
+          - "  sudo wg-quick down wg-mullvad"
+          - ""
+          - "Browser integration configured in Phase 12"
+          - ""
+      when: not mullvad_config.stat.exists
+      tags: [wireguard, mullvad]
+
+    - name: Verify Mullvad config permissions
+      file:
+        path: /etc/wireguard/wg-mullvad.conf
+        mode: '0600'
+        owner: root
+        group: root
+      when: mullvad_config.stat.exists
+      tags: [wireguard, mullvad]
+#+end_src
+
+*** Mullvad Helper Scripts
+
+#+begin_src bash :tangle ../configs/templates/mullvad-connect.sh.j2
+#!/bin/bash
+# Connect to Mullvad VPN
+# Generated from org/11-wireguard.org
+
+if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
+  echo "Error: /etc/wireguard/wg-mullvad.conf not found"
+  echo "See Phase 11 documentation for setup instructions"
+  exit 1
+fi
+
+if wg show wg-mullvad &>/dev/null; then
+  echo "Mullvad already connected"
+  exit 0
+fi
+
+wg-quick up wg-mullvad
+echo "✓ Mullvad VPN connected"
+#+end_src
+
+#+begin_src bash :tangle ../configs/templates/mullvad-disconnect.sh.j2
+#!/bin/bash
+# Disconnect from Mullvad VPN
+# Generated from org/11-wireguard.org
+
+if ! wg show wg-mullvad &>/dev/null; then
+  echo "Mullvad not connected"
+  exit 0
+fi
+
+wg-quick down wg-mullvad
+echo "✓ Mullvad VPN disconnected"
+#+end_src
+
+#+begin_src bash :tangle ../configs/templates/mullvad-status.sh.j2
+#!/bin/bash
+# Mullvad VPN status
+# Generated from org/11-wireguard.org
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "=== Mullvad VPN Status ==="
+echo ""
+
+if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
+  echo -e "${YELLOW}Config not found: /etc/wireguard/wg-mullvad.conf${NC}"
+  echo "See Phase 11 documentation for setup"
+  exit 0
+fi
+
+if wg show wg-mullvad &>/dev/null; then
+  echo -e "${GREEN}✓ Mullvad VPN connected${NC}"
+  echo ""
+  wg show wg-mullvad
+else
+  echo "Mullvad VPN: Disconnected"
+  echo ""
+  echo "Connect: sudo mullvad-connect.sh"
+fi
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/11-wireguard.yml
+    - name: Deploy Mullvad helper scripts
+      template:
+        src: "../configs/templates/{{ item }}.j2"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - mullvad-connect.sh
+        - mullvad-disconnect.sh
+        - mullvad-status.sh
+      tags: [wireguard, mullvad, scripts]
+#+end_src
+
+*** Notes
+
+**** Account Management
+
+- Account expiry: Check at mullvad.net/account
+- No auto-renewal (privacy feature)
+- When expired: Connection stops working
+- Add more time: Login and pay
+- Config file stays valid
+
+**** Multi-Device Usage
+
+Same account across devices:
+- Server: /etc/wireguard/wg-mullvad.conf
+- Laptop: WireGuard app + downloaded config
+- iPhone: WireGuard app (App Store) + QR code scan
+
+Each device needs separate config (different keys, same account).
+
+**** Privacy Model
+
+Mullvad provides commercial VPN service:
+- No logs policy (independently audited)
+- Anonymous signup (no personal info)
+- Swedish jurisdiction (strong privacy laws)
+- Crypto payment available
+
+**Threat model:** Protects against website tracking, not nation-state surveillance.
+
+**Integration:** Browser dispatcher routes specific domains through Mullvad (Phase 12).
+
 ** Notes
 
 *** Quick Operations
