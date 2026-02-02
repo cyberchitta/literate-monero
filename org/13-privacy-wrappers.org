@@ -312,7 +312,7 @@ Configure domain-based browser routing. Three routing tiers:
           - "{{ browser_dispatch_config_content.stdout }}"
           - ""
           - "Profile routing:"
-          - "{% for profile in browser_profiles | default([]) %}  {{ profile.name }}: {{ profile.domains | join(', ') }}{% endfor %}"
+          - "{% for profile in browser_profiles | default([]) %}{% if profile.domains %}  {{ profile.name }}: {{ profile.domains | join(', ') }}{% endif %}{% endfor %}"
           - "{% if not browser_profiles | default([]) %}  (no profiles configured - all traffic to Tor Browser){% endif %}"
           - "  Default: Tor Browser (privacy-first)"
           - ""
