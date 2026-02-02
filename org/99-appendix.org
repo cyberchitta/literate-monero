@@ -1017,3 +1017,211 @@ then stopped progressing.
 
 Config: default monerod settings from config.yml.example
 #+end_example
+
+** Appendix I: Secure Git Credential Management with KeePassXC
+
+*** Overview
+
+This appendix documents the working configuration for Git operations using KeePassXC for credential storage.
+
+**Security model:**
+- GitHub PAT stored encrypted in KeePassXC (never plaintext on disk)
+- git-credential-keepassxc handles credential retrieval from KeePassXC database
+- Master password protects all credentials (unlocked once per session)
+
+**Prerequisites:**
+- KeePassXC installed (Phase 3)
+- git-credential-keepassxc from AUR (manual install, see Phase 3 notes)
+
+*** Initial Configuration
+
+These commands configure git-credential-keepassxc with the correct caller permissions:
+
+#+begin_src bash
+# Temporarily move existing config (if any)
+mv ~/.config/git-credential-keepassxc ~/.config/git-credential-keepassxc.bak 2>/dev/null || true
+
+# Allow actual callers (git and bash processes)
+git-credential-keepassxc caller add --uid "$(id -u)" --gid "$(id -g)" "$(command -v bash)"
+git-credential-keepassxc caller add --uid "$(id -u)" --gid "$(id -g)" "$(command -v git)"
+
+# Note: git-remote-https path must be added manually (see below)
+#+end_src
+
+**Manual step:** Edit =~/.config/git-credential-keepassxc= and add git-remote-https to allowed-callers:
+
+#+begin_src json
+{
+  "allowed-callers": [
+    {
+      "path": "/usr/lib/git-core/git-remote-https",
+      "uid": YOUR_UID,
+      "gid": YOUR_GID,
+      "canonicalize": false
+    },
+    ... other entries ...
+  ]
+}
+#+end_src
+
+Replace =YOUR_UID= and =YOUR_GID= with output from =id -u= and =id -g=.
+
+Find exact path if needed: =find /usr/lib/git-core -name 'git-remote-https*'=
+
+*** Pair with KeePassXC
+
+#+begin_src bash
+# Database must be unlocked in KeePassXC GUI
+git-credential-keepassxc configure
+#+end_src
+
+Approve the connection request in KeePassXC popup.
+
+This creates a "Git" group under "Root" in your KeePassXC database.
+
+*** Configure Git
+
+#+begin_src bash
+# Use KeePassXC credential helper with git-groups flag
+git config --global credential.helper 'keepassxc --git-groups'
+#+end_src
+
+**About --git-groups flag:**
+- Tells git-credential-keepassxc to only search entries in groups named "Git"
+- Without this flag, it searches all groups and may find multiple matches
+- Multiple matches require manual selection each time
+- KeePassXC automatically created a "Git" group under "Root" during initial configuration
+
+*** KeePassXC Entry Setup
+
+Create entry in KeePassXC GUI:
+
+| Field    | Value                                    |
+|----------+------------------------------------------|
+| Group    | Git (must be named exactly "Git")        |
+| Title    | GitHub PAT                               |
+| Username | *Your GitHub username* (required, not blank) |
+| Password | *Your GitHub Personal Access Token*      |
+| URL      | https://github.com                       |
+
+**Group structure:**
+#+begin_example
+Root
+├── Git (created by git-credential-keepassxc configure)
+│   └── GitHub PAT (credential entry - PAT token)
+└── (other groups with GitHub login credentials, browser logins, etc.)
+#+end_example
+
+**Why separate groups:**
+- "Git" group: PAT for git operations
+- Other groups: Browser login credentials, account passwords
+- --git-groups flag ensures git only finds the PAT, not your account password
+
+**PAT requirements:**
+- Type: Classic token (not fine-grained)
+- Scope: =repo= (for private repos) or =public_repo= (for public only)
+- Expiration: Set appropriately for your security needs
+
+*** Verification
+
+Test credential retrieval:
+
+#+begin_src bash
+# Basic test (should return username + PAT)
+printf "protocol=https\nhost=github.com\n" | git credential fill
+
+# Full test (simulates actual git operation)
+printf "protocol=https\nhost=github.com\npath=yourusername/yourrepo.git\n" | git credential fill
+#+end_src
+
+Expected output:
+#+begin_example
+protocol=https
+host=github.com
+username=yourusername
+password=ghp_YourPATHere...
+#+end_example
+
+*** Daily Usage
+
+Git operations work normally - KeePassXC provides credentials transparently:
+
+#+begin_src bash
+git fetch
+git pull
+git push
+#+end_src
+
+**First operation:**
+- KeePassXC popup may ask to approve credential access
+- Select "Allow" or "Allow always" (for this session)
+- Database remains unlocked until KeePassXC closes
+
+*** Troubleshooting
+
+**Common issues:**
+
+*Authentication failures:*
+- Verify username in KeePassXC entry matches GitHub username exactly
+- Blank username will cause auth failures
+- PAT must have correct scope (repo/public_repo)
+
+*"KeePassXC doesn't allow erasing logins" warning:*
+- Cosmetic issue, does not affect functionality
+- Safe to ignore
+
+*Credential not found:*
+- Check KeePassXC database is unlocked
+- Verify git-credential-keepassxc pairing: =git-credential-keepassxc configure=
+- Confirm URL in KeePassXC entry is exactly: =https://github.com=
+- Ensure entry is in "Git" group (not another group)
+
+*Multiple credential matches:*
+- Verify =--git-groups= flag in credential.helper config
+- Check you don't have duplicate entries in "Git" group
+- Move other GitHub credentials to different groups
+
+*Caller verification errors:*
+- Manually verify =~/.config/git-credential-keepassxc= has correct UIDs/GIDs
+- Path to git-remote-https must be exact (use =find= command above)
+- Note: =git-credential-keepassxc caller list= may not work (inspect config file directly)
+
+**Debug workflow:**
+#+begin_src bash
+# 1. Check git config
+git config --global --list | grep credential
+
+# 2. Test credential helper directly
+printf "protocol=https\nhost=github.com\n" | git credential fill
+
+# 3. Check KeePassXC database
+# Open KeePassXC GUI, verify entry exists in Git group
+
+# 4. Verify --git-groups flag
+git config --global credential.helper
+# Should show: keepassxc --git-groups
+#+end_src
+
+*** Security Notes
+
+**Why this approach:**
+- PAT never stored in plaintext on disk (only in encrypted KeePassXC database)
+- Master password required to unlock credentials
+- git-credential-keepassxc provides secure communication with KeePassXC
+- Separate "Git" group isolates git credentials from browser/account passwords
+
+**Trade-offs:**
+- Requires KeePassXC unlocked during git operations
+- Initial setup more complex than plaintext credentials
+- git-credential-keepassxc from AUR (not official repos)
+
+**Alternative approaches not used:**
+- Plain text =~/.netrc=: Credentials visible on disk
+- Git credential.helper store: Plaintext file
+- SSH keys for GitHub: Requires separate key management, doesn't work with HTTPS remotes
+
+*** References
+
+- git-credential-keepassxc: https://github.com/Frederick888/git-credential-keepassxc
+- GitHub PAT docs: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+- KeePassXC Browser Integration: https://keepassxc.org/docs/KeePassXC_GettingStarted.html#_setup_browser_integration
