@@ -2,6 +2,34 @@
 
 **Privacy-first Monero full node with trustless validation and network anonymity**
 
+## ⚠️ Security & Trust Model
+
+**This repository generates system configuration that handles:**
+- Cryptocurrency private keys (Monero wallets)
+- SSH credentials
+- VPN configurations  
+- Network privacy infrastructure
+
+**Before running any installation:**
+
+1. **Audit the source** - Read all `org/*.org` files
+2. **Understand literate programming** - Code is generated from prose
+3. **Verify no exfiltration** - Check for suspicious network calls
+4. **Test in VM first** - Never run on production without testing
+5. **Trust but verify** - Even well-intentioned code can have bugs
+
+**Trust assumptions:**
+- You trust the maintainers are not malicious
+- You can audit Org-mode and Ansible syntax
+- You understand the privacy/security trade-offs documented
+- Your base OS (Arch/Omarchy) is not compromised
+
+**If you cannot personally verify this code, DO NOT RUN IT.**
+
+Cryptocurrency security depends on *you* understanding what runs on your machine.
+
+---
+
 Run your own Monero infrastructure with complete sovereignty—no trusted third parties, no custodial services, no remote APIs. Network-level anonymity via I2P + Tor ensures transactions cannot be linked to your IP address.
 
 Built using literate programming: the documentation IS the source code. Understand every component, customize any behavior, reproduce the entire system. Infrastructure as narrative.
