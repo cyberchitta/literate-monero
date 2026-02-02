@@ -659,7 +659,7 @@ Uses standard WireGuard protocol - no Mullvad-specific software needed.
       stat:
         path: /etc/wireguard/wg-mullvad.conf
       register: mullvad_config
-      tags: [wireguard, mullvad]
+      tags: [wireguard, mullvad, privacy]
 
     - name: Display Mullvad setup instructions
       debug:
