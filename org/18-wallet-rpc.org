@@ -48,7 +48,6 @@ WorkingDirectory=/home/{{ dev_user }}/.bitmonero
 ExecStart=/usr/local/bin/monero-wallet-rpc \
   --rpc-bind-ip 127.0.0.1 \
   --rpc-bind-port {{ monero_wallet_rpc_port }} \
-  --confirm-external-bind \
   --daemon-address 127.0.0.1:18081 \
   --restricted-rpc={{ '1' if monero_wallet_rpc_restricted | default(true) else '0' }} \
   --non-interactive \
