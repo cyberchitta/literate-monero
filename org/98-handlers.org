@@ -50,4 +50,10 @@ All service restart handlers collected here.
       systemd:
         daemon_reload: yes
       listen: reload systemd
+
+    - name: restart wallet-rpc
+      systemd:
+        name: monero-wallet-rpc
+        state: restarted
+      listen: restart wallet-rpc#+end_src
 #+end_src
