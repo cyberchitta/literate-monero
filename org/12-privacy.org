@@ -692,8 +692,8 @@ Store GitHub PAT in KeePassXC.
       debug:
         msg: |
           One-time manual step (run as {{ dev_user }}):
-          yay -S --noconfirm git-credential-keepassxc-git
-          (or paru -S --noconfirm git-credential-keepassxc-git)
+          yay -S --noconfirm git-credential-keepassxc
+          (or paru -S --noconfirm git-credential-keepassxc)
       tags: [privacy, keepassxc, git]
 #+end_src
 
