@@ -647,8 +647,11 @@ def main():
     cleanup_needed = (result.returncode != 0)
     
     if cleanup_needed:
-        # Enable wg-mullvad
-        subprocess.run(["sudo", "wg-quick", "up", "wg-mullvad"], check=True)
+        # Enable wg-mullvad (ignore if already exists)
+        subprocess.run(
+            ["sudo", "wg-quick", "up", "wg-mullvad"],
+            capture_output=True
+        )
         import time
         time.sleep(2)
     
@@ -716,6 +719,7 @@ StartupNotify=true
           # Allow dev user to control Mullvad VPN without password
           {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up wg-mullvad
           {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down wg-mullvad
+          {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/bin/wg show wg-mullvad
         dest: /etc/sudoers.d/mullvad-vpn
         mode: '0440'
         validate: 'visudo -cf %s'
