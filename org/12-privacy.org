@@ -626,7 +626,7 @@ fi
 
 # Launch Chromium with mullvad-fallback profile (as dev user, not root)
 if [ "$EUID" -eq 0 ]; then
-  sudo -u {{ dev_user }} chromium --profile-directory=mullvad-fallback "$@" &
+  sudo -E -u {{ dev_user }} chromium --profile-directory=mullvad-fallback "$@" &
   BROWSER_PID=$!
 else
   chromium --profile-directory=mullvad-fallback "$@" &
