@@ -24,13 +24,6 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
           - openresolv
         state: present
       tags: [wireguard]
-
-    - name: Configure openresolv to allow overwrites
-      lineinfile:
-        path: /etc/resolvconf.conf
-        line: 'resolv_conf_options="-f"'
-        create: yes
-      tags: [wireguard]
 #+end_src
 
 ** Generate Server Keys
@@ -722,6 +715,9 @@ if sudo wg show wg-mullvad &>/dev/null; then
   echo "Mullvad already connected"
   exit 0
 fi
+
+# Sync resolvconf state to prevent signature mismatch
+sudo resolvconf -u 2>/dev/null || true
 
 if ! sudo wg-quick up wg-mullvad 2>&1; then
   echo "Error: Failed to start Mullvad VPN" >&2
