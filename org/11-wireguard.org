@@ -25,9 +25,11 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
         state: present
       tags: [wireguard]
 
-    - name: Initialize resolvconf state
-      command: resolvconf -u
-      changed_when: false
+    - name: Configure openresolv to allow overwrites
+      lineinfile:
+        path: /etc/resolvconf.conf
+        line: 'resolv_conf_options="-f"'
+        create: yes
       tags: [wireguard]
 #+end_src
 
