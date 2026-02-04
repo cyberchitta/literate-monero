@@ -710,7 +710,7 @@ Uses standard WireGuard protocol - no Mullvad-specific software needed.
 # Connect to Mullvad VPN
 # Generated from org/11-wireguard.org
 
-if ! [ -e /etc/wireguard/wg-mullvad.conf ]; then
+if ! sudo test -e /etc/wireguard/wg-mullvad.conf; then
   echo "Error: /etc/wireguard/wg-mullvad.conf not found"
   echo "See Phase wireguard documentation for setup"
   exit 1
