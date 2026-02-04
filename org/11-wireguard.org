@@ -734,12 +734,12 @@ echo "✓ Mullvad VPN connected"
 # Disconnect from Mullvad VPN
 # Generated from org/11-wireguard.org
 
-if ! wg show wg-mullvad &>/dev/null; then
+if ! sudo wg show wg-mullvad &>/dev/null; then
   echo "Mullvad not connected"
   exit 0
 fi
 
-wg-quick down wg-mullvad
+sudo wg-quick down wg-mullvad
 echo "✓ Mullvad VPN disconnected"
 #+end_src
 
@@ -755,16 +755,16 @@ NC='\033[0m'
 echo "=== Mullvad VPN Status ==="
 echo ""
 
-if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
+if ! sudo test -e /etc/wireguard/wg-mullvad.conf; then
   echo -e "${YELLOW}Config not found: /etc/wireguard/wg-mullvad.conf${NC}"
   echo "See Phase 11 documentation for setup"
   exit 0
 fi
 
-if wg show wg-mullvad &>/dev/null; then
+if sudo wg show wg-mullvad &>/dev/null; then
   echo -e "${GREEN}✓ Mullvad VPN connected${NC}"
   echo ""
-  wg show wg-mullvad
+  sudo wg show wg-mullvad
 else
   echo "Mullvad VPN: Disconnected"
   echo ""
