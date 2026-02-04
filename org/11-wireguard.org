@@ -717,8 +717,9 @@ if wg show wg-mullvad &>/dev/null; then
   exit 0
 fi
 
-# Sync resolvconf state to prevent signature mismatch
-resolvconf -u 2>/dev/null || true
+if ! resolvconf -u; then
+  echo "Warning: Failed to sync resolvconf state" >&2
+fi
 
 if ! wg-quick up wg-mullvad 2>&1; then
   echo "Error: Failed to start Mullvad VPN" >&2
