@@ -24,6 +24,11 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
           - openresolv
         state: present
       tags: [wireguard]
+
+    - name: Initialize resolvconf state
+      command: resolvconf -u
+      changed_when: false
+      tags: [wireguard]
 #+end_src
 
 ** Generate Server Keys
