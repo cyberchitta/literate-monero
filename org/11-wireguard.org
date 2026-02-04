@@ -704,22 +704,23 @@ Uses standard WireGuard protocol - no Mullvad-specific software needed.
 #!/bin/bash
 # Connect to Mullvad VPN
 # Generated from org/11-wireguard.org
+# Must be run with sudo
 
-if ! sudo test -e /etc/wireguard/wg-mullvad.conf; then
+if ! test -e /etc/wireguard/wg-mullvad.conf; then
   echo "Error: /etc/wireguard/wg-mullvad.conf not found"
   echo "See Phase wireguard documentation for setup"
   exit 1
 fi
 
-if sudo wg show wg-mullvad &>/dev/null; then
+if wg show wg-mullvad &>/dev/null; then
   echo "Mullvad already connected"
   exit 0
 fi
 
 # Sync resolvconf state to prevent signature mismatch
-sudo resolvconf -u 2>/dev/null || true
+resolvconf -u 2>/dev/null || true
 
-if ! sudo wg-quick up wg-mullvad 2>&1; then
+if ! wg-quick up wg-mullvad 2>&1; then
   echo "Error: Failed to start Mullvad VPN" >&2
   exit 1
 fi
@@ -731,13 +732,14 @@ echo "✓ Mullvad VPN connected"
 #!/bin/bash
 # Disconnect from Mullvad VPN
 # Generated from org/11-wireguard.org
+# Must be run with sudo
 
-if ! sudo wg show wg-mullvad &>/dev/null; then
+if ! wg show wg-mullvad &>/dev/null; then
   echo "Mullvad not connected"
   exit 0
 fi
 
-sudo wg-quick down wg-mullvad
+wg-quick down wg-mullvad
 echo "✓ Mullvad VPN disconnected"
 #+end_src
 
@@ -745,6 +747,7 @@ echo "✓ Mullvad VPN disconnected"
 #!/bin/bash
 # Mullvad VPN status
 # Generated from org/11-wireguard.org
+# Must be run with sudo
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -753,16 +756,16 @@ NC='\033[0m'
 echo "=== Mullvad VPN Status ==="
 echo ""
 
-if ! sudo test -e /etc/wireguard/wg-mullvad.conf; then
+if ! test -e /etc/wireguard/wg-mullvad.conf; then
   echo -e "${YELLOW}Config not found: /etc/wireguard/wg-mullvad.conf${NC}"
   echo "See Phase 11 documentation for setup"
   exit 0
 fi
 
-if sudo wg show wg-mullvad &>/dev/null; then
+if wg show wg-mullvad &>/dev/null; then
   echo -e "${GREEN}✓ Mullvad VPN connected${NC}"
   echo ""
-  sudo wg show wg-mullvad
+  wg show wg-mullvad
 else
   echo "Mullvad VPN: Disconnected"
   echo ""
