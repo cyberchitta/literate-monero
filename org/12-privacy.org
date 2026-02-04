@@ -609,37 +609,68 @@ StartupNotify=true
 This script manages Mullvad VPN connection for browser sessions. Used by both browser dispatcher (automatic routing) and desktop launcher (manual fallback).
 
 #+begin_src bash :tangle ../configs/templates/mullvad-browser.sh.j2
-#!/bin/bash
+#!/usr/bin/env python3
 # Launch browser with Mullvad VPN
 # Generated from org/12-privacy.org
 # Used by: browser dispatcher + desktop launcher (DRY)
 
-set -euo pipefail
+import sys
+import json
+import os
+import subprocess
+from pathlib import Path
 
-# Enable wg-mullvad if not already up
-CLEANUP_NEEDED=false
-if ! sudo wg show wg-mullvad &>/dev/null; then
-  sudo wg-quick up wg-mullvad
-  CLEANUP_NEEDED=true
-  sleep 2
-fi
 
-# Launch Chromium with mullvad-fallback profile (as dev user, not root)
-if [ "$EUID" -eq 0 ]; then
-  sudo -E -u {{ dev_user }} chromium --profile-directory=mullvad-fallback "$@" &
-  BROWSER_PID=$!
-else
-  chromium --profile-directory=mullvad-fallback "$@" &
-  BROWSER_PID=$!
-fi
+def get_profile_directory(profile_name: str) -> str:
+    """Map profile display name to directory name via Local State."""
+    local_state_path = Path.home() / ".config/chromium/Local State"
+    if not local_state_path.exists():
+        return "Default"
+    
+    try:
+        local_state = json.loads(local_state_path.read_text())
+        info_cache = local_state.get("profile", {}).get("info_cache", {})
+        for dir_name, profile_info in info_cache.items():
+            if profile_info.get("name") == profile_name:
+                return dir_name
+    except (json.JSONDecodeError, OSError, KeyError):
+        pass
+    
+    return "Default"
 
-# Wait for browser to exit
-wait $BROWSER_PID
 
-# Cleanup: Disable wg-mullvad if we enabled it
-if [ "$CLEANUP_NEEDED" = true ]; then
-  sudo wg-quick down wg-mullvad
-fi
+def main():
+    # Check if wg-mullvad is already up
+    result = subprocess.run(
+        ["sudo", "wg", "show", "wg-mullvad"],
+        capture_output=True
+    )
+    
+    cleanup_needed = (result.returncode != 0)
+    
+    if cleanup_needed:
+        # Enable wg-mullvad
+        subprocess.run(["sudo", "wg-quick", "up", "wg-mullvad"], check=True)
+        import time
+        time.sleep(2)
+    
+    # Get profile directory
+    profile_dir = get_profile_directory("mullvad-fallback")
+    
+    # Launch Chromium
+    args = ["chromium", f"--profile-directory={profile_dir}"] + sys.argv[1:]
+    browser_proc = subprocess.Popen(args)
+    
+    # Wait for browser to exit
+    browser_proc.wait()
+    
+    # Cleanup if we enabled wg-mullvad
+    if cleanup_needed:
+        subprocess.run(["sudo", "wg-quick", "down", "wg-mullvad"])
+
+
+if __name__ == "__main__":
+    main()
 #+end_src
 
 *** Desktop Launcher
@@ -669,7 +700,7 @@ StartupNotify=true
 
     - name: Deploy Mullvad browser wrapper
       template:
-        src: ../configs/templates/mullvad-browser.sh.j2
+        src: ../configs/templates/mullvad-browser.py.j2
         dest: /usr/local/bin/mullvad-browser.sh
         mode: '0755'
       tags: [privacy, mullvad, browser]
