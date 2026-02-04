@@ -616,24 +616,24 @@ This script manages Mullvad VPN connection for browser sessions. Used by both br
 
 set -euo pipefail
 
-# Check if Mullvad config exists
-if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
-  echo "Error: Mullvad not configured"
-  echo "See Phase 11 documentation for setup"
-  exit 1
-fi
-
 # Enable wg-mullvad if not already up
 CLEANUP_NEEDED=false
-if ! wg show wg-mullvad &>/dev/null 2>&1; then
+if ! sudo wg show wg-mullvad &>/dev/null; then
   sudo wg-quick up wg-mullvad
   CLEANUP_NEEDED=true
   sleep 2
 fi
 
-# Launch Chromium with mullvad-fallback profile
-chromium --profile-directory=mullvad-fallback "$@" &
-BROWSER_PID=$!
+# Launch Chromium with mullvad-fallback profile (as dev user, not root)
+if [ "$EUID" -eq 0 ]; then
+  # Running as root (via desktop launcher or direct sudo call)
+  su - {{ dev_user }} -c "chromium --profile-directory=mullvad-fallback \"$@\"" &
+  BROWSER_PID=$!
+else
+  # Already running as dev user
+  chromium --profile-directory=mullvad-fallback "$@" &
+  BROWSER_PID=$!
+fi
 
 # Wait for browser to exit
 wait $BROWSER_PID
