@@ -21,6 +21,7 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
       community.general.pacman:
         name:
           - wireguard-tools
+          - openresolv
         state: present
       tags: [wireguard]
 #+end_src
@@ -704,9 +705,9 @@ Uses standard WireGuard protocol - no Mullvad-specific software needed.
 # Connect to Mullvad VPN
 # Generated from org/11-wireguard.org
 
-if ! [ -f /etc/wireguard/wg-mullvad.conf ]; then
+if ! [ -e /etc/wireguard/wg-mullvad.conf ]; then
   echo "Error: /etc/wireguard/wg-mullvad.conf not found"
-  echo "See Phase 11 documentation for setup instructions"
+  echo "See Phase wireguard documentation for setup"
   exit 1
 fi
 
@@ -715,7 +716,11 @@ if wg show wg-mullvad &>/dev/null; then
   exit 0
 fi
 
-wg-quick up wg-mullvad
+if ! wg-quick up wg-mullvad 2>&1; then
+  echo "Error: Failed to start Mullvad VPN" >&2
+  exit 1
+fi
+
 echo "✓ Mullvad VPN connected"
 #+end_src
 
