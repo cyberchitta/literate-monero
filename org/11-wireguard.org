@@ -21,8 +21,14 @@ Base system phase must be complete. UDP port 51820 must be accessible (forwarded
       community.general.pacman:
         name:
           - wireguard-tools
-          - openresolv
         state: present
+      tags: [wireguard]
+
+    - name: Create resolvconf compatibility symlink for systemd-resolved
+      file:
+        src: /usr/bin/resolvectl
+        dest: /usr/local/bin/resolvconf
+        state: link
       tags: [wireguard]
 #+end_src
 
@@ -715,10 +721,6 @@ fi
 if wg show wg-mullvad &>/dev/null; then
   echo "Mullvad already connected"
   exit 0
-fi
-
-if ! resolvconf -u; then
-  echo "Warning: Failed to sync resolvconf state" >&2
 fi
 
 if ! wg-quick up wg-mullvad 2>&1; then
