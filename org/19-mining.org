@@ -251,12 +251,20 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       when: mining_msr_access | bool
       tags: [mining]
 
-    - name: Remove XMRig MSR capability (MSR access disabled)
-      capabilities:
-        path: "{{ xmrig_versioned_dir }}/build/xmrig"
-        capability: cap_sys_rawio=ep
-        state: absent
+    # The capabilities module's state=absent generates a setcap
+    # invocation that current libcap rejects; use setcap -r instead.
+    - name: Check XMRig file capabilities
+      command: getcap {{ xmrig_versioned_dir }}/build/xmrig
+      register: xmrig_caps
+      changed_when: false
       when: not (mining_msr_access | bool)
+      tags: [mining]
+
+    - name: Remove XMRig MSR capability (MSR access disabled)
+      command: setcap -r {{ xmrig_versioned_dir }}/build/xmrig
+      when:
+        - not (mining_msr_access | bool)
+        - "'cap_sys_rawio' in xmrig_caps.stdout"
       tags: [mining]
 
     - name: Set XMRig ownership
