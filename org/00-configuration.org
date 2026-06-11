@@ -137,6 +137,11 @@ backup_dir: /srv/backups
 backup_age_identity: /etc/backup/age-identity.txt
 backup_age_recipient: /etc/backup/age-recipient.txt
 
+# Dedicated root-only GPG keyring for verifying release downloads.
+# Populated from the pinned maintainer keys committed in keys/ —
+# see keys/README.md for fingerprints and provenance.
+gpg_verify_home: /var/lib/gpg-verify
+
 # VM storage location
 libvirt_images_path: /var/lib/libvirt/images
 

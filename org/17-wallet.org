@@ -52,7 +52,43 @@ The wallet binaries are already in `/opt/monero` from monerod installation.
 
 Feather Wallet doesn't have a stable AUR package, so we install from official GitHub releases.
 
+Releases ship a detached GPG signature (=.AppImage.asc=) made with the
+FeatherWallet key pinned in =keys/featherwallet.asc= (see
+=keys/README.md=); the AppImage is verified before it is linked into
+place.
+
 #+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
+    - name: Install wallet verification dependencies
+      community.general.pacman:
+        name:
+          - gnupg
+        state: present
+      tags: [wallet, gui]
+
+    - name: Create GPG verification keyring directory
+      file:
+        path: "{{ gpg_verify_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [wallet, gui]
+
+    - name: Copy pinned Feather release-signing key
+      copy:
+        src: ../keys/featherwallet.asc
+        dest: "{{ gpg_verify_home }}/featherwallet.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [wallet, gui]
+
+    - name: Import Feather release-signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/featherwallet.asc
+      register: feather_key_import
+      changed_when: "'imported: 1' in feather_key_import.stderr"
+      tags: [wallet, gui]
+
     - name: Check if Feather Wallet is installed
       stat:
         path: /opt/feather/feather
@@ -71,13 +107,34 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
     - name: Download Feather Wallet AppImage
       get_url:
-        url: "https://github.com/feather-wallet/feather/releases/download/{{ feather_version }}/feather-{{ feather_version }}-linux.AppImage"
+        url: "https://github.com/feather-wallet/feather/releases/download/{{ feather_version }}/feather-{{ feather_version }}.AppImage"
         dest: /opt/feather/feather.AppImage
         mode: '0755'
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
       when: not feather_installed.stat.exists
       register: feather_download
+      tags: [wallet, gui]
+
+    - name: Download Feather Wallet signature
+      get_url:
+        url: "https://github.com/feather-wallet/feather/releases/download/{{ feather_version }}/feather-{{ feather_version }}.AppImage.asc"
+        dest: /tmp/feather.AppImage.asc
+        mode: '0644'
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Verify Feather AppImage signature
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/feather.AppImage.asc /opt/feather/feather.AppImage
+      changed_when: false
+      when: not feather_installed.stat.exists
+      tags: [wallet, gui]
+
+    - name: Clean up Feather signature file
+      file:
+        path: /tmp/feather.AppImage.asc
+        state: absent
+      when: not feather_installed.stat.exists
       tags: [wallet, gui]
 
     - name: Create Feather symlink
@@ -129,7 +186,7 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
     - name: Verify Feather installation
       command: /opt/feather/feather --version
-      register: feather_version
+      register: feather_version_check
       changed_when: false
       failed_when: false
       tags: [wallet, gui, verify]
@@ -137,7 +194,26 @@ Feather Wallet doesn't have a stable AUR package, so we install from official Gi
 
 See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
+Trezor Suite releases ship a detached =.AppImage.asc= signature made
+with the SatoshiLabs 2021 signing key pinned in
+=keys/satoshilabs-2021-signing-key.asc= (see =keys/README.md=).
+
 #+begin_src yaml :tangle ../ansible/fragments/17-wallet.yml
+    - name: Copy pinned Trezor release-signing key (SatoshiLabs)
+      copy:
+        src: ../keys/satoshilabs-2021-signing-key.asc
+        dest: "{{ gpg_verify_home }}/satoshilabs-2021-signing-key.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [wallet, trezor]
+
+    - name: Import Trezor release-signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/satoshilabs-2021-signing-key.asc
+      register: trezor_key_import
+      changed_when: "'imported: 1' in trezor_key_import.stderr"
+      tags: [wallet, trezor]
+
     - name: Check if Trezor Suite is installed
       stat:
         path: /opt/trezor/trezor-suite
@@ -163,6 +239,27 @@ See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
         group: "{{ dev_user }}"
       when: not trezor_suite_installed.stat.exists
       register: trezor_suite_download
+      tags: [wallet, trezor]
+
+    - name: Download Trezor Suite signature
+      get_url:
+        url: "https://github.com/trezor/trezor-suite/releases/download/v{{ trezor_suite_version }}/Trezor-Suite-{{ trezor_suite_version }}-linux-x86_64.AppImage.asc"
+        dest: /tmp/trezor-suite.AppImage.asc
+        mode: '0644'
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Verify Trezor Suite AppImage signature
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/trezor-suite.AppImage.asc /opt/trezor/trezor-suite.AppImage
+      changed_when: false
+      when: not trezor_suite_installed.stat.exists
+      tags: [wallet, trezor]
+
+    - name: Clean up Trezor signature file
+      file:
+        path: /tmp/trezor-suite.AppImage.asc
+        state: absent
+      when: not trezor_suite_installed.stat.exists
       tags: [wallet, trezor]
 
     - name: Create Trezor Suite symlink
@@ -217,7 +314,7 @@ See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
 
     - name: Verify Trezor Suite installation
       command: /opt/trezor/trezor-suite --version
-      register: trezor_version
+      register: trezor_version_check
       changed_when: false
       failed_when: false
       tags: [wallet, trezor, verify]
@@ -281,8 +378,8 @@ See Appendix G: Trezor Hardware Wallet Limitations for setup and workarounds.
           - "Installed wallet software:"
           - "  monero-wallet-cli: /usr/local/bin/monero-wallet-cli"
           - "  monero-wallet-rpc: /usr/local/bin/monero-wallet-rpc"
-          - "  Feather Wallet: {% if feather_version.rc == 0 %}Installed (launch: feather){% else %}Not available{% endif %}"
-          - "  Trezor Suite: {% if trezor_version.rc == 0 %}Installed (launch: trezor-suite){% else %}Not installed (skip with --skip-tags trezor){% endif %}"
+          - "  Feather Wallet: {% if feather_version_check.rc == 0 %}Installed (launch: feather){% else %}Not available{% endif %}"
+          - "  Trezor Suite: {% if trezor_version_check.rc == 0 %}Installed (launch: trezor-suite){% else %}Not installed (skip with --skip-tags trezor){% endif %}"
           - ""
           - "Wallet directory: /home/{{ dev_user }}/.bitmonero"
           - "Monerod RPC: http://127.0.0.1:{{ monerod_rpc_port }}"

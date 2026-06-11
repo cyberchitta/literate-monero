@@ -252,13 +252,42 @@ See Appendix G: XMRig MSR Access for security rationale.
 
 ** Install P2Pool
 
+P2Pool releases ship a =sha256sums.txt.asc= signed by SChernykh; the
+tarball hash is checked against it after verifying the signature with
+the key pinned in =keys/schernykh.asc= (see =keys/README.md=).
+
 #+begin_src yaml :tangle ../ansible/fragments/19-mining.yml
     - name: Install P2Pool dependencies
       community.general.pacman:
         name:
           - curl
           - tar
+          - gnupg
         state: present
+      tags: [mining, p2pool]
+
+    - name: Create GPG verification keyring directory
+      file:
+        path: "{{ gpg_verify_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [mining, p2pool]
+
+    - name: Copy pinned P2Pool release-signing key (SChernykh)
+      copy:
+        src: ../keys/schernykh.asc
+        dest: "{{ gpg_verify_home }}/schernykh.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [mining, p2pool]
+
+    - name: Import P2Pool release-signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/schernykh.asc
+      register: schernykh_import
+      changed_when: "'imported: 1' in schernykh_import.stderr"
       tags: [mining, p2pool]
 
     - name: Set versioned P2Pool directory
@@ -281,6 +310,59 @@ See Appendix G: XMRig MSR Access for security rationale.
       register: p2pool_download
       tags: [mining, p2pool]
 
+    - name: Download P2Pool signed checksums
+      get_url:
+        url: "https://github.com/SChernykh/p2pool/releases/download/{{ p2pool_version }}/sha256sums.txt.asc"
+        dest: /tmp/p2pool-sha256sums.txt.asc
+        mode: '0644'
+      when: not p2pool_version_exists.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Verify P2Pool checksums signature (SChernykh)
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/p2pool-sha256sums.txt.asc
+      changed_when: false
+      when: not p2pool_version_exists.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Extract expected hash for P2Pool tarball
+      shell: |
+        awk -v f="p2pool-{{ p2pool_version }}-linux-x64.tar.gz" \
+          '$1=="Name:" && $2==f {found=1} found && $1=="SHA256:" {print $2; exit}' \
+          /tmp/p2pool-sha256sums.txt.asc
+      register: p2pool_expected_hash
+      changed_when: false
+      when: not p2pool_version_exists.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Fail if expected P2Pool hash is not a sha256 hex string
+      fail:
+        msg: |
+          Could not extract a valid sha256 for p2pool-{{ p2pool_version }}-linux-x64.tar.gz
+          from sha256sums.txt.asc (got: '{{ p2pool_expected_hash.stdout }}').
+      when:
+        - not p2pool_version_exists.stat.exists
+        - p2pool_expected_hash.stdout is not match('^[a-f0-9]{64}$')
+      tags: [mining, p2pool]
+
+    - name: Compute P2Pool download hash
+      stat:
+        path: /tmp/p2pool.tar.gz
+        checksum_algorithm: sha256
+      register: p2pool_download_stat
+      when: not p2pool_version_exists.stat.exists
+      tags: [mining, p2pool]
+
+    - name: Fail if P2Pool hash mismatch
+      fail:
+        msg: |
+          P2Pool hash verification failed!
+          Expected: {{ p2pool_expected_hash.stdout }}
+          Got: {{ p2pool_download_stat.stat.checksum }}
+      when:
+        - not p2pool_version_exists.stat.exists
+        - p2pool_download_stat.stat.checksum != p2pool_expected_hash.stdout
+      tags: [mining, p2pool]
+
     - name: Create versioned P2Pool directory
       file:
         path: "{{ p2pool_versioned_dir }}"
@@ -299,6 +381,16 @@ See Appendix G: XMRig MSR Access for security rationale.
         extra_opts: [--strip-components=1]
       when: not p2pool_version_exists.stat.exists
       register: p2pool_extract
+      tags: [mining, p2pool]
+
+    - name: Clean up P2Pool download files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/p2pool.tar.gz
+        - /tmp/p2pool-sha256sums.txt.asc
+      when: p2pool_extract.changed
       tags: [mining, p2pool]
 
     - name: Check P2Pool binary exists

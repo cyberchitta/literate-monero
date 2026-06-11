@@ -6,6 +6,13 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
 
 ** Install monerod
 
+The release tarball's hash is checked against =hashes.txt= from
+getmonero.org, and =hashes.txt= itself is verified against binaryFate's
+release-signing key — pinned in =keys/binaryfate.asc= (see
+=keys/README.md= for fingerprint and provenance). Without the signature
+check, whoever can tamper with the download can tamper with the hash
+list too.
+
 #+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
     # ------------------------------------------------------------------------
     # Monero Full Node
@@ -17,7 +24,32 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
           - curl
           - tar
           - jq
+          - gnupg
         state: present
+      tags: [monerod]
+
+    - name: Create GPG verification keyring directory
+      file:
+        path: "{{ gpg_verify_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [monerod]
+
+    - name: Copy pinned Monero release-signing key (binaryFate)
+      copy:
+        src: ../keys/binaryfate.asc
+        dest: "{{ gpg_verify_home }}/binaryfate.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [monerod]
+
+    - name: Import Monero release-signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/binaryfate.asc
+      register: binaryfate_import
+      changed_when: "'imported: 1' in binaryfate_import.stderr"
       tags: [monerod]
 
     - name: Set versioned monerod directory
@@ -48,12 +80,30 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
       when: not monerod_version_exists.stat.exists
       tags: [monerod]
 
+    - name: Verify hashes.txt signature (binaryFate)
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/monero-hashes.txt
+      changed_when: false
+      when: not monerod_version_exists.stat.exists
+      tags: [monerod]
+
     - name: Extract expected hash for downloaded file
       shell: |
         grep "monero-linux-x64-{{ monerod_version }}.tar.bz2" /tmp/monero-hashes.txt | awk '{print $1}'
       register: expected_hash
       changed_when: false
       when: not monerod_version_exists.stat.exists
+      tags: [monerod]
+
+    - name: Fail if expected hash is not a sha256 hex string
+      fail:
+        msg: |
+          Could not extract a valid sha256 for monero-linux-x64-{{ monerod_version }}.tar.bz2
+          from hashes.txt (got: '{{ expected_hash.stdout }}').
+          hashes.txt only lists the current release - if {{ monerod_version }}
+          is no longer current, update monerod_version in config.yml.
+      when:
+        - not monerod_version_exists.stat.exists
+        - expected_hash.stdout is not match('^[a-f0-9]{64}$')
       tags: [monerod]
 
     - name: Verify download hash
