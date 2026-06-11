@@ -80,13 +80,38 @@ sudo pacman -S --noconfirm \
     ufw
 
 # Install yay (AUR helper)
+#
+# AUR packages are community-maintained and built from source on this
+# machine, so the PKGBUILD is the trust boundary. The clone is pinned to a
+# reviewed commit (update the pin deliberately: git ls-remote
+# https://aur.archlinux.org/yay.git HEAD) and the PKGBUILD is shown for
+# review before anything is built or installed.
+YAY_COMMIT="fb5d0b2479e6d80374765c8017cd22a7df8072b8"
+
 echo -e "${YELLOW}→${NC} Installing yay (AUR helper)..."
 if ! command -v yay &> /dev/null; then
-    cd /tmp
-    git clone https://aur.archlinux.org/yay.git
-    cd yay
-    makepkg -si --noconfirm
-    cd ~
+    YAY_BUILD_DIR=$(mktemp -d)
+    trap 'rm -rf "$YAY_BUILD_DIR"' EXIT
+
+    git clone https://aur.archlinux.org/yay.git "$YAY_BUILD_DIR/yay"
+    if ! git -C "$YAY_BUILD_DIR/yay" checkout --quiet "$YAY_COMMIT"; then
+        echo -e "${RED}✗${NC} Pinned yay commit $YAY_COMMIT not found in AUR repo."
+        echo "  The AUR history may have been rewritten - investigate before updating the pin."
+        exit 1
+    fi
+
+    echo ""
+    echo "--- PKGBUILD for yay (commit ${YAY_COMMIT:0:12}) ---"
+    cat "$YAY_BUILD_DIR/yay/PKGBUILD"
+    echo "--- end PKGBUILD ---"
+    echo ""
+    read -r -p "Build and install yay from this PKGBUILD? [y/N] " YAY_CONFIRM
+    if [[ ! "$YAY_CONFIRM" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+
+    (cd "$YAY_BUILD_DIR/yay" && makepkg -si --noconfirm)
 else
     echo -e "${GREEN}✓${NC} yay already installed"
 fi
