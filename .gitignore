@@ -45,3 +45,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 docs/system-notes.md
+.commit-msg
