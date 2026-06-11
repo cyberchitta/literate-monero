@@ -357,6 +357,15 @@ echo ""
       when: not tor_browser_check.stat.exists
       tags: [privacy, browser]
 
+    - name: Create GPG verification keyring directory
+      file:
+        path: "{{ gpg_verify_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [privacy, browser]
+
     - name: Copy pinned Tor Browser signing key
       copy:
         src: ../keys/torbrowser.asc

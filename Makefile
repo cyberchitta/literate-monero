@@ -27,7 +27,7 @@ PLAYBOOK := $(ANSIBLE_DIR)/playbook.yml
 
 .PHONY: all clean show
 
-all: $(PLAYBOOK)
+all: $(PLAYBOOK) $(VALIDATE)
 
 # Tangle phase org files to fragments
 $(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org config.yml | $(FRAGMENTS_DIR)
