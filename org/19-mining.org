@@ -45,8 +45,8 @@ This Jinja2 template configures XMRig with variables from configuration.org.
         "init-avx2": -1,
         "mode": "auto",
         "1gb-pages": false,
-        "rdmsr": true,
-        "wrmsr": true,
+        "rdmsr": {{ mining_msr_access | lower }},
+        "wrmsr": {{ mining_msr_access | lower }},
         "cache_qos": false,
         "numa": true,
         "scratchpad_prefetch_mode": 1
@@ -129,28 +129,35 @@ This Jinja2 template configures XMRig with variables from configuration.org.
         state: present
       tags: [mining]
 
+    # MSR access is opt-in (mining_msr_access in config.yml): it buys
+    # ~5-15% hashrate at the cost of giving the miner hardware-level
+    # register access. Disabled config also removes prior grants.
     - name: Create udev rule for MSR device access
       copy:
         content: |
           KERNEL=="msr[0-9]*", MODE="0660", GROUP="mining"
         dest: /etc/udev/rules.d/99-msr.conf
         mode: '0644'
+      when: mining_msr_access | bool
       tags: [mining]
 
     - name: Reload udev rules
       command: udevadm control --reload-rules
       changed_when: false
+      when: mining_msr_access | bool
       tags: [mining]
 
     - name: Trigger udev to apply MSR permissions
       command: udevadm trigger
       changed_when: false
+      when: mining_msr_access | bool
       tags: [mining]
 
     - name: Load MSR kernel module
       community.general.modprobe:
         name: msr
         state: present
+      when: mining_msr_access | bool
       tags: [mining]
 
     - name: Make MSR module load on boot
@@ -158,6 +165,21 @@ This Jinja2 template configures XMRig with variables from configuration.org.
         content: "msr\n"
         dest: /etc/modules-load.d/msr.conf
         mode: '0644'
+      when: mining_msr_access | bool
+      tags: [mining]
+
+    - name: Remove MSR udev rule (MSR access disabled)
+      file:
+        path: /etc/udev/rules.d/99-msr.conf
+        state: absent
+      when: not (mining_msr_access | bool)
+      tags: [mining]
+
+    - name: Remove MSR module autoload (MSR access disabled)
+      file:
+        path: /etc/modules-load.d/msr.conf
+        state: absent
+      when: not (mining_msr_access | bool)
       tags: [mining]
 #+end_src
 
@@ -226,6 +248,15 @@ This Jinja2 template configures XMRig with variables from configuration.org.
         path: "{{ xmrig_versioned_dir }}/build/xmrig"
         capability: cap_sys_rawio=ep
         state: present
+      when: mining_msr_access | bool
+      tags: [mining]
+
+    - name: Remove XMRig MSR capability (MSR access disabled)
+      capabilities:
+        path: "{{ xmrig_versioned_dir }}/build/xmrig"
+        capability: cap_sys_rawio=ep
+        state: absent
+      when: not (mining_msr_access | bool)
       tags: [mining]
 
     - name: Set XMRig ownership

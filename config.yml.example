@@ -94,6 +94,11 @@ mining_huge_pages: true
 # XMRig donation level (1 = 1%, 0 = 0%)
 xmrig_donate_level: 5
 
+# MSR access for XMRig (~5-15% faster RandomX, but grants the miner
+# cap_sys_rawio and kernel MSR write access - hardware-level privilege
+# for a network-facing workload). Off by default.
+mining_msr_access: false
+
 # ----------------------------------------------------------------------------
 # Backup Configuration
 # ----------------------------------------------------------------------------

@@ -184,9 +184,23 @@ echo "=== Starting restore at $(date) ==="
 echo "Backup file: $BACKUP_FILE"
 echo "Restore location: $RESTORE_DIR"
 
+# Reject archive members that would escape the extraction directory.
+# The archive is data at rest that may have been tampered with - never
+# trust member paths.
+check_tar_members() {
+  local bad
+  bad=$(tar tzf "$1" | grep -E '^/|(^|/)\.\.(/|$)' || true)
+  if [ -n "$bad" ]; then
+    echo "Error: archive contains unsafe paths:" >&2
+    echo "$bad" | head -5 >&2
+    exit 1
+  fi
+}
+
 # Extract backup
 echo "--- Extracting Backup ---"
 mkdir -p "$RESTORE_DIR"
+TARBALL="$RESTORE_DIR/.backup.tar.gz"
 case "$BACKUP_FILE" in
   *.tar.gz.age)
     if [ ! -s "$AGE_IDENTITY_FILE" ]; then
@@ -195,17 +209,21 @@ case "$BACKUP_FILE" in
       echo "AGE_IDENTITY_FILE at it."
       exit 1
     fi
-    age -d -i "$AGE_IDENTITY_FILE" "$BACKUP_FILE" | tar xzf - -C "$RESTORE_DIR"
+    age -d -i "$AGE_IDENTITY_FILE" "$BACKUP_FILE" > "$TARBALL"
     ;;
   *.tar.gz)
     echo "WARNING: restoring a legacy plaintext backup"
-    tar xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
+    cp "$BACKUP_FILE" "$TARBALL"
     ;;
   *)
     echo "Error: unrecognized backup format: $BACKUP_FILE"
     exit 1
     ;;
 esac
+
+check_tar_members "$TARBALL"
+tar xzf "$TARBALL" -C "$RESTORE_DIR"
+rm -f "$TARBALL"
 
 # Find the extracted directory
 EXTRACTED_DIR=$(find "$RESTORE_DIR" -maxdepth 1 -type d -name "backup_*" | head -n 1)
@@ -284,9 +302,10 @@ if [ -n "$RESTORE_PATH" ]; then
         echo "    sudo systemctl restart xmrig"
         ;;
       *)
-        echo "Restoring $RESTORE_PATH..."
-        rsync -av "$EXTRACTED_DIR/$RESTORE_PATH/" "/$RESTORE_PATH/"
-        echo "✓ Restored $RESTORE_PATH"
+        # Whitelist only - a free-form path here would let a tampered
+        # backup (or a typo) overwrite arbitrary system directories.
+        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining)"
+        exit 1
         ;;
     esac
   else

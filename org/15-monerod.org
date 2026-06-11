@@ -305,22 +305,39 @@ exit 1
 The ban list blocks known spy nodes that attempt to link IP addresses to transactions.
 Updates are **automated weekly** (Sundays at 3 AM) with safety checks.
 
-See Appendix G: GPG Signature Verification (Ban List) for security rationale.
+The list is GPG-verified against Boog900's maintainer key, pinned in
+=keys/boog900.asc= (see =keys/README.md= — the pinned key is *not*
+fetched from the same host as the list, which is what previously made
+verification circular). Initial download and weekly updates share the
+same script, so both paths get signature + format checks.
 
 #+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
-    - name: Download Monero spy node ban list
-      get_url:
-        url: https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt
-        dest: /etc/monero/ban_list.txt
+    - name: Copy pinned ban-list signing key (Boog900)
+      copy:
+        src: ../keys/boog900.asc
+        dest: "{{ gpg_verify_home }}/boog900.asc"
+        owner: root
+        group: root
         mode: '0644'
-        force: no
-      register: ban_list_download
       tags: [monerod, config, security]
 
-    - name: Verify ban list downloaded successfully
-      stat:
-        path: /etc/monero/ban_list.txt
-      register: ban_list_file
+    - name: Import ban-list signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/boog900.asc
+      register: boog900_import
+      changed_when: "'imported: 1' in boog900_import.stderr"
+      tags: [monerod, config, security]
+
+    - name: Deploy ban list update script
+      template:
+        src: ../configs/templates/update-monero-banlist.sh.j2
+        dest: /usr/local/bin/update-monero-banlist.sh
+        mode: '0755'
+      tags: [monerod, config, scripts, security]
+
+    - name: Download and verify initial ban list
+      command: /usr/local/bin/update-monero-banlist.sh
+      args:
+        creates: /etc/monero/ban_list.txt
       tags: [monerod, config, security]
 
     - name: Check ban list has content
@@ -332,12 +349,8 @@ See Appendix G: GPG Signature Verification (Ban List) for security rationale.
     - name: Display ban list stats
       debug:
         msg:
-          - "Ban list downloaded: {{ ban_list_file.stat.exists }}"
           - "Ban list entries: {{ ban_list_lines.stdout }}"
-          - ""
-          - "Note: GPG signatures not verified (keys must come from same potentially"
-          - "compromised hosts). Relying on HTTPS + size validation instead."
-          - "For manual verification: https://github.com/Boog900/monero-ban-list#signatures"
+          - "GPG-verified against pinned key keys/boog900.asc"
       tags: [monerod, config, security]
 #+end_src
 
@@ -686,17 +699,35 @@ Script to update the ban list weekly with safety checks.
 
 #+begin_src bash :tangle ../configs/templates/update-monero-banlist.sh.j2
 #!/bin/bash
-# Ban list update (see 05-monerod.org)
+# Ban list update (see the monerod phase org file)
+# Downloads to a private mktemp dir, verifies Boog900's detached GPG
+# signature against the pinned key in {{ gpg_verify_home }}, and sanity-
+# checks the format before installing.
 
 set -euo pipefail
 
-TEMP_FILE="/tmp/ban_list.txt.tmp"
 BAN_LIST="/etc/monero/ban_list.txt"
+BAN_LIST_URL="https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt"
+SIG_URL="https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/sigs/boog900.sig"
+GPG_HOME="{{ gpg_verify_home }}"
 
-curl -s https://raw.githubusercontent.com/Boog900/monero-ban-list/refs/heads/main/ban_list.txt -o "$TEMP_FILE"
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+TEMP_FILE="$TMP_DIR/ban_list.txt"
 
-if [ ! -f "$TEMP_FILE" ] || [ ! -s "$TEMP_FILE" ]; then
-  echo "ERROR: Failed to download ban list" >&2
+curl -fsS "$BAN_LIST_URL" -o "$TEMP_FILE"
+curl -fsS "$SIG_URL" -o "$TMP_DIR/boog900.sig"
+
+if ! gpg --homedir "$GPG_HOME" --verify "$TMP_DIR/boog900.sig" "$TEMP_FILE" 2>/dev/null; then
+  echo "ERROR: ban list signature verification failed" >&2
+  exit 1
+fi
+
+# Only comments, blank lines and IPv4[/prefix] entries are expected;
+# anything else (HTML error page, new format) fails closed for review.
+if grep -vE '^(#.*)?$|^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$' "$TEMP_FILE" | grep -q .; then
+  echo "ERROR: ban list contains unexpected lines:" >&2
+  grep -vE '^(#.*)?$|^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$' "$TEMP_FILE" | head -5 >&2
   exit 1
 fi
 
@@ -727,16 +758,10 @@ else
 fi
 #+end_src
 
-Deploy the script and set up weekly updates.
+Set up weekly updates (the script itself is deployed earlier, before the
+initial verified download).
 
 #+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
-    - name: Deploy ban list update script
-      template:
-        src: ../configs/templates/update-monero-banlist.sh.j2
-        dest: /usr/local/bin/update-monero-banlist.sh
-        mode: '0755'
-      tags: [monerod, scripts, security]
-
     - name: Create weekly ban list update cron job (Sundays 3 AM)
       cron:
         name: "Update Monero spy node ban list"
