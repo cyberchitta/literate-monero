@@ -75,7 +75,7 @@ exec bwrap \
       failed_when: claude_version.rc != 0
       become: yes
       become_user: "{{ dev_user }}"
-      tags: [sandbox, claude-code]
+      tags: [sandbox, claude-code, verify]
 
     - name: Deploy Claude Code sandbox wrapper
       template:
@@ -109,7 +109,7 @@ exec bwrap \
           - "=== Sandbox Infrastructure Complete ==="
           - ""
           - "Bubblewrap: {% if bwrap_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
-          - "Native Claude Code: {% if claude_check.rc == 0 %}Installed ({{ claude_check.stdout }}){% else %}Not found{% endif %}"
+          - "Native Claude Code: {% if claude_version.rc == 0 %}Installed ({{ claude_version.stdout }}){% else %}Not found{% endif %}"
           - ""
           - "Wrapper installed:"
           - "  /usr/local/bin/claude-code-sandboxed"
