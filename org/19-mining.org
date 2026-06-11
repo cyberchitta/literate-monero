@@ -132,11 +132,19 @@ This Jinja2 template configures XMRig with variables from configuration.org.
     # MSR access is opt-in (mining_msr_access in config.yml): it buys
     # ~5-15% hashrate at the cost of giving the miner hardware-level
     # register access. Disabled config also removes prior grants.
+    # udev only reads files ending in .rules; an earlier revision
+    # shipped this as 99-msr.conf, which udev silently ignored.
+    - name: Remove misnamed MSR udev rule
+      file:
+        path: /etc/udev/rules.d/99-msr.conf
+        state: absent
+      tags: [mining]
+
     - name: Create udev rule for MSR device access
       copy:
         content: |
           KERNEL=="msr[0-9]*", MODE="0660", GROUP="mining"
-        dest: /etc/udev/rules.d/99-msr.conf
+        dest: /etc/udev/rules.d/99-msr.rules
         mode: '0644'
       when: mining_msr_access | bool
       tags: [mining]
@@ -170,7 +178,7 @@ This Jinja2 template configures XMRig with variables from configuration.org.
 
     - name: Remove MSR udev rule (MSR access disabled)
       file:
-        path: /etc/udev/rules.d/99-msr.conf
+        path: /etc/udev/rules.d/99-msr.rules
         state: absent
       when: not (mining_msr_access | bool)
       tags: [mining]
@@ -243,6 +251,17 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       register: xmrig_build
       tags: [mining]
 
+    # Ownership must be settled BEFORE granting capabilities:
+    # chown clears file capabilities, so a fresh build (root-owned)
+    # would lose cap_sys_rawio the moment it is chowned.
+    - name: Set XMRig ownership
+      file:
+        path: "{{ xmrig_versioned_dir }}"
+        owner: "{{ mining_user }}"
+        group: "{{ mining_user }}"
+        recurse: yes
+      tags: [mining]
+
     - name: Set XMRig capabilities for MSR access
       capabilities:
         path: "{{ xmrig_versioned_dir }}/build/xmrig"
@@ -265,14 +284,6 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       when:
         - not (mining_msr_access | bool)
         - "'cap_sys_rawio' in xmrig_caps.stdout"
-      tags: [mining]
-
-    - name: Set XMRig ownership
-      file:
-        path: "{{ xmrig_versioned_dir }}"
-        owner: "{{ mining_user }}"
-        group: "{{ mining_user }}"
-        recurse: yes
       tags: [mining]
 
     - name: Update XMRig symlink to current version
