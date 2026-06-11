@@ -252,7 +252,7 @@ RPC_OK=0
 for _ in $(seq 1 30); do
     if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
         -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
-        -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+        -H 'Content-Type: application/json' | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
         RPC_OK=1
         break
     fi
@@ -675,7 +675,7 @@ RPC_OK=0
 for _ in $(seq 1 30); do
     if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
         -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
-        -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+        -H 'Content-Type: application/json' | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
         RPC_OK=1
         break
     fi
