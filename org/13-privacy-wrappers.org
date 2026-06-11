@@ -23,10 +23,12 @@ See Appendix F: Threat Models for what this protects and trade-offs.
 	name = {{ anon_git_name }}
 	email = {{ anon_git_email }}
 
+# socks5h (not socks5): hostname is resolved through the proxy, so DNS
+# queries go via Tor instead of leaking to the local resolver.
 [http]
-	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+	proxy = socks5h://127.0.0.1:{{ tor_socks_port }}
 [https]
-	proxy = socks5://127.0.0.1:{{ tor_socks_port }}
+	proxy = socks5h://127.0.0.1:{{ tor_socks_port }}
 
 [core]
 	editor = vim
@@ -54,12 +56,16 @@ See Appendix F: Threat Models for what this protects and trade-offs.
 #+begin_src sshconfig :tangle ../configs/templates/anon-ssh-config.j2
 # SSH configuration for privacy-first git operations
 # Routes all git traffic through Tor SOCKS proxy
+#
+# ncat with --proxy-dns remote resolves the hostname through Tor; plain
+# nc -x resolves it with the local resolver first, leaking the
+# destination to the DNS network.
 
 Host github.com
     HostName github.com
     User git
     Port 22
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    ProxyCommand ncat --proxy 127.0.0.1:{{ tor_socks_port }} --proxy-type socks5 --proxy-dns remote %h %p
     IdentityFile ~/.ssh/id_ed25519_github
     IdentitiesOnly yes
     ServerAliveInterval 60
@@ -69,7 +75,7 @@ Host gitlab.com
     HostName gitlab.com
     User git
     Port 22
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    ProxyCommand ncat --proxy 127.0.0.1:{{ tor_socks_port }} --proxy-type socks5 --proxy-dns remote %h %p
     IdentityFile ~/.ssh/id_ed25519_gitlab
     IdentitiesOnly yes
     ServerAliveInterval 60
@@ -77,7 +83,7 @@ Host gitlab.com
 
 # Catch-all for other git hosts
 Host *.github.com *.gitlab.com
-    ProxyCommand nc -X 5 -x 127.0.0.1:{{ tor_socks_port }} %h %p
+    ProxyCommand ncat --proxy 127.0.0.1:{{ tor_socks_port }} --proxy-type socks5 --proxy-dns remote %h %p
 #+end_src
 
 *** Deploy Privacy Configuration
@@ -86,6 +92,12 @@ Host *.github.com *.gitlab.com
     # ------------------------------------------------------------------------
     # Privacy Wrappers for Applications
     # ------------------------------------------------------------------------
+
+    - name: Install ncat for proxy-DNS SSH transport
+      community.general.pacman:
+        name: nmap
+        state: present
+      tags: [privacy-wrappers, config]
 
     - name: Ensure primary user .ssh directory exists
       file:
@@ -205,7 +217,7 @@ echo ""
           - "Git config: {% if git_config.stat.exists %}Installed{% else %}Not found{% endif %}"
           - "  Name: {{ anon_git_name }}"
           - "  Email: {{ anon_git_email }}"
-          - "  HTTP/HTTPS proxy: socks5://127.0.0.1:{{ tor_socks_port }}"
+          - "  HTTP/HTTPS proxy: socks5h://127.0.0.1:{{ tor_socks_port }} (remote DNS)"
           - ""
           - "SSH config: {% if ssh_config.stat.exists %}Installed{% else %}Not found{% endif %}"
           - "  Routes: github.com, gitlab.com through Tor"
@@ -449,7 +461,7 @@ This phase demonstrates the pattern for routing applications through Tor. To add
 - RSS reader (route through Tor)
 - Chat applications (route through Tor)
 
-All follow the same pattern: configure to use `socks5://127.0.0.1:{{ tor_socks_port }}`.
+All follow the same pattern: configure to use `socks5h://127.0.0.1:{{ tor_socks_port }}` — the `h` variant resolves hostnames through the proxy; plain `socks5` leaks DNS to the local resolver.
 
 *** Troubleshooting
 
