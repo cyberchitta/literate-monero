@@ -46,3 +46,4 @@ __pycache__/
 Thumbs.db
 docs/system-notes.md
 .commit-msg
+.security-fixes-handoff.md
