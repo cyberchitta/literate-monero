@@ -221,6 +221,15 @@ then contained to that account instead of being instant root.
         group: monero
         mode: '0750'
       tags: [monerod]
+
+    - name: Ensure monero user owns all existing data files
+      file:
+        path: "{{ monerod_data_dir }}"
+        state: directory
+        owner: monero
+        group: monero
+        recurse: yes
+      tags: [monerod]
 #+end_src
 
 ** I2P Configuration
