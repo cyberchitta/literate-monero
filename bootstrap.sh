@@ -145,9 +145,6 @@ cat > ~/.emacs << 'EOF'
    (python . t)
    (emacs-lisp . t)))
 
-;; Don't ask for confirmation when executing code
-(setq org-confirm-babel-evaluate nil)
-
 ;; Syntax highlighting in code blocks
 (setq org-src-fontify-natively t)
 (setq org-src-tab-acts-natively t)
@@ -200,6 +197,19 @@ cat > ~/.emacs << 'EOF'
 ;; Custom keybindings
 (global-set-key (kbd "C-c t") 'org-babel-tangle)
 EOF
+
+# Scope the babel-confirmation bypass to this repo's org files only.
+# A global (setq org-confirm-babel-evaluate nil) would let any org file
+# opened in Emacs run code without asking.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cat >> ~/.emacs << EOF2
+
+;; Skip babel-evaluate confirmation only inside the literate-monero repo
+(setq org-confirm-babel-evaluate
+      (lambda (lang body)
+        (not (and buffer-file-name
+                  (string-prefix-p "$REPO_DIR/" buffer-file-name)))))
+EOF2
 
 # Configure tmux
 echo -e "${YELLOW}→${NC} Configuring tmux..."

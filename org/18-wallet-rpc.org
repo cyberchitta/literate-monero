@@ -36,6 +36,14 @@ Wallet opening/switching is handled by consuming applications (Feather, scripts,
 #+end_src
 
 *** Service template
+
+Note on =--disable-rpc-login=: the wallet RPC runs unauthenticated. This
+is acceptable only because it binds strictly to =127.0.0.1= — anyone who
+can reach it already has local code execution on the box. If the bind
+address is ever widened (or another service on this host becomes
+attacker-controllable), switch to =--rpc-login user:pass= and store the
+credential in =~/.secrets=.
+
 #+begin_src ini :tangle ../configs/templates/monero-wallet-rpc.service.j2
 [Unit]
 Description=Monero Wallet RPC (127.0.0.1:{{ monero_wallet_rpc_port }})

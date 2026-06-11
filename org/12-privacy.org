@@ -357,11 +357,40 @@ echo ""
       when: not tor_browser_check.stat.exists
       tags: [privacy, browser]
 
+    - name: Copy pinned Tor Browser signing key
+      copy:
+        src: ../keys/torbrowser.asc
+        dest: "{{ gpg_verify_home }}/torbrowser.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [privacy, browser]
+
+    - name: Import Tor Browser signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/torbrowser.asc
+      register: torbrowser_import
+      changed_when: "'imported: 1' in torbrowser_import.stderr"
+      tags: [privacy, browser]
+
     - name: Download Tor Browser checksums
       get_url:
         url: "https://dist.torproject.org/torbrowser/{{ tor_browser_version }}/sha256sums-signed-build.txt"
         dest: /tmp/tor-browser-checksums.txt
         mode: '0644'
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Download Tor Browser checksums signature
+      get_url:
+        url: "https://dist.torproject.org/torbrowser/{{ tor_browser_version }}/sha256sums-signed-build.txt.asc"
+        dest: /tmp/tor-browser-checksums.txt.asc
+        mode: '0644'
+      when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Verify Tor Browser checksums signature
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/tor-browser-checksums.txt.asc /tmp/tor-browser-checksums.txt
+      changed_when: false
       when: not tor_browser_check.stat.exists
       tags: [privacy, browser]
 
@@ -371,6 +400,18 @@ echo ""
       register: tor_browser_checksum
       changed_when: false
       when: not tor_browser_check.stat.exists
+      tags: [privacy, browser]
+
+    - name: Fail if Tor Browser checksum is not a sha256 hex string
+      fail:
+        msg: |
+          Could not extract a valid sha256 for tor-browser-linux-x86_64-{{ tor_browser_version }}.tar.xz
+          (got: '{{ tor_browser_checksum.stdout }}').
+          dist.torproject.org removes old releases - if {{ tor_browser_version }}
+          is no longer current, update tor_browser_version in config.yml.
+      when:
+        - not tor_browser_check.stat.exists
+        - tor_browser_checksum.stdout is not match('^[a-f0-9]{64}$')
       tags: [privacy, browser]
 
     - name: Download Tor Browser

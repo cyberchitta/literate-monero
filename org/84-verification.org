@@ -448,8 +448,9 @@ echo ""
 # Disk performance
 echo "--- Disk Performance ---"
 echo "Testing write speed..."
-dd if=/dev/zero of=/tmp/testfile bs=1M count=1024 oflag=direct 2>&1 | grep -oP '\d+\.?\d*\s+MB/s'
-rm -f /tmp/testfile
+TESTFILE=$(mktemp /tmp/benchmark.XXXXXX)
+dd if=/dev/zero of="$TESTFILE" bs=1M count=1024 oflag=direct 2>&1 | grep -oP '\d+\.?\d*\s+MB/s'
+rm -f "$TESTFILE"
 
 echo "Testing read speed..."
 echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null

@@ -411,7 +411,10 @@ ban-list=/etc/monero/ban_list.txt
 
 rpc-bind-ip={{ monerod_rpc_bind_ip }}
 rpc-bind-port={{ monerod_rpc_port }}
+{% if monerod_rpc_bind_ip != '127.0.0.1' %}
+# Required acknowledgement for binding RPC to a non-loopback address
 confirm-external-bind=1
+{% endif %}
 
 # ZMQ notifications (REQUIRED by P2Pool)
 # P2Pool monitors block notifications via ZMQ pub-sub

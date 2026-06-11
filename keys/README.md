@@ -13,6 +13,7 @@ keyring (`gpg_verify_home`) and refuses to install unverified artifacts.
 | `featherwallet.asc` | FeatherWallet <dev@featherwallet.org> | `8185 E158 A333 30C7 FD61 BC0D 1F76 E155 CEFB A71C` | Feather Wallet AppImage detached `.asc` |
 | `satoshilabs-2021-signing-key.asc` | SatoshiLabs 2021 Signing Key | `EB48 3B26 B078 A4AA 1B6F 425E E21B 6950 A2EC B65C` | Trezor Suite AppImage detached `.asc` |
 | `boog900.asc` | Boog900 (monero-ban-list maintainer) | `37AA 6F0F 4776 A897 EEA4 4E5C AD8B 0A2C F759 9219` (signs with ed25519 subkey `A875 F544 CB56 9CB9 6889 791E 42AB 1287 CB00 41C2`) | Monero spy-node ban list `sigs/boog900.sig` |
+| `torbrowser.asc` | Tor Browser Developers <torbrowser@torproject.org> | `EF6E 286D DA85 EA2A 4BA7 DE68 4E2C 6E87 9329 8290` | Tor Browser `sha256sums-signed-build.txt.asc` |
 
 ## Provenance (fetched 2026-06-11)
 
@@ -33,6 +34,12 @@ keyring (`gpg_verify_home`) and refuses to install unverified artifacts.
   Checked: gives a Good signature on the live `ban_list.txt`. The ban
   list is co-signed by four other maintainers (jeffro256, Rucknium,
   SyntheticBird, hinto-janai) if stronger verification is ever wanted.
+- `torbrowser.asc`: Tor Project WKD
+  (<https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf?l=torbrowser>),
+  the source the Tor Project documents for signature verification.
+  Fingerprint matches the long-published Tor Browser Developers key.
+  Checked: gives a Good signature on the live 15.0.15
+  `sha256sums-signed-build.txt`.
 
 ## Re-verifying these keys
 

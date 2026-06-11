@@ -114,7 +114,7 @@ Host *.github.com *.gitlab.com
         dest: "/home/{{ dev_user }}/.gitconfig"
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
-        mode: '0644'
+        mode: '0600'
       tags: [privacy-wrappers, config]
 
     - name: Deploy SSH configuration for Tor routing
@@ -243,13 +243,18 @@ Automatically disables both when the application exits.
 #!/bin/bash
 set -euo pipefail
 
+# Close the ports however we exit (crash, Ctrl-C, kill) - without the
+# trap, a non-zero LocalSend exit would leave the firewall open.
+close_ports() {
+  sudo ufw delete allow 53317/udp || true
+  sudo ufw delete allow 53317/tcp || true
+}
+trap close_ports EXIT
+
 sudo ufw allow 53317/udp comment "LocalSend transfer"
 sudo ufw allow 53317/tcp comment "LocalSend transfer"
 
 /usr/bin/localsend "$@"
-
-sudo ufw delete allow 53317/udp
-sudo ufw delete allow 53317/tcp
 #+end_src
 
 ** Deploy LocalSend Wrapper

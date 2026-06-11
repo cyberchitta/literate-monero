@@ -68,10 +68,10 @@ THRESHOLD={{ disk_alert_threshold }}
 # Check each mount point
 df -h | grep -vE '^Filesystem|tmpfs|cdrom|boot' | awk '{ print $5 " " $6 }' | while read output;
 do
-  usage=$(echo $output | awk '{print $1}' | sed 's/%//g')
-  partition=$(echo $output | awk '{print $2}')
+  usage=$(echo "$output" | awk '{print $1}' | sed 's/%//g')
+  partition=$(echo "$output" | awk '{print $2}')
   
-  if [ $usage -ge $THRESHOLD ]; then
+  if [ "$usage" -ge "$THRESHOLD" ]; then
     echo "ALERT: Disk space on $partition is at ${usage}%"
     
     # Log to journal

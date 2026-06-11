@@ -28,7 +28,9 @@
 monerod_version: "v0.18.5.0"
 p2pool_version: "v4.13"
 xmrig_version: "v6.25.0"
-tor_browser_version: "15.0.3"
+# Note: dist.torproject.org removes old releases, so fresh installs can
+# only verify the current version.
+tor_browser_version: "15.0.15"
 feather_version: "2.8.1"
 trezor_suite_version: "24.11.2"
 
@@ -91,8 +93,10 @@ mining_nice_priority: 19
 # Enable huge pages for better performance
 mining_huge_pages: true
 
-# XMRig donation level (1 = 1%, 0 = 0%)
-xmrig_donate_level: 5
+# XMRig donation level. Stock builds enforce a 1% minimum: a value of 0
+# is silently raised to 1 unless XMRig is built with the donate level
+# patched out.
+xmrig_donate_level: 1
 
 # MSR access for XMRig (~5-15% faster RandomX, but grants the miner
 # cap_sys_rawio and kernel MSR write access - hardware-level privilege
