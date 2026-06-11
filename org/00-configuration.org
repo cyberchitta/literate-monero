@@ -130,6 +130,13 @@ xmrig_install_dir: /opt/xmrig
 # Backup directory
 backup_dir: /srv/backups
 
+# Backup encryption (age) — recipient encrypts, identity decrypts.
+# The identity lives OUTSIDE backup_dir and is never included in backups;
+# keep an offline copy (KeePassXC / paper) or backups are unrecoverable
+# after disk loss.
+backup_age_identity: /etc/backup/age-identity.txt
+backup_age_recipient: /etc/backup/age-recipient.txt
+
 # VM storage location
 libvirt_images_path: /var/lib/libvirt/images
 

@@ -13,14 +13,25 @@ This phase sets up automated backups:
 # Automated backup script
 # Backs up critical configuration files to {{ backup_dir }}
 # This is a selective backup - only essential configs, NOT entire /etc
+# Backups contain private keys, so they are age-encrypted to the recipient
+# key; the script refuses to write a plaintext archive.
 
 set -euo pipefail
 
 BACKUP_DIR="{{ backup_dir }}"
+AGE_RECIPIENT_FILE="{{ backup_age_recipient }}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="backup_${TIMESTAMP}"
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
 RETENTION_DAYS={{ backup_retention_days }}
+
+# Never back up secrets in plaintext - require the encryption key
+if [ ! -s "$AGE_RECIPIENT_FILE" ]; then
+  echo "ERROR: age recipient file missing: $AGE_RECIPIENT_FILE" >&2
+  echo "Backups contain private keys and must be encrypted." >&2
+  echo "Re-run the backup phase of the playbook to generate the key." >&2
+  exit 1
+fi
 
 # Ensure backup directory exists
 mkdir -p "$BACKUP_DIR"
@@ -70,6 +81,7 @@ cat > "$BACKUP_PATH/manifest.txt" << EOF
 Backup created: $(date)
 Hostname: {{ system_hostname }}
 Backup name: $BACKUP_NAME
+Encryption: age (recipient from $AGE_RECIPIENT_FILE; decrypt with the offline identity)
 
 Contents:
 $(find "$BACKUP_PATH" -type f | wc -l) files
@@ -93,35 +105,41 @@ NOT backed up (Ansible regenerates):
 - Monerod blockchain (backup separately)
 EOF
 
-# Compress backup
-echo "--- Compressing Backup ---"
+# Compress and encrypt backup
+echo "--- Compressing and Encrypting Backup ---"
 cd "$BACKUP_DIR"
-tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
-
-# Verify compression succeeded before cleaning up
-if [ $? -eq 0 ]; then
+if tar czf - "$BACKUP_NAME" | age -R "$AGE_RECIPIENT_FILE" > "${BACKUP_NAME}.tar.gz.age"; then
   rm -rf "$BACKUP_NAME"
-  echo "Backup compressed: ${BACKUP_NAME}.tar.gz"
-  echo "Size: $(du -h "${BACKUP_NAME}.tar.gz" | cut -f1)"
+  chmod 600 "${BACKUP_NAME}.tar.gz.age"
+  echo "Backup encrypted: ${BACKUP_NAME}.tar.gz.age"
+  echo "Size: $(du -h "${BACKUP_NAME}.tar.gz.age" | cut -f1)"
 
   # Remove old backups only after successful new backup
   echo "--- Cleaning Old Backups ---"
-  find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +$RETENTION_DAYS -delete
+  find "$BACKUP_DIR" -name "backup_*.tar.gz.age" -mtime +$RETENTION_DAYS -delete
   echo "Removed backups older than $RETENTION_DAYS days"
+
+  # Legacy plaintext backups predate encryption - rotate them out too
+  LEGACY=$(find "$BACKUP_DIR" -maxdepth 1 -name "backup_*.tar.gz" -type f)
+  if [ -n "$LEGACY" ]; then
+    echo "WARNING: plaintext legacy backups present (contain unencrypted keys):"
+    echo "$LEGACY"
+    echo "Delete them once you have verified an encrypted backup restores."
+  fi
 else
-  echo "ERROR: Backup compression failed!"
-  rm -rf "$BACKUP_NAME"
+  echo "ERROR: Backup encryption failed!"
+  rm -rf "$BACKUP_NAME" "${BACKUP_NAME}.tar.gz.age"
   exit 1
 fi
 
 # List remaining backups
 echo "--- Current Backups ---"
-ls -lh "$BACKUP_DIR"/backup_*.tar.gz 2>/dev/null || echo "No backups found"
+ls -lh "$BACKUP_DIR"/backup_*.tar.gz.age 2>/dev/null || echo "No backups found"
 
 echo "=== Backup completed at $(date) ==="
 
 # Log to journal
-logger -t backup "Backup completed: ${BACKUP_NAME}.tar.gz"
+logger -t backup "Backup completed: ${BACKUP_NAME}.tar.gz.age"
 
 exit 0
 #+end_src
@@ -131,21 +149,25 @@ exit 0
 #+begin_src bash :tangle ../configs/templates/restore.sh.j2
 #!/bin/bash
 # Restore from backup
-# Usage: restore.sh <backup-file.tar.gz> [path]
+# Usage: restore.sh <backup-file.tar.gz.age> [path]
+# Encrypted backups (.tar.gz.age) are decrypted with the age identity;
+# set AGE_IDENTITY_FILE to override the default location.
 
 set -euo pipefail
 
+AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-{{ backup_age_identity }}}"
+
 if [ $# -lt 1 ]; then
-  echo "Usage: $0 <backup-file.tar.gz> [specific-path]"
+  echo "Usage: $0 <backup-file.tar.gz.age> [specific-path]"
   echo ""
   echo "Available backups:"
-  ls -lh {{ backup_dir }}/backup_*.tar.gz 2>/dev/null || echo "  No backups found"
+  ls -lh {{ backup_dir }}/backup_*.tar.gz.age 2>/dev/null || echo "  No backups found"
   echo ""
   echo "Examples:"
-  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz           # Show contents"
-  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz etc       # Restore all configs"
-  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz home      # Restore user data"
-  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz mining    # Restore mining config"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age           # Show contents"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age etc       # Restore all configs"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age home      # Restore user data"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining    # Restore mining config"
   exit 1
 fi
 
@@ -165,7 +187,25 @@ echo "Restore location: $RESTORE_DIR"
 # Extract backup
 echo "--- Extracting Backup ---"
 mkdir -p "$RESTORE_DIR"
-tar xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
+case "$BACKUP_FILE" in
+  *.tar.gz.age)
+    if [ ! -s "$AGE_IDENTITY_FILE" ]; then
+      echo "Error: age identity not found: $AGE_IDENTITY_FILE"
+      echo "Restore your offline identity copy to that path, or point"
+      echo "AGE_IDENTITY_FILE at it."
+      exit 1
+    fi
+    age -d -i "$AGE_IDENTITY_FILE" "$BACKUP_FILE" | tar xzf - -C "$RESTORE_DIR"
+    ;;
+  *.tar.gz)
+    echo "WARNING: restoring a legacy plaintext backup"
+    tar xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
+    ;;
+  *)
+    echo "Error: unrecognized backup format: $BACKUP_FILE"
+    exit 1
+    ;;
+esac
 
 # Find the extracted directory
 EXTRACTED_DIR=$(find "$RESTORE_DIR" -maxdepth 1 -type d -name "backup_*" | head -n 1)
@@ -284,8 +324,10 @@ exit 0
 #+begin_src bash :tangle ../configs/templates/verify-backup.sh.j2
 #!/bin/bash
 # Verify backup integrity
+# Decrypts each archive with the age identity and checks the tar stream.
 
 BACKUP_DIR="{{ backup_dir }}"
+AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-{{ backup_age_identity }}}"
 
 echo "=== Backup Verification ==="
 
@@ -296,7 +338,7 @@ fi
 
 # List all backups
 echo "--- Available Backups ---"
-BACKUPS=$(find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f | sort)
+BACKUPS=$(find "$BACKUP_DIR" -name "backup_*.tar.gz.age" -type f | sort)
 
 if [ -z "$BACKUPS" ]; then
   echo "No backups found in $BACKUP_DIR"
@@ -306,15 +348,33 @@ fi
 echo "$BACKUPS"
 echo ""
 
+# Warn about plaintext leftovers from before encryption was introduced
+LEGACY=$(find "$BACKUP_DIR" -maxdepth 1 -name "backup_*.tar.gz" -type f)
+if [ -n "$LEGACY" ]; then
+  echo "WARNING: plaintext legacy backups present (contain unencrypted keys):"
+  echo "$LEGACY"
+  echo ""
+fi
+
 # Test each backup
 echo "--- Testing Backup Integrity ---"
 for backup in $BACKUPS; do
   echo -n "Testing: $(basename $backup)... "
-  if tar tzf "$backup" > /dev/null 2>&1; then
-    size=$(du -h "$backup" | cut -f1)
-    echo "OK (size: $size)"
+  if [ -s "$AGE_IDENTITY_FILE" ]; then
+    if age -d -i "$AGE_IDENTITY_FILE" "$backup" 2>/dev/null | tar tz > /dev/null 2>&1; then
+      size=$(du -h "$backup" | cut -f1)
+      echo "OK (size: $size)"
+    else
+      echo "FAILED"
+    fi
   else
-    echo "FAILED"
+    # Without the identity we can only check the age header
+    if head -c 21 "$backup" | grep -q "age-encryption.org/v1"; then
+      size=$(du -h "$backup" | cut -f1)
+      echo "OK header, not decrypted - identity unavailable (size: $size)"
+    else
+      echo "FAILED (not an age file)"
+    fi
   fi
 done
 
@@ -328,13 +388,71 @@ echo "Newest: $(basename $(echo "$BACKUPS" | tail -n 1))"
 exit 0
 #+end_src
 
-** Deploy Backup Scripts
+** Backup Encryption Key
+
+Backups contain private keys (SSH, GPG, wallets, WireGuard), so they are
+encrypted with [[https://age-encryption.org][age]]. The recipient (public key)
+encrypts automated backups; the identity (private key) is only needed to
+restore. Both live under =/etc/backup= — outside =backup_dir= and outside the
+set of paths the backup script copies, so a backup never contains its own
+decryption key.
+
+*Copy the identity somewhere offline* (KeePassXC entry, paper). If the disk
+dies, the on-disk identity dies with it and the offsite backup copies are
+unrecoverable without your offline copy.
 
 #+begin_src yaml :tangle ../ansible/fragments/83-backup.yml
     # ------------------------------------------------------------------------
     # Backup & Recovery
     # ------------------------------------------------------------------------
 
+    - name: Install age encryption tool
+      community.general.pacman:
+        name: age
+        state: present
+      tags: [backup]
+
+    - name: Create backup key directory
+      file:
+        path: /etc/backup
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      tags: [backup]
+
+    - name: Generate backup age identity (once)
+      command: age-keygen -o {{ backup_age_identity }}
+      args:
+        creates: "{{ backup_age_identity }}"
+      tags: [backup]
+
+    - name: Restrict identity permissions
+      file:
+        path: "{{ backup_age_identity }}"
+        owner: root
+        group: root
+        mode: '0600'
+      tags: [backup]
+
+    - name: Derive age recipient from identity
+      shell: age-keygen -y {{ backup_age_identity }} > {{ backup_age_recipient }}
+      args:
+        creates: "{{ backup_age_recipient }}"
+      tags: [backup]
+
+    - name: Remind operator to store identity offline
+      debug:
+        msg:
+          - "BACKUP ENCRYPTION: identity at {{ backup_age_identity }}"
+          - "Copy it to offline storage (KeePassXC / paper) NOW."
+          - "Without it, backups cannot be restored after disk loss."
+      tags: [backup]
+#+end_src
+
+** Deploy Backup Scripts
+
+#+begin_src yaml :tangle ../ansible/fragments/83-backup.yml
     - name: Deploy backup scripts
       template:
         src: "../configs/templates/{{ item }}.j2"
@@ -444,21 +562,21 @@ sudo tail -f /var/log/backup.log
 sudo restore.sh
 
 # View backup contents
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age
 
 # Restore all configs
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz etc
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age etc
 
 # Restore user data
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz home
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age home
 
 # Restore mining config
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz mining
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining
 
 # Restore everything
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz etc
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz home
-sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz mining
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age etc
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age home
+sudo restore.sh {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining
 
 # Restart services after restore
 sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
@@ -511,7 +629,7 @@ This prevents data loss if backup fails partway through.
 sudo mount /dev/sdX1 /mnt/backup
 
 # Copy backups
-sudo cp {{ backup_dir }}/backup_*.tar.gz /mnt/backup/
+sudo cp {{ backup_dir }}/backup_*.tar.gz.age /mnt/backup/
 
 # Or rsync
 sudo rsync -av {{ backup_dir }}/ /mnt/backup/
@@ -527,9 +645,11 @@ If you need to rebuild from scratch:
 1. Fresh Omarchy install
 2. Clone this repo
 3. Run bootstrap
-4. Copy backup to {{ backup_dir }}
-5. Run restore: =sudo restore.sh <backup-file>=
-6. Re-run Ansible: =ansible-playbook playbook.yml=
+4. Restore your offline age identity to ={{ backup_age_identity }}=
+   (mode 0600, owner root)
+5. Copy backup to {{ backup_dir }}
+6. Run restore: =sudo restore.sh <backup-file.tar.gz.age>=
+7. Re-run Ansible: =ansible-playbook playbook.yml=
 
 *** Backup Size
 
@@ -542,12 +662,21 @@ Total: ~70 MB per backup (compressed)
 
 *** Backup Security
 
-Backups are stored unencrypted in {{ backup_dir }}.
+Backups are age-encrypted to the recipient key in
+={{ backup_age_recipient }}=; =backup.sh= refuses to run if the recipient is
+missing, so plaintext archives of key material are never written. Decryption
+requires the identity at ={{ backup_age_identity }}= (root-only, 0600).
 
-For additional security:
-1. Encrypt backup directory (LUKS)
-2. Store backups on encrypted external drive
-3. Use rclone to encrypted cloud storage
+Key handling:
+1. The identity is generated once by the backup phase and never leaves
+   =/etc/backup= — it is deliberately excluded from the backup contents.
+2. Copy the identity offline (KeePassXC entry or paper). This is the only
+   way to restore after disk loss.
+3. Encrypted =.tar.gz.age= files are safe to copy to external drives or
+   cloud storage; the identity is what must stay private.
+
+Layering LUKS or an encrypted external drive on top still helps (it also
+protects filenames and timing), but is no longer the only barrier.
 
 *** Testing Restores
 
@@ -555,7 +684,7 @@ Test restores periodically:
 
 #+begin_example
 # Test restore to temporary location
-sudo restore.sh $(ls -t {{ backup_dir }}/backup_*.tar.gz | head -n 1)
+sudo restore.sh $(ls -t {{ backup_dir }}/backup_*.tar.gz.age | head -n 1)
 
 # Verify restored data
 # Clean up test restore
