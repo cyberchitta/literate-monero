@@ -143,6 +143,23 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
       tags: [monerod]
 #+end_src
 
+** Create Service User
+
+monerod is internet-facing (P2P on 0.0.0.0, plus I2P inbound), so it runs as a
+dedicated unprivileged system user rather than root — an RCE in the daemon is
+then contained to that account instead of being instant root.
+
+#+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
+    - name: Create monero service user (no login shell)
+      user:
+        name: monero
+        system: yes
+        shell: /usr/sbin/nologin
+        create_home: no
+        home: "{{ monerod_data_dir }}"
+      tags: [monerod]
+#+end_src
+
 ** Create Data Directory
 
 #+begin_src yaml :tangle ../ansible/fragments/15-monerod.yml
@@ -150,18 +167,18 @@ See Appendix G: Why Run Each Component (Monero Full Node) for rationale and reso
       file:
         path: "{{ monerod_data_dir }}"
         state: directory
-        owner: root
-        group: root
-        mode: '0755'
+        owner: monero
+        group: monero
+        mode: '0750'
       tags: [monerod]
 
     - name: Create monerod log directory
       file:
         path: "{{ monerod_data_dir }}/logs"
         state: directory
-        owner: root
-        group: root
-        mode: '0755'
+        owner: monero
+        group: monero
+        mode: '0750'
       tags: [monerod]
 #+end_src
 
@@ -402,7 +419,44 @@ check-updates=disabled
         src: ../configs/templates/wait-for-i2p-tunnel.sh.j2
         dest: /usr/local/bin/wait-for-i2p-tunnel.sh
         mode: '0755'
+        owner: root
+        group: root
       tags: [monerod, config]
+
+    - name: Deploy monerod launch wrapper
+      template:
+        src: ../configs/templates/monerod-launch.sh.j2
+        dest: /usr/local/bin/monerod-launch.sh
+        mode: '0755'
+        owner: root
+        group: root
+      tags: [monerod, config]
+#+end_src
+
+** monerod Launch Wrapper
+
+Reads the I2P address written by the wait script, re-validates it against the
+strict b32 format, and execs monerod with the address as a single quoted
+argument. This replaces a previous =/bin/sh -c '... $(cat ...) ...'= ExecStart,
+which substituted file contents straight into the command line (argument/flag
+injection if the file were ever tampered with).
+
+#+begin_src bash :tangle ../configs/templates/monerod-launch.sh.j2
+#!/bin/bash
+# monerod launch wrapper — see org/15-monerod.org
+set -euo pipefail
+
+ADDR=$(cat /etc/monero/i2p-address.txt)
+if ! [[ "$ADDR" =~ ^[a-z0-9]{52}\.b32\.i2p$ ]]; then
+  echo "ERROR: invalid I2P address in /etc/monero/i2p-address.txt" >&2
+  exit 1
+fi
+
+exec {{ monerod_install_dir }}/monerod \
+  --config-file /etc/monerod.conf \
+  --tx-proxy i2p,127.0.0.1:7656 \
+  --anonymous-inbound "${ADDR},127.0.0.1:18085,128" \
+  --non-interactive
 #+end_src
 
 ** monerod Systemd Service
@@ -416,18 +470,19 @@ Requires=i2pd.service
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=monero
+Group=monero
 WorkingDirectory={{ monerod_data_dir }}
 
-# Wait for I2P tunnel to be ready before starting
-ExecStartPre=/usr/local/bin/wait-for-i2p-tunnel.sh
+# Wait for I2P tunnel to be ready before starting. The '+' runs this as root
+# (not the monero user) so it can write the address into root-owned /etc/monero,
+# which the service user is intentionally not allowed to modify.
+ExecStartPre=+/usr/local/bin/wait-for-i2p-tunnel.sh
 
-ExecStart=/bin/sh -c '{{ monerod_install_dir }}/monerod \
-    --config-file /etc/monerod.conf \
-    --tx-proxy i2p,127.0.0.1:7656 \
-    --anonymous-inbound $(cat /etc/monero/i2p-address.txt),127.0.0.1:18085,128 \
-    --non-interactive'
+# The launch wrapper reads the I2P address from /etc/monero/i2p-address.txt,
+# re-validates it against the strict b32 format, and passes it as a single
+# quoted argv element — no shell command-substitution into the command line.
+ExecStart=/usr/local/bin/monerod-launch.sh
 
 Restart=always
 RestartSec=10
@@ -442,7 +497,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/etc/monero
+# Only the data dir is writable; /etc/monero stays read-only to the daemon so a
+# compromised monerod cannot rewrite its own ban list or announced I2P address.
+ReadWritePaths={{ monerod_data_dir }}
 
 [Install]
 WantedBy=multi-user.target
