@@ -65,8 +65,17 @@ $(VALIDATE): $(VALIDATE_ORG)
 $(FRAGMENTS_DIR) $(GROUP_VARS_DIR):
 	@mkdir -p $@
 
+# Tangle the assembly script when its org source changes
+$(ANSIBLE_DIR)/assemble-playbook.sh: $(ORG_DIR)/install.org
+	@echo "Tangling install scripts..."
+	@emacs --batch \
+		--eval "(setq org-src-preserve-indentation t)" \
+		--eval "(require 'org)" \
+		--eval "(find-file \"$<\")" \
+		--eval "(org-babel-tangle)"
+
 # Assemble playbook from all fragments
-$(PLAYBOOK): $(FRAGMENTS) $(CONFIGS)
+$(PLAYBOOK): $(FRAGMENTS) $(CONFIGS) $(ANSIBLE_DIR)/assemble-playbook.sh
 	@echo "Assembling playbook..."
 	@$(ANSIBLE_DIR)/assemble-playbook.sh
 

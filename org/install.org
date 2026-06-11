@@ -251,10 +251,27 @@ fi
 # Clear output file
 > "$OUTPUT"
 
-# Concatenate in order (sorts naturally: 00, 00a, 01, 02, ...)
-for f in $(ls "$FRAGMENTS_DIR"/*.yml | sort); do
-  echo "Adding: $(basename "$f")"
+# Concatenate only fragments that match a current org file, in order.
+# Globbing the whole directory would sweep in stale fragments left
+# behind when phases are renumbered, executing old phases twice.
+for org in $(ls org/[1-9][0-9]-*.org | sort); do
+  base=$(basename "$org" .org)
+  case "$base" in 99-*) continue ;; esac
+  f="$FRAGMENTS_DIR/$base.yml"
+  if [ ! -f "$f" ]; then
+    echo "Error: missing fragment $f (run make all)"
+    exit 1
+  fi
+  echo "Adding: $base.yml"
   cat "$f" >> "$OUTPUT"
+done
+
+# Warn about leftovers from renumbered phases
+for f in "$FRAGMENTS_DIR"/*.yml; do
+  base=$(basename "$f" .yml)
+  if [ ! -f "org/$base.org" ]; then
+    echo "Warning: stale fragment $f has no matching org file; run 'make clean' to remove"
+  fi
 done
 
 echo ""
