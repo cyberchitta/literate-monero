@@ -163,8 +163,10 @@ memory_limit_mining: 4096
 # ----------------------------------------------------------------------------
 
 # Kernel parameters for mining optimization
+# Both monerod (fast verification) and XMRig allocate a full RandomX
+# dataset (~1168 pages each); 1280 only fits one of them.
 kernel_params:
-  - { name: "vm.nr_hugepages", value: "1280" }  # For huge pages
+  - { name: "vm.nr_hugepages", value: "2560" }  # For huge pages
 
 # Swap configuration
 swappiness: 10  # Low swappiness for server workload

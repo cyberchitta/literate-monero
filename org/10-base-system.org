@@ -246,7 +246,9 @@ Done at the end after all desired software is installed.
 
 Huge pages improve mining performance by reducing TLB misses.
 
-We allocate 1280 huge pages (2MB each = 2.5GB total).
+We allocate 2560 huge pages (2MB each = 5GB total) — enough for two
+full RandomX datasets, since monerod (fast verification) and XMRig
+each allocate ~1168 pages.
 
 Verify with:
 #+begin_example

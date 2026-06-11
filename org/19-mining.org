@@ -704,7 +704,7 @@ cat /proc/meminfo | grep Huge
 #+end_example
 
 Should see:
-- HugePages_Total: 1280
+- HugePages_Total: 2560
 - HugePages_Free: (some number)
 
 *** CPU Priority
