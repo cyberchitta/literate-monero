@@ -65,15 +65,6 @@ place.
         state: present
       tags: [wallet, gui]
 
-    - name: Create GPG verification keyring directory
-      file:
-        path: "{{ gpg_verify_home }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-      tags: [wallet, gui]
-
     - name: Copy pinned Feather release-signing key
       copy:
         src: ../keys/featherwallet.asc

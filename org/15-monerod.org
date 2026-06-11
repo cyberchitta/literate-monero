@@ -28,15 +28,6 @@ list too.
         state: present
       tags: [monerod]
 
-    - name: Create GPG verification keyring directory
-      file:
-        path: "{{ gpg_verify_home }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-      tags: [monerod]
-
     - name: Copy pinned Monero release-signing key (binaryFate)
       copy:
         src: ../keys/binaryfate.asc

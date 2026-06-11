@@ -297,15 +297,6 @@ the key pinned in =keys/schernykh.asc= (see =keys/README.md=).
         state: present
       tags: [mining, p2pool]
 
-    - name: Create GPG verification keyring directory
-      file:
-        path: "{{ gpg_verify_home }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-      tags: [mining, p2pool]
-
     - name: Copy pinned P2Pool release-signing key (SChernykh)
       copy:
         src: ../keys/schernykh.asc

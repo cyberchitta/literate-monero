@@ -336,6 +336,11 @@ echo ""
 
 *** Download and Install
 
+As the first phase to verify a release signature, privacy creates the
+shared GPG verification keyring directory ([[file:00-configuration.org][gpg_verify_home]]). The later
+phases (monerod, wallet, mining) import their pinned keys into this
+same keyring and rely on this phase having created it.
+
 #+begin_src yaml :tangle ../ansible/fragments/12-privacy.yml
     # ------------------------------------------------------------------------
     # Tor Browser
