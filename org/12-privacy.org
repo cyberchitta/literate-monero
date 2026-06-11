@@ -236,7 +236,7 @@ keys = monero-mainnet.dat
         timeout: 5
       register: i2p_console_check
       failed_when: false
-      tags: [privacy, i2p, verify]
+      tags: [privacy, i2p, verify, config]
 
     - name: Retrieve I2P tunnel address from web console
       shell: |
@@ -247,7 +247,7 @@ keys = monero-mainnet.dat
       changed_when: false
       failed_when: false
       when: i2p_console_check.status == 200
-      tags: [privacy, i2p, verify]
+      tags: [privacy, i2p, verify, config]
 
     - name: Create monero config directory
       file:
