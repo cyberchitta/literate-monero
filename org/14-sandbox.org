@@ -41,13 +41,16 @@ if ! command -v claude &> /dev/null; then
   exit 1
 fi
 
+# Mount order matters: bwrap applies operations in sequence, so the .secrets and
+# Chromium tmpfs overlays MUST come after the --bind of the home directory.
+# If the home bind ran last it would re-expose the real (secret) contents.
 exec bwrap \
   --ro-bind / / \
   --dev /dev \
   --proc /proc \
+  --bind /home/{{ dev_user }} /home/{{ dev_user }} \
   --tmpfs /home/{{ dev_user }}/.secrets \
   --tmpfs /home/{{ dev_user }}/.config/chromium \
-  --bind /home/{{ dev_user }} /home/{{ dev_user }} \
   --bind /tmp /tmp \
   --unshare-all \
   --share-net \
