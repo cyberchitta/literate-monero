@@ -244,14 +244,25 @@ else
     exit 1
 fi
 
-# Test RPC connectivity
-echo "Testing RPC connectivity..."
-if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
-    -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
-    -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+# Test RPC connectivity. After a restart monerod waits for the I2P
+# tunnel and opens the multi-hundred-GB database before RPC binds,
+# which can take several minutes.
+echo "Testing RPC connectivity (up to 5 minutes)..."
+RPC_OK=0
+for _ in $(seq 1 30); do
+    if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
+        -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
+        -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+        RPC_OK=1
+        break
+    fi
+    sleep 10
+done
+
+if [ "$RPC_OK" = "1" ]; then
     echo -e "${GREEN}✓ RPC responding correctly${NC}"
 else
-    echo -e "${RED}✗ RPC not responding${NC}"
+    echo -e "${RED}✗ RPC not responding after 5 minutes${NC}"
     echo "Rolling back to $CURRENT_VERSION..."
 
     # Restore config
@@ -657,14 +668,24 @@ else
     exit 1
 fi
 
-# Test RPC
-echo "Testing RPC connectivity..."
-if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
-    -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
-    -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+# Test RPC. Startup can take several minutes (I2P tunnel wait plus
+# opening the database) before RPC binds.
+echo "Testing RPC connectivity (up to 5 minutes)..."
+RPC_OK=0
+for _ in $(seq 1 30); do
+    if curl -s --max-time 10 "http://127.0.0.1:{{ monerod_rpc_port }}/json_rpc" \
+        -d '{"jsonrpc":"2.0","id":"0","method":"get_info"}' \
+        -H 'Content-Type: application/json' | grep -q '"status":"OK"'; then
+        RPC_OK=1
+        break
+    fi
+    sleep 10
+done
+
+if [ "$RPC_OK" = "1" ]; then
     echo -e "${GREEN}✓ RPC responding correctly${NC}"
 else
-    echo -e "${RED}✗ RPC not responding${NC}"
+    echo -e "${RED}✗ RPC not responding after 5 minutes${NC}"
     exit 1
 fi
 
