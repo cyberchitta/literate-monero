@@ -241,6 +241,7 @@ keys = monero-mainnet.dat
     - name: Retrieve I2P tunnel address from web console
       shell: |
         curl -s http://127.0.0.1:7070/?page=i2p_tunnels 2>/dev/null | \
+        grep -oP 'monero-node.*?[a-z0-9]{52}\.b32\.i2p' | \
         grep -oP '[a-z0-9]{52}\.b32\.i2p' | \
         head -1
       register: i2p_address_raw

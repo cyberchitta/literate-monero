@@ -221,15 +221,16 @@ else
   check_fail "Monerod service NOT running"
 fi
 
-# Check I2P integration
-if grep -q "tx-proxy=i2p" /etc/monerod.conf; then
+# Check I2P integration (injected as CLI args by monerod-launch.sh,
+# not present in the static config file)
+if ps -o args= -C monerod 2>/dev/null | grep -q -- "tx-proxy i2p"; then
   check_pass "Monerod configured for I2P"
 else
   check_warn "Monerod missing I2P configuration"
 fi
 
 # Check anonymous-inbound
-if grep -q "anonymous-inbound=" /etc/monerod.conf; then
+if ps -o args= -C monerod 2>/dev/null | grep -q -- "anonymous-inbound"; then
   check_pass "Monerod I2P inbound configured"
 else
   check_warn "Monerod missing I2P inbound configuration"
