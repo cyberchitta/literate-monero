@@ -26,7 +26,7 @@
 # Note: getmonero.org hashes.txt only covers the current release, so fresh
 # installs can only hash-verify the latest version.
 monerod_version: "v0.18.5.0"
-p2pool_version: "v4.13"
+p2pool_version: "v4.16"
 xmrig_version: "v6.25.0"
 # Note: dist.torproject.org removes old releases, so fresh installs can
 # only verify the current version.
