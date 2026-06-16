@@ -1,0 +1,465 @@
+** Overview
+
+This phase adds an *optional, opt-in* way to trade XMR ↔ USDT from the
+sovereign node using *RetoSwap* (the =haveno-reto= fork of Haveno) — an
+anonymous, no-KYC, Tor-routed P2P exchange with escrow + arbitration.
+
+It is *off by default*. Nothing is installed unless =haveno_enabled: true= in
+=config.yml=. Even when enabled it installs a desktop app with *no systemd
+service and no autostart*: you launch it by hand, at the box's own console,
+only while trading.
+
+*** Security history — read before enabling
+
+RetoSwap was exploited around *2026-05-20*: ~7,000 XMR (~$2.7M) was drained.
+Root cause (Halborn): the trade protocol *did not verify the source of an ACK
+message before treating it as the arbitrator*, letting an attacker register as
+a second signer during multisig creation. The escrow/arbitration mechanism
+that is supposed to provide "no-scam" was itself the bug.
+
+It was patched in *=1.6.0-reto=* (2026-05-24): "always verify peer identity
+against known public key rings." This phase therefore *pins
+=haveno_version ≥ 1.6.0-reto=*. Treat protocol risk as real, not zero:
+*keep only working balance + open-trade deposits in the trade wallet.* Funds
+in the Haveno trade wallet are hot, at-risk funds.
+
+*** Stay online during open trades
+
+Haveno is P2P escrow: the multisig steps need *both* parties online. You must
+*stay online for the full lifetime of an open trade* — going dark mid-trade
+risks arbitration against you. "Off between sessions" is only safe when you
+have *no open trades*. Running on the box (rather than a laptop) means the
+session survives you walking away; a locked screen is fine.
+
+*** Asset / rail
+
+Trade *USDT* on the *TRON* rail (cheap, liquid). Asset and rail are chosen at
+trade time in the GUI, so there is no config var for them.
+
+*** How it is installed (verified AppImage, not a source build)
+
+Upstream publishes *signed Linux binaries*. We install the official
+=haveno-v<ver>-linux-x86_64.AppImage= and verify it exactly like P2Pool: the
+release ships a =<tag>.hashes= manifest with a detached =<tag>.hashes.sig=,
+signed by the maintainer key pinned in =keys/retoswap.asc= (ed25519
+=DAA2 4D87 8B8D 36C9 0120 A897 CA02 DAC1 2DAE 2D0F=). We verify the signature,
+then check the AppImage's SHA-256 against the signed manifest, failing closed
+on any mismatch.
+
+(We do *not* build from source or verify a git tag: the =haveno-reto= release
+tags are *unsigned*, and the commits they point to are signed by a different
+RSA key that is not published in the repo's =gpg_keys/= dir. The signed-hashes
+chain over the published AppImage is the maintainer's actual, first-party
+verification path. The AppImage is self-contained — it bundles its own JRE,
+JavaFX, and Tor — so there is no JDK/Gradle/sdkman toolchain to land either.)
+
+** Install Dependencies
+
+#+begin_src yaml :tangle ../ansible/fragments/20-exchange.yml
+    # ------------------------------------------------------------------------
+    # Exchange: RetoSwap (Haveno) — optional, opt-in, off by default
+    # ------------------------------------------------------------------------
+    # Everything here is gated on `haveno_enabled` (config.yml). With it
+    # false (the default) the whole `exchange` tag is a no-op: no download,
+    # no toolchain, nothing.
+
+    - name: Install Haveno runtime dependencies
+      community.general.pacman:
+        name:
+          - bubblewrap
+          - gnupg
+        state: present
+      when: haveno_enabled | bool
+      tags: [exchange]
+#+end_src
+
+** Verify and Install the RetoSwap AppImage
+
+The release ships =<tag>.hashes= (a SHA-256 manifest of every asset) plus a
+detached =<tag>.hashes.sig=. We verify the signature with the pinned RetoSwap
+key, then match the downloaded AppImage against its manifest entry. The final
+binary is only placed under =/opt= *after* both checks pass, so a re-run never
+trusts a partially-downloaded or tampered file.
+
+#+begin_src yaml :tangle ../ansible/fragments/20-exchange.yml
+    - name: Copy pinned RetoSwap release-signing key
+      copy:
+        src: ../keys/retoswap.asc
+        dest: "{{ gpg_verify_home }}/retoswap.asc"
+        owner: root
+        group: root
+        mode: '0644'
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Import RetoSwap release-signing key into verification keyring
+      command: gpg --homedir {{ gpg_verify_home }} --import {{ gpg_verify_home }}/retoswap.asc
+      register: retoswap_import
+      changed_when: "'imported: 1' in retoswap_import.stderr"
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Set versioned Haveno directory
+      set_fact:
+        haveno_versioned_dir: "{{ haveno_install_dir }}-{{ haveno_version }}"
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Check if this Haveno version is already installed
+      stat:
+        path: "{{ haveno_versioned_dir }}/{{ haveno_appimage_name }}"
+      register: haveno_version_exists
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Download Haveno AppImage
+      get_url:
+        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_appimage_name }}"
+        dest: /tmp/haveno.AppImage
+        mode: '0644'
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Download Haveno signed hashes manifest
+      get_url:
+        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_version }}.hashes"
+        dest: /tmp/haveno.hashes
+        mode: '0644'
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Download Haveno hashes signature
+      get_url:
+        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_version }}.hashes.sig"
+        dest: /tmp/haveno.hashes.sig
+        mode: '0644'
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Verify Haveno hashes signature (RetoSwap key)
+      command: gpg --homedir {{ gpg_verify_home }} --verify /tmp/haveno.hashes.sig /tmp/haveno.hashes
+      changed_when: false
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Extract expected hash for the Haveno AppImage
+      shell: |
+        awk -v f="{{ haveno_appimage_name }}" '
+          { line = $0; sub(/[ \t\r]+$/, "", line) }
+          line == f {
+            getline h
+            sub(/[ \t\r]+$/, "", h)
+            sub(/^sha256:/, "", h)
+            print h
+            exit
+          }
+        ' /tmp/haveno.hashes
+      register: haveno_expected_hash
+      changed_when: false
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Fail if expected Haveno hash is not a sha256 hex string
+      fail:
+        msg: |
+          Could not extract a valid sha256 for {{ haveno_appimage_name }}
+          from {{ haveno_version }}.hashes (got: '{{ haveno_expected_hash.stdout }}').
+
+          The release asset naming may have changed. Check the assets at
+          https://github.com/retoaccess1/haveno-reto/releases/tag/{{ haveno_version }}
+          and adjust haveno_appimage_name in org/00-configuration.org.
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+        - haveno_expected_hash.stdout is not match('^[a-f0-9]{64}$')
+      tags: [exchange]
+
+    - name: Compute Haveno download hash
+      stat:
+        path: /tmp/haveno.AppImage
+        checksum_algorithm: sha256
+      register: haveno_download_stat
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Fail if Haveno hash mismatch
+      fail:
+        msg: |
+          Haveno AppImage hash verification failed!
+          Expected: {{ haveno_expected_hash.stdout }}
+          Got:      {{ haveno_download_stat.stat.checksum }}
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+        - haveno_download_stat.stat.checksum != haveno_expected_hash.stdout
+      tags: [exchange]
+
+    - name: Create versioned Haveno directory
+      file:
+        path: "{{ haveno_versioned_dir }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Install verified Haveno AppImage
+      copy:
+        src: /tmp/haveno.AppImage
+        dest: "{{ haveno_versioned_dir }}/{{ haveno_appimage_name }}"
+        remote_src: yes
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      register: haveno_installed
+      when:
+        - haveno_enabled | bool
+        - not haveno_version_exists.stat.exists
+      tags: [exchange]
+
+    - name: Clean up Haveno download files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/haveno.AppImage
+        - /tmp/haveno.hashes
+        - /tmp/haveno.hashes.sig
+      when:
+        - haveno_enabled | bool
+        - haveno_installed.changed
+      tags: [exchange]
+
+    - name: Update Haveno symlink to current version
+      file:
+        src: "{{ haveno_versioned_dir }}"
+        dest: "{{ haveno_install_dir }}"
+        state: link
+        force: yes
+      when: haveno_enabled | bool
+      tags: [exchange]
+#+end_src
+
+** Sandboxed GUI Launcher
+
+This launcher runs the AppImage under bubblewrap with =~/.secrets= hidden, the
+Wayland/X11 sockets, GPU, and network exposed, and =APPIMAGE_EXTRACT_AND_RUN=
+set so it needs no FUSE inside the namespace.
+
+#+begin_src bash :tangle ../configs/templates/haveno-sandboxed.sh.j2
+#!/bin/bash
+# Sandboxed RetoSwap (Haveno) launcher
+# Generated from org/20-exchange.org
+#
+# Runs the signature-verified haveno-reto AppImage under bubblewrap, on
+# demand, from the box's own Hyprland session. There is NO systemd service
+# and NO autostart: the JVM, the hot trade wallet, and the bundled Tor onion
+# only exist while you are actively trading.
+#
+# The sandbox:
+#   - hides ~/.secrets (SSH/GPG keys, Feather/monerod wallets) from Haveno
+#   - exposes ONLY the Haveno data dir, the Wayland + X11 sockets, the GPU,
+#     and the network (Haveno bundles its own Tor)
+#   - extracts the AppImage in-process (APPIMAGE_EXTRACT_AND_RUN) so it needs
+#     no FUSE, which does not work inside bubblewrap's namespaces
+
+set -euo pipefail
+
+HAVENO_APPIMAGE="{{ haveno_install_dir }}/{{ haveno_appimage_name }}"
+HAVENO_DATA_DIR="{{ haveno_data_dir }}"
+
+if [ ! -x "$HAVENO_APPIMAGE" ]; then
+  echo "Error: Haveno AppImage not found at $HAVENO_APPIMAGE" >&2
+  echo "Enable and install the exchange phase first:" >&2
+  echo "  set haveno_enabled: true in config.yml, then" >&2
+  echo "  ansible-playbook playbook.yml --tags exchange -K" >&2
+  exit 1
+fi
+
+# The trade wallet lives here and must persist between sessions. It is
+# deliberately OUTSIDE ~/.secrets (which the sandbox blanks with a tmpfs),
+# because Haveno needs the wallet at runtime.
+mkdir -p "$HAVENO_DATA_DIR"
+
+# AppImage self-extraction target; keep it inside the sandbox's /tmp.
+export TMPDIR="${TMPDIR:-/tmp}"
+
+# JavaFX (Prism/Glass) has no native Wayland backend; it renders through
+# XWayland. Force the X11 path and pass the display sockets through. If the
+# window comes up black or GL errors appear, see the Notes in 20-exchange.org
+# (try APPIMAGE software GL: prepend `_JAVA_OPTIONS=-Dprism.order=sw`).
+# Mount order matters: bwrap applies operations in sequence, so the .secrets
+# tmpfs overlay MUST come AFTER the home bind, or the bind would re-expose the
+# real (secret) contents.
+exec bwrap \
+  --ro-bind / / \
+  --dev /dev \
+  --dev-bind-try /dev/dri /dev/dri \
+  --proc /proc \
+  --bind /home/{{ dev_user }} /home/{{ dev_user }} \
+  --tmpfs /home/{{ dev_user }}/.secrets \
+  --bind "$HAVENO_DATA_DIR" "$HAVENO_DATA_DIR" \
+  --bind /tmp /tmp \
+  --bind-try "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  --ro-bind-try /tmp/.X11-unix /tmp/.X11-unix \
+  --setenv HOME "/home/{{ dev_user }}" \
+  --setenv TMPDIR "$TMPDIR" \
+  --setenv APPIMAGE_EXTRACT_AND_RUN "1" \
+  --setenv GDK_BACKEND "x11" \
+  --setenv DISPLAY "${DISPLAY:-:0}" \
+  --setenv WAYLAND_DISPLAY "${WAYLAND_DISPLAY:-}" \
+  --setenv XDG_RUNTIME_DIR "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  --setenv XAUTHORITY "${XAUTHORITY:-}" \
+  --unshare-all \
+  --share-net \
+  --die-with-parent \
+  "$HAVENO_APPIMAGE" "$@"
+#+end_src
+
+** Desktop Entry
+
+Launchable from the Hyprland app launcher (wofi/rofi) but never autostarted —
+it is not installed into any autostart directory.
+
+#+begin_src conf-desktop :tangle ../configs/templates/retoswap.desktop.j2
+[Desktop Entry]
+Type=Application
+Name=RetoSwap (Haveno)
+GenericName=Anonymous XMR exchange
+Comment=Trade XMR <-> USDT over Tor; runs sandboxed, launch only when trading
+Exec=/usr/local/bin/haveno-sandboxed
+Icon=haveno
+Terminal=false
+Categories=Network;Finance;
+Keywords=monero;xmr;haveno;retoswap;exchange;usdt;
+# Launchable from the Hyprland app launcher, but deliberately NOT autostarted:
+# this entry is not installed into any autostart directory.
+#+end_src
+
+** Deploy Launcher and Desktop Entry
+
+#+begin_src yaml :tangle ../ansible/fragments/20-exchange.yml
+    - name: Ensure Haveno data directory exists
+      file:
+        path: "{{ haveno_data_dir }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0700'
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Deploy sandboxed Haveno launcher
+      template:
+        src: ../configs/templates/haveno-sandboxed.sh.j2
+        dest: /usr/local/bin/haveno-sandboxed
+        mode: '0755'
+      when: haveno_enabled | bool
+      tags: [exchange]
+
+    - name: Deploy RetoSwap desktop entry
+      template:
+        src: ../configs/templates/retoswap.desktop.j2
+        dest: /usr/share/applications/retoswap.desktop
+        mode: '0644'
+      when: haveno_enabled | bool
+      tags: [exchange]
+#+end_src
+
+** Verify Exchange Phase
+
+#+begin_src yaml :tangle ../ansible/fragments/20-exchange.yml
+    - name: Check Haveno AppImage is installed
+      stat:
+        path: "{{ haveno_install_dir }}/{{ haveno_appimage_name }}"
+      register: haveno_binary
+      when: haveno_enabled | bool
+      tags: [exchange, verify]
+
+    - name: Display exchange phase status
+      debug:
+        msg:
+          - "=== Exchange (RetoSwap / Haveno) Setup Complete ==="
+          - ""
+          - "Version: {{ haveno_version }} ({{ haveno_appimage_name }})"
+          - "AppImage: {% if haveno_binary.stat.exists %}installed and verified{% else %}MISSING{% endif %}"
+          - "Data dir (trade wallet): {{ haveno_data_dir }}"
+          - ""
+          - "No service and no autostart by design. Launch only when trading:"
+          - "  haveno-sandboxed              # or the 'RetoSwap (Haveno)' launcher entry"
+          - ""
+          - "SECURITY: trade-wallet funds are hot, at-risk funds. Keep only"
+          - "working balance + open-trade deposits there. Stay ONLINE for the"
+          - "full lifetime of any open trade."
+      when: haveno_enabled | bool
+      tags: [exchange, verify]
+#+end_src
+
+** Notes
+
+*** Three layers of "off"
+
+1. =haveno_enabled: false= → the toolchain/AppImage never lands.
+2. Installed-but-no-service → nothing runs at boot.
+3. Launch-on-demand GUI → the JVM, hot trade wallet, and Tor onion only exist
+   during a trading session.
+
+*** Launching
+
+#+begin_example
+# From a terminal in the Hyprland session
+haveno-sandboxed
+
+# Or pick "RetoSwap (Haveno)" from the app launcher (wofi/rofi)
+#+end_example
+
+The desktop entry is launchable but never autostarted (it is not installed
+into any autostart directory).
+
+*** GUI rendering (JavaFX over Wayland)
+
+Haveno is a JavaFX app and JavaFX has no native Wayland backend; it renders
+through *XWayland*, which Omarchy/Hyprland provides. The launcher forces the
+X11 path (=GDK_BACKEND=x11=) and passes =DISPLAY= / =XAUTHORITY= through.
+
+This is the one piece that can only be confirmed at the physical console. If
+the window is black, fails to appear, or logs OpenGL/Prism errors:
+- Enable software rendering: run
+  =_JAVA_OPTIONS="-Dprism.order=sw" haveno-sandboxed=.
+- Confirm XWayland is up and =DISPLAY= is set in the session
+  (=echo $DISPLAY=).
+- As a fallback, test the AppImage *without* the sandbox once
+  (=/opt/haveno/{{ haveno_appimage_name }} --appimage-extract-and-run=) to
+  isolate sandbox issues from rendering issues.
+
+=APPIMAGE_EXTRACT_AND_RUN= re-extracts the image to =$TMPDIR= on each launch
+(no FUSE needed in the namespace), so first paint takes a few extra seconds.
+
+*** Trade wallet and backups
+
+The trade wallet, Tor onion key, and trade history live under
+={{ haveno_data_dir }}= — deliberately outside =~/.secrets= (which the sandbox
+blanks) because Haveno needs the wallet at runtime. The backup phase backs this
+directory up (encrypted), and =restore.sh haveno= restores it.
+
+*** Updating
+
+=update-haveno.sh= / =rollback-haveno.sh= follow the same version-pin pattern
+as the miners (atomic =/opt/haveno= symlink switch). Because there is no
+service, they verify by AppImage/symlink presence rather than =systemctl=.
+*Close Haveno and ensure no trade is open before updating.*

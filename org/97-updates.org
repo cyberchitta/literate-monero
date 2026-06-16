@@ -83,6 +83,14 @@ XMRIG_CURRENT=$(get_current_version "xmrig")
 XMRIG_CHECK=$(get_latest_release "xmrig/xmrig" "$XMRIG_CURRENT")
 IFS='|' read -r XMRIG_STATUS XMRIG_LATEST XMRIG_URL <<< "$XMRIG_CHECK"
 
+# Check Haveno (RetoSwap) - only if the exchange phase is enabled
+HAVENO_CURRENT=$(get_current_version "haveno")
+if [ -n "$HAVENO_CURRENT" ]; then
+    echo -e "${YELLOW}Checking Haveno (RetoSwap)...${NC}"
+    HAVENO_CHECK=$(get_latest_release "retoaccess1/haveno-reto" "$HAVENO_CURRENT")
+    IFS='|' read -r HAVENO_STATUS HAVENO_LATEST HAVENO_URL <<< "$HAVENO_CHECK"
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Summary ===${NC}"
 echo ""
@@ -119,17 +127,35 @@ else
     printf "%-15s %-20s ${RED}%-20s${NC} ${RED}%-10s${NC}\n" "XMRig" "$XMRIG_CURRENT" "unknown" "ERROR"
 fi
 
+# Haveno (only shown when the exchange phase is configured)
+if [ -n "$HAVENO_CURRENT" ]; then
+    if [ "$HAVENO_STATUS" = "available" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${YELLOW}%-10s${NC}\n" "Haveno" "$HAVENO_CURRENT" "$HAVENO_LATEST" "UPDATE"
+        echo "  Release: $HAVENO_URL"
+    elif [ "$HAVENO_STATUS" = "up-to-date" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${GREEN}%-10s${NC}\n" "Haveno" "$HAVENO_CURRENT" "$HAVENO_LATEST" "CURRENT"
+    else
+        printf "%-15s %-20s ${RED}%-20s${NC} ${RED}%-10s${NC}\n" "Haveno" "$HAVENO_CURRENT" "unknown" "ERROR"
+    fi
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Instructions ===${NC}"
 echo "To update a component:"
 echo "  sudo update-monerod.sh   # Update Monerod"
 echo "  sudo update-p2pool.sh    # Update P2Pool"
 echo "  sudo update-xmrig.sh     # Update XMRig"
+if [ -n "$HAVENO_CURRENT" ]; then
+echo "  sudo update-haveno.sh    # Update Haveno (RetoSwap)"
+fi
 echo ""
 echo "To rollback after update:"
 echo "  sudo rollback-monerod.sh  # Rollback Monerod"
 echo "  sudo rollback-p2pool.sh   # Rollback P2Pool"
 echo "  sudo rollback-xmrig.sh    # Rollback XMRig"
+if [ -n "$HAVENO_CURRENT" ]; then
+echo "  sudo rollback-haveno.sh   # Rollback Haveno (RetoSwap)"
+fi
 echo ""
 #+end_src
 
@@ -575,6 +601,140 @@ echo ""
 rm -f "$BACKUP_CONFIG"
 #+end_src
 
+** Update Haveno Script
+
+Haveno (RetoSwap) is a GUI app with *no systemd service*, so this updater
+verifies the new release by AppImage/symlink presence instead of =systemctl=.
+The Ansible run re-downloads and re-verifies the signed AppImage; on any
+failure the symlink is repointed back to the previous version.
+
+#+begin_src bash :tangle ../configs/templates/update-haveno.sh.j2
+#!/bin/bash
+# Update Haveno (RetoSwap) to the latest reto release
+# Safe atomic update (symlink switch) with automatic rollback on failure.
+# No systemd service: health is verified by AppImage/symlink presence.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
+BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Must run as root${NC}"
+    exit 1
+fi
+
+# Must already be installed (exchange phase enabled + deployed)
+if [ ! -e /opt/haveno ]; then
+    echo -e "${RED}Haveno is not installed.${NC}"
+    echo "Enable it first: set haveno_enabled: true in config.yml, then"
+    echo "  ansible-playbook playbook.yml --tags exchange -K"
+    exit 1
+fi
+
+# Get current version
+CURRENT_VERSION=$(grep "^haveno_version:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+
+# Get latest version from GitHub (reto tags have no 'v' prefix, e.g. 1.6.0-reto)
+echo -e "${BLUE}Checking for latest Haveno (RetoSwap) release...${NC}"
+RELEASE_INFO=$(curl -s "https://api.github.com/repos/retoaccess1/haveno-reto/releases/latest")
+LATEST_VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+
+if [ -z "$LATEST_VERSION" ]; then
+    echo -e "${RED}Error: Could not determine latest version${NC}"
+    exit 1
+fi
+
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+    echo -e "${GREEN}Already up to date: $CURRENT_VERSION${NC}"
+    exit 0
+fi
+
+echo ""
+echo -e "${YELLOW}Update Available:${NC}"
+echo "  Current: $CURRENT_VERSION"
+echo "  Latest:  $LATEST_VERSION"
+echo ""
+echo -e "${YELLOW}WARNING: Close Haveno and make sure you have NO open trades${NC}"
+echo -e "${YELLOW}before updating. An open trade needs the running app online.${NC}"
+echo ""
+read -p "Proceed with update? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Update cancelled"
+    exit 0
+fi
+
+echo ""
+echo -e "${BLUE}=== Starting Haveno Update ===${NC}"
+
+# Backup current config
+echo "Backing up config.yml..."
+cp "$CONFIG_FILE" "$BACKUP_CONFIG"
+
+# Update version in config.yml
+echo "Updating config.yml to $LATEST_VERSION..."
+sed -i "s/^haveno_version:.*/haveno_version: \"$LATEST_VERSION\"/" "$CONFIG_FILE"
+
+# Re-tangle org files
+echo "Re-tangling org files..."
+cd "{{ lookup('env', 'HOME') }}/literate-monero"
+./tangle.sh > /dev/null 2>&1
+
+# Run Ansible to download + verify + install the new AppImage
+echo "Running Ansible playbook (downloads + verifies the new AppImage)..."
+cd ansible
+if ansible-playbook playbook.yml --tags exchange -v; then
+    echo -e "${GREEN}✓ Ansible playbook completed successfully${NC}"
+else
+    echo -e "${RED}✗ Ansible playbook failed${NC}"
+    echo "Rolling back to $CURRENT_VERSION..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    rm -f /opt/haveno
+    ln -s "/opt/haveno-${CURRENT_VERSION}" /opt/haveno
+    exit 1
+fi
+
+# No service to check: verify the symlink points at the new versioned dir and
+# a verified AppImage is present and executable.
+echo "Verifying installation..."
+if [ "$(readlink -f /opt/haveno)" = "/opt/haveno-${LATEST_VERSION}" ] \
+   && ls /opt/haveno/*.AppImage >/dev/null 2>&1 \
+   && [ -x "$(ls /opt/haveno/*.AppImage | head -1)" ]; then
+    echo -e "${GREEN}✓ Haveno ${LATEST_VERSION} installed and verified${NC}"
+else
+    echo -e "${RED}✗ Haveno AppImage/symlink not in place after update${NC}"
+    echo "Rolling back to $CURRENT_VERSION..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    rm -f /opt/haveno
+    ln -s "/opt/haveno-${CURRENT_VERSION}" /opt/haveno
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}=== Haveno Update Complete ===${NC}"
+echo "  Updated: $CURRENT_VERSION → $LATEST_VERSION"
+echo "  Old version kept at: /opt/haveno-${CURRENT_VERSION}"
+echo "  Current version at: /opt/haveno → /opt/haveno-${LATEST_VERSION}"
+echo ""
+echo "Launch when trading (no service):"
+echo "  haveno-sandboxed"
+echo ""
+echo "Rollback if needed:"
+echo "  sudo rollback-haveno.sh"
+echo ""
+
+# Clean up backup config after successful update
+rm -f "$BACKUP_CONFIG"
+#+end_src
+
 ** Rollback Monerod Script
 
 #+begin_src bash :tangle ../configs/templates/rollback-monerod.sh.j2
@@ -916,6 +1076,97 @@ echo "  sudo mining-monitor.sh"
 echo ""
 #+end_src
 
+** Rollback Haveno Script
+
+#+begin_src bash :tangle ../configs/templates/rollback-haveno.sh.j2
+#!/bin/bash
+# Rollback Haveno (RetoSwap) to a previous version
+# No systemd service: this just repoints /opt/haveno to an older versioned dir.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Must run as root${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}=== Haveno Rollback ===${NC}"
+echo ""
+
+# List available versions
+echo "Available Haveno versions:"
+VERSIONS=()
+INDEX=1
+for dir in /opt/haveno-*; do
+    if [ -d "$dir" ]; then
+        VERSION=$(basename "$dir" | sed 's/haveno-//')
+        VERSIONS+=("$VERSION")
+
+        # Check if this is current version
+        CURRENT=$(readlink -f /opt/haveno 2>/dev/null | xargs basename 2>/dev/null | sed 's/haveno-//')
+        if [ "$VERSION" = "$CURRENT" ]; then
+            echo "  $INDEX) $VERSION ${GREEN}(current)${NC}"
+        else
+            echo "  $INDEX) $VERSION"
+        fi
+        ((INDEX++))
+    fi
+done
+
+if [ {% raw %}${#VERSIONS[@]}{% endraw %} -eq 0 ]; then
+    echo -e "${RED}No Haveno versions found in /opt${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${YELLOW}Make sure Haveno is closed and you have NO open trades.${NC}"
+read -p "Select version to rollback to (1-{% raw %}${#VERSIONS[@]}{% endraw %}): " SELECTION
+
+if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt {% raw %}${#VERSIONS[@]}{% endraw %} ]; then
+    echo -e "${RED}Invalid selection${NC}"
+    exit 1
+fi
+
+TARGET_VERSION="${VERSIONS[$((SELECTION-1))]}"
+
+echo ""
+echo -e "${YELLOW}Rolling back to: $TARGET_VERSION${NC}"
+read -p "Proceed? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Rollback cancelled"
+    exit 0
+fi
+
+# Repoint symlink (no service to stop/start)
+echo "Updating symlink..."
+rm -f /opt/haveno
+ln -s "/opt/haveno-${TARGET_VERSION}" /opt/haveno
+
+# Verify an AppImage is present under the target
+if ls /opt/haveno/*.AppImage >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ Haveno now linked to: $TARGET_VERSION${NC}"
+else
+    echo -e "${RED}✗ No AppImage found under /opt/haveno-${TARGET_VERSION}${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}=== Rollback Complete ===${NC}"
+echo "  Haveno now at: $TARGET_VERSION"
+echo ""
+echo "Launch when trading (no service):"
+echo "  haveno-sandboxed"
+echo ""
+#+end_src
+
 ** Deploy Update Management Scripts
 
 #+begin_src yaml :tangle ../ansible/fragments/97-updates.yml
@@ -933,9 +1184,11 @@ echo ""
         - update-monerod.sh
         - update-p2pool.sh
         - update-xmrig.sh
+        - update-haveno.sh
         - rollback-monerod.sh
         - rollback-p2pool.sh
         - rollback-xmrig.sh
+        - rollback-haveno.sh
       tags: [updates, scripts]
 #+end_src
 
@@ -979,11 +1232,13 @@ echo ""
           - "  sudo update-monerod.sh       # Update Monerod"
           - "  sudo update-p2pool.sh        # Update P2Pool"
           - "  sudo update-xmrig.sh         # Update XMRig"
+          - "  sudo update-haveno.sh        # Update Haveno (RetoSwap, if enabled)"
           - ""
           - "Rollback commands:"
           - "  sudo rollback-monerod.sh     # Rollback Monerod"
           - "  sudo rollback-p2pool.sh      # Rollback P2Pool"
           - "  sudo rollback-xmrig.sh       # Rollback XMRig"
+          - "  sudo rollback-haveno.sh      # Rollback Haveno (RetoSwap, if enabled)"
           - ""
           - "All updates are atomic with automatic rollback on failure"
           - "Old versions are kept in /opt/<component>-<version>"

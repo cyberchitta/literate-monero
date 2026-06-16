@@ -22,6 +22,7 @@
 #   Tor Browser: https://www.torproject.org/download/
 #   Feather Wallet: https://github.com/feather-wallet/feather/releases
 #   Trezor Suite: https://github.com/trezor/trezor-suite/releases
+#   Haveno (RetoSwap): https://github.com/retoaccess1/haveno-reto/releases
 
 # Note: getmonero.org hashes.txt only covers the current release, so fresh
 # installs can only hash-verify the latest version.
@@ -102,6 +103,26 @@ xmrig_donate_level: 1
 # cap_sys_rawio and kernel MSR write access - hardware-level privilege
 # for a network-facing workload). Off by default.
 mining_msr_access: false
+
+# ----------------------------------------------------------------------------
+# Exchange Configuration (RetoSwap / Haveno) — optional, opt-in
+# ----------------------------------------------------------------------------
+
+# Anonymous, Tor-routed XMR <-> USDT trading via RetoSwap (the haveno-reto
+# fork). OFF by default: with this false, the `exchange` phase is a complete
+# no-op (nothing downloaded, no toolchain). Turn on ONLY if you understand the
+# risks below, then deploy with: ansible-playbook playbook.yml --tags exchange -K
+haveno_enabled: false
+
+# RetoSwap release tag (no "v" prefix; the asset name's "v1.6.0" is derived
+# automatically). PIN >= 1.6.0-reto: that release fixes the 2026-05 trade-
+# protocol exploit (peer-identity verification). The signed AppImage is
+# verified against keys/retoswap.asc before install.
+haveno_version: "1.6.0-reto"
+
+# Asset/rail (USDT on the TRON rail) are chosen at trade time in the GUI, so
+# there is no config var for them. NOTE: the Haveno trade wallet holds HOT,
+# at-risk funds — keep only working balance + open-trade deposits there.
 
 # ----------------------------------------------------------------------------
 # Backup Configuration

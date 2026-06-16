@@ -127,6 +127,21 @@ p2pool_data_dir: /var/lib/p2pool
 # XMRig installation directory (base path - version in config.yml)
 xmrig_install_dir: /opt/xmrig
 
+# Haveno (RetoSwap) exchange — desktop GUI app, off by default (haveno_enabled
+# in config.yml). Installed as the signed AppImage; run on demand under
+# bubblewrap, never as a service.
+haveno_enabled: false
+haveno_install_dir: /opt/haveno
+# Default haveno-reto data dir on Linux. Holds the trade wallet + Tor onion
+# key, so it sits OUTSIDE ~/.secrets (the sandbox blanks .secrets, but Haveno
+# needs the wallet at runtime). Backed up by the backup phase.
+haveno_data_dir: "/home/{{ dev_user }}/.local/share/Haveno-reto"
+# The release tag is e.g. "1.6.0-reto"; the published asset embeds the upstream
+# Haveno version ("v1.6.0"). Derive the asset name from the tag so a version
+# bump only touches haveno_version in config.yml.
+haveno_appimage_version: "v{{ haveno_version | regex_replace('-reto$', '') }}"
+haveno_appimage_name: "haveno-{{ haveno_appimage_version }}-linux-x86_64.AppImage"
+
 # MSR (model-specific register) access for XMRig. Gives ~5-15% more
 # hashrate but grants the miner cap_sys_rawio + kernel MSR write access
 # — real hardware-level privilege for a network-facing workload.

@@ -75,6 +75,12 @@ echo "--- Mining Configuration ---"
 mkdir -p "$BACKUP_PATH/mining"
 backup_path "/opt/xmrig/build/config.json" "$BACKUP_PATH/mining"
 
+# Haveno (RetoSwap) trade wallet + data dir.
+# Holds the trade wallet, Tor onion key, and trade history. backup_path
+# skips cleanly when the exchange phase is not installed (path absent).
+echo "--- Haveno Exchange ---"
+backup_path "{{ haveno_data_dir }}" "$BACKUP_PATH/haveno"
+
 # Create backup manifest
 echo "--- Creating Manifest ---"
 cat > "$BACKUP_PATH/manifest.txt" << EOF
@@ -97,6 +103,7 @@ Critical configs backed up:
 - Git config: /home/{{ dev_user }}/.gitconfig
 - KeePassXC databases: /home/{{ dev_user }}/Documents/*.kdbx (encrypted blobs)
 - XMRig config: /opt/xmrig/build/config.json
+- Haveno trade wallet: {{ haveno_data_dir }} (trade wallet, Tor onion key) [if installed]
 
 NOT backed up (Ansible regenerates):
 - Systemd service files
@@ -168,6 +175,7 @@ if [ $# -lt 1 ]; then
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age etc       # Restore all configs"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age home      # Restore user data"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining    # Restore mining config"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age haveno    # Restore Haveno trade wallet"
   exit 1
 fi
 
@@ -301,10 +309,21 @@ if [ -n "$RESTORE_PATH" ]; then
         echo "  Restart mining:"
         echo "    sudo systemctl restart xmrig"
         ;;
+      haveno)
+        echo "Restoring Haveno trade wallet..."
+        mkdir -p "/home/{{ dev_user }}/.local/share"
+        # The archive stores it as haveno/Haveno-reto/...; restore into
+        # .local/share so the data dir name is preserved regardless of config.
+        rsync -av "$EXTRACTED_DIR/haveno/" "/home/{{ dev_user }}/.local/share/"
+        chown -R {{ dev_user }}:{{ dev_user }} "{{ haveno_data_dir }}"
+        chmod 700 "{{ haveno_data_dir }}"
+        echo "✓ Restored Haveno data dir"
+        echo "  Launch when ready (no service): haveno-sandboxed"
+        ;;
       *)
         # Whitelist only - a free-form path here would let a tampered
         # backup (or a typo) overwrite arbitrary system directories.
-        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining)"
+        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining, haveno)"
         exit 1
         ;;
     esac
@@ -322,6 +341,7 @@ else
   echo "  $0 $BACKUP_FILE etc       # System configs (WireGuard, SSH, Tor, I2P, monerod)"
   echo "  $0 $BACKUP_FILE home      # User data (SSH keys, GPG, git config)"
   echo "  $0 $BACKUP_FILE mining    # Mining config"
+  echo "  $0 $BACKUP_FILE haveno    # Haveno trade wallet (if backed up)"
   echo ""
   echo "Extracted files available at:"
   echo "  $EXTRACTED_DIR"
@@ -622,6 +642,11 @@ sudo systemctl restart wg-quick@wg0 tor i2pd monerod xmrig
 
 **Mining configuration:**
 - XMRig config: `/opt/xmrig/build/config.json`
+
+**Exchange (only if the exchange phase is enabled):**
+- Haveno trade wallet + data dir: `~/.local/share/Haveno-reto` (trade wallet,
+  Tor onion identity, trade history). Skipped cleanly when not installed.
+  These are hot funds — back them up, but keep balances minimal.
 
 **What is NOT backed up:**
 - Systemd services (Ansible regenerates these)

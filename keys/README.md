@@ -14,6 +14,7 @@ keyring (`gpg_verify_home`) and refuses to install unverified artifacts.
 | `satoshilabs-2021-signing-key.asc` | SatoshiLabs 2021 Signing Key | `EB48 3B26 B078 A4AA 1B6F 425E E21B 6950 A2EC B65C` | Trezor Suite AppImage detached `.asc` |
 | `boog900.asc` | Boog900 (monero-ban-list maintainer) | `37AA 6F0F 4776 A897 EEA4 4E5C AD8B 0A2C F759 9219` (signs with ed25519 subkey `A875 F544 CB56 9CB9 6889 791E 42AB 1287 CB00 41C2`) | Monero spy-node ban list `sigs/boog900.sig` |
 | `torbrowser.asc` | Tor Browser Developers <torbrowser@torproject.org> | `EF6E 286D DA85 EA2A 4BA7 DE68 4E2C 6E87 9329 8290` | Tor Browser `sha256sums-signed-build.txt.asc` |
+| `retoswap.asc` | reto (RetoSwap / haveno-reto maintainer) | `DAA2 4D87 8B8D 36C9 0120 A897 CA02 DAC1 2DAE 2D0F` | RetoSwap release `<tag>.hashes.sig` (Haveno AppImage hashes) |
 
 ## Provenance (fetched 2026-06-11)
 
@@ -40,6 +41,13 @@ keyring (`gpg_verify_home`) and refuses to install unverified artifacts.
   Fingerprint matches the long-published Tor Browser Developers key.
   Checked: gives a Good signature on the live 15.0.15
   `sha256sums-signed-build.txt`.
+- `retoswap.asc`: <https://raw.githubusercontent.com/retoaccess1/haveno-reto/master/gpg_keys/reto_public.asc>
+  (first-party, in the haveno-reto source tree). ed25519 key, uid "reto".
+  Checked: gives a Good signature on the live `1.6.0-reto.hashes`, which in
+  turn pins the SHA-256 of `haveno-v1.6.0-linux-x86_64.AppImage`. NOTE: this
+  release-signing key is **not** the key that signs the git commits
+  (those use RSA `B5690EEEBB952194`); the exchange phase verifies the signed
+  hashes of the published AppImage, not a git tag (the tags are unsigned).
 
 ## Re-verifying these keys
 
