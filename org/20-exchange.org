@@ -9,6 +9,22 @@ It is *off by default*. Nothing is installed unless =haveno_enabled: true= in
 service and no autostart*: you launch it by hand, at the box's own console,
 only while trading.
 
+*** Status (2026-06-16): network not currently usable — kept but disabled
+
+As of 2026-06-16 the RetoSwap network is *not usable for trading*: it is in
+post-exploit recovery and currently advertises *no arbitrators*. An arbitrator
+is the third key in the 2-of-3 escrow multisig of *every* trade, so with none
+available no offer can be created or taken (residual offers in the data store
+cannot complete). This is a network condition, *not* a fault in this phase: the
+install, the signature + hash verification, the bubblewrap sandbox, and the
+JavaFX GUI were all verified working on-box the day this phase was added.
+
+The phase is therefore *kept but disabled* (=haveno_enabled: false=). The
+tooling stays in place so it can be re-enabled later to check whether the
+network has recovered, without rebuilding it — re-check arbitrator availability
+(launch =haveno-sandboxed= and watch for the "no arbitrators" notice) before
+relying on it for funds.
+
 *** Security history — read before enabling
 
 RetoSwap was exploited around *2026-05-20*: ~7,000 XMR (~$2.7M) was drained.
