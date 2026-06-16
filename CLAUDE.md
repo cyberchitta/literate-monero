@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Literate Monero is a **literate programming** project where Emacs org-mode files (`org/`) ARE the source code. Documentation and infrastructure code are unified — every change to the system requires editing the narrative `.org` files, which are then **tangled** (extracted) into executable Ansible playbooks and shell scripts.
 
-Target: Omarchy Linux (Arch-based) with full sovereign Monero node, privacy networking (Tor/I2P), mining (P2Pool/XMRig), and WireGuard VPN.
+Target: Omarchy Linux (Arch-based).
+
+The core is a full sovereign Monero node with privacy networking (Tor/I2P), mining (P2Pool/XMRig), and WireGuard VPN. More broadly, the project is a **sovereign, privacy-first crypto stack anchored by Monero**: beyond the Monero-native core it adds opt-in, off-by-default phases — a Monero-native exchange, and an **interop** tier for interacting with external (non-Monero) chains the same way (self-hosted, sandboxed, Tor-routed, auditable). Monero is the anchor and the signal of intent, not a hard scope boundary — the test for any component is whether it advances sovereign, private operation with no trusted third parties. Some components (the interop edge especially) are included not because they are maximally private, but because they are the least-leaky way to do a thing you need.
 
 ## Security Context
 

@@ -32,6 +32,8 @@ Cryptocurrency security depends on *you* understanding what runs on your machine
 
 Run your own Monero infrastructure with complete sovereignty—no trusted third parties, no custodial services, no remote APIs. Network-level anonymity via I2P + Tor ensures transactions cannot be linked to your IP address.
 
+Monero is the anchor, but the broader aim is **sovereign, private crypto operations** in general: the same principles—self-hosting, sandboxing, Tor routing, no trusted third parties, full auditability—extend through opt-in, off-by-default phases beyond the node itself, including a Monero-native exchange and an interop tier for working with external chains. Monero signals the intent; it isn't a hard boundary.
+
 Built using literate programming: the documentation IS the source code. Understand every component, customize any behavior, reproduce the entire system. Infrastructure as narrative.
 
 > **Note**: This project was developed in collaboration with several LLMs, primarily Claude Sonnet 4.5, but with contributions from Claude Opus 4.5 and Grok 4.1. AI collaboration facilitated by [llm-context](https://github.com/cyberchitta/llm-context.py).
@@ -54,7 +56,7 @@ Full Monero node infrastructure with defense-in-depth privacy:
 - **Browser dispatch**: Domain-based routing (Tor Browser by default, Chromium for KYC-required sites)
 - **Application sandboxing**: Bubblewrap isolation with secrets separation for sensitive apps
 - **WireGuard**: Secure remote access
-- **Optional**: P2Pool decentralized mining + XMRig CPU miner
+- **Optional**: P2Pool decentralized mining + XMRig CPU miner; a Monero-native P2P exchange (opt-in)
 
 All documented as executable narrative in `org/*.org` files.
 
