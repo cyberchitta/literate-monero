@@ -46,4 +46,5 @@ __pycache__/
 Thumbs.db
 docs/system-notes.md
 .commit-msg
-.security-fixes-handoff.md
+# Planning / handoff notes — local working docs, never commit
+*-handoff.md
