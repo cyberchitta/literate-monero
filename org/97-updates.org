@@ -109,6 +109,15 @@ if [ -n "$CAST_CURRENT" ]; then
     CAST_URL="https://github.com/foundry-rs/foundry/releases/tag/$CAST_LATEST"
 fi
 
+# Check Rabby - only if the interop phase (Rabby fallback) is configured.
+# Rabby's releases/latest is a proper versioned tag, so the generic helper works.
+RABBY_CURRENT=$(get_current_version "rabby")
+if [ -n "$RABBY_CURRENT" ]; then
+    echo -e "${YELLOW}Checking Rabby...${NC}"
+    RABBY_CHECK=$(get_latest_release "RabbyHub/Rabby" "$RABBY_CURRENT")
+    IFS='|' read -r RABBY_STATUS RABBY_LATEST RABBY_URL <<< "$RABBY_CHECK"
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Summary ===${NC}"
 echo ""
@@ -169,6 +178,18 @@ if [ -n "$CAST_CURRENT" ]; then
     fi
 fi
 
+# Rabby (only shown when the interop phase is configured)
+if [ -n "$RABBY_CURRENT" ]; then
+    if [ "$RABBY_STATUS" = "available" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${YELLOW}%-10s${NC}\n" "Rabby" "$RABBY_CURRENT" "$RABBY_LATEST" "UPDATE"
+        echo "  Release: $RABBY_URL"
+    elif [ "$RABBY_STATUS" = "up-to-date" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${GREEN}%-10s${NC}\n" "Rabby" "$RABBY_CURRENT" "$RABBY_LATEST" "CURRENT"
+    else
+        printf "%-15s %-20s ${RED}%-20s${NC} ${RED}%-10s${NC}\n" "Rabby" "$RABBY_CURRENT" "unknown" "ERROR"
+    fi
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Instructions ===${NC}"
 echo "To update a component:"
@@ -180,6 +201,9 @@ echo "  sudo update-haveno.sh    # Update Haveno (RetoSwap)"
 fi
 if [ -n "$CAST_CURRENT" ]; then
 echo "  sudo update-cast.sh      # Update cast (Foundry)"
+fi
+if [ -n "$RABBY_CURRENT" ]; then
+echo "  sudo update-rabby.sh     # Update Rabby (confirms hash; no upstream signature)"
 fi
 echo ""
 echo "To rollback after update:"
@@ -898,6 +922,146 @@ echo ""
 rm -f "$BACKUP_CONFIG"
 #+end_src
 
+** Update Rabby Script
+
+Rabby has *no signature and no checksum* upstream, so — unlike =cast= — this
+updater *cannot* safely auto-pin a new hash. It downloads the latest release,
+computes its SHA-256, and *refuses to proceed until you paste back a hash you
+verified out-of-band* (forcing the same one-time audit the original pin rested
+on). Only then does it bump =rabby_version= + =rabby_sha256= together and re-run
+the =interop= phase (which re-verifies against the new pin, re-packs the =.crx=
+with the existing key so the extension ID is unchanged, and refreshes the local
+update manifest). There is no service to restart; rollback is reverting both
+config lines and re-running =--tags interop= (old versioned dir/crx persist).
+
+#+begin_src bash :tangle ../configs/templates/update-rabby.sh.j2
+#!/bin/bash
+# Update the Rabby extension to the latest release.
+# Rabby publishes no signature/checksum, so this REQUIRES you to confirm the
+# new zip's SHA-256 against an out-of-band check before it is pinned. No
+# systemd service: health is verified by the packed .crx + Chromium policy.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
+BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+POLICY="{{ chromium_policy_dir }}/interop-rabby.json"
+
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Must run as root${NC}"
+    exit 1
+fi
+
+# Must already be installed (Rabby fallback enabled + deployed)
+if [ ! -e "$POLICY" ]; then
+    echo -e "${RED}Rabby is not installed.${NC}"
+    echo "Enable it first: set rabby_enabled: true in config.yml, then"
+    echo "  ansible-playbook playbook.yml --tags interop -K"
+    exit 1
+fi
+
+CURRENT_VERSION=$(grep "^rabby_version:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+
+echo -e "${BLUE}Checking for latest Rabby release...${NC}"
+LATEST_VERSION=$(curl -s "https://api.github.com/repos/RabbyHub/Rabby/releases/latest" \
+    | grep '"tag_name"' \
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
+    | head -1)
+
+if [ -z "$LATEST_VERSION" ]; then
+    echo -e "${RED}Error: Could not determine latest release${NC}"
+    exit 1
+fi
+
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+    echo -e "${GREEN}Already up to date: $CURRENT_VERSION${NC}"
+    exit 0
+fi
+
+ZIP_URL="https://github.com/RabbyHub/Rabby/releases/download/${LATEST_VERSION}/Rabby_${LATEST_VERSION}.zip"
+TMP_ZIP="/tmp/rabby-update-${LATEST_VERSION}.zip"
+
+echo ""
+echo -e "${YELLOW}Update Available:${NC}"
+echo "  Current: $CURRENT_VERSION"
+echo "  Latest:  $LATEST_VERSION"
+echo ""
+echo -e "${BLUE}Downloading $LATEST_VERSION to compute its hash...${NC}"
+curl -fsSL -o "$TMP_ZIP" "$ZIP_URL"
+COMPUTED_HASH=$(sha256sum "$TMP_ZIP" | awk '{print $1}')
+rm -f "$TMP_ZIP"
+
+echo ""
+echo -e "${YELLOW}Rabby ships NO signature or checksum.${NC} Verify this release"
+echo "independently before trusting it:"
+echo "  Release: https://github.com/RabbyHub/Rabby/releases/tag/${LATEST_VERSION}"
+echo "  Downloaded zip SHA-256: ${COMPUTED_HASH}"
+echo ""
+echo "Confirm by pasting the SHA-256 you verified out-of-band:"
+read -r USER_HASH
+if [ "$USER_HASH" != "$COMPUTED_HASH" ]; then
+    echo -e "${RED}Hash not confirmed — aborting. Nothing changed.${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${BLUE}=== Starting Rabby Update ===${NC}"
+
+echo "Backing up config.yml..."
+cp "$CONFIG_FILE" "$BACKUP_CONFIG"
+
+echo "Updating config.yml to $LATEST_VERSION..."
+sed -i "s/^rabby_version:.*/rabby_version: \"$LATEST_VERSION\"/" "$CONFIG_FILE"
+sed -i "s/^rabby_sha256:.*/rabby_sha256: \"$COMPUTED_HASH\"/" "$CONFIG_FILE"
+
+echo "Re-tangling org files..."
+cd "{{ lookup('env', 'HOME') }}/literate-monero"
+./tangle.sh > /dev/null 2>&1
+
+echo "Running Ansible playbook (re-verifies the new pin, re-packs the crx)..."
+cd ansible
+if ansible-playbook playbook.yml --tags interop -v; then
+    echo -e "${GREEN}✓ Ansible playbook completed successfully${NC}"
+else
+    echo -e "${RED}✗ Ansible playbook failed${NC}"
+    echo "Rolling back config to $CURRENT_VERSION and re-running interop..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    cd "{{ lookup('env', 'HOME') }}/literate-monero" && ./tangle.sh > /dev/null 2>&1
+    cd ansible && ansible-playbook playbook.yml --tags interop > /dev/null 2>&1 || true
+    exit 1
+fi
+
+echo "Verifying installation..."
+if [ -e "/opt/rabby/Rabby-${LATEST_VERSION}.crx" ] && [ -e "$POLICY" ]; then
+    echo -e "${GREEN}✓ Rabby ${LATEST_VERSION} packed and force-install policy in place${NC}"
+else
+    echo -e "${RED}✗ Rabby crx/policy not in place after update${NC}"
+    echo "Rolling back config to $CURRENT_VERSION and re-running interop..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    cd "{{ lookup('env', 'HOME') }}/literate-monero" && ./tangle.sh > /dev/null 2>&1
+    cd ansible && ansible-playbook playbook.yml --tags interop > /dev/null 2>&1 || true
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}=== Rabby Update Complete ===${NC}"
+echo "  Updated: $CURRENT_VERSION → $LATEST_VERSION"
+echo "  Restart the browser to pick up the new extension build:"
+echo "    rabby-wallet"
+echo ""
+echo "Rollback if needed: set rabby_version + rabby_sha256 back in config.yml"
+echo "and re-run: ansible-playbook playbook.yml --tags interop"
+echo ""
+
+rm -f "$BACKUP_CONFIG"
+#+end_src
+
 ** Rollback Monerod Script
 
 #+begin_src bash :tangle ../configs/templates/rollback-monerod.sh.j2
@@ -1434,6 +1598,7 @@ echo ""
         - update-xmrig.sh
         - update-haveno.sh
         - update-cast.sh
+        - update-rabby.sh
         - rollback-monerod.sh
         - rollback-p2pool.sh
         - rollback-xmrig.sh
@@ -1484,6 +1649,7 @@ echo ""
           - "  sudo update-xmrig.sh         # Update XMRig"
           - "  sudo update-haveno.sh        # Update Haveno (RetoSwap, if enabled)"
           - "  sudo update-cast.sh          # Update cast (Foundry, if enabled)"
+          - "  sudo update-rabby.sh         # Update Rabby (dapp fallback, if enabled)"
           - ""
           - "Rollback commands:"
           - "  sudo rollback-monerod.sh     # Rollback Monerod"

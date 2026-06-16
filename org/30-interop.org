@@ -627,6 +627,383 @@ exit "$rc"
       tags: [interop, verify]
 #+end_src
 
+** Rabby Extension — Dapp-UI Fallback (opt-in, off by default)
+
+=cast= is the primary workhorse, but a few interactions genuinely need a dapp's
+*web frontend* (a site that only speaks to an injected wallet). For those, this
+adds the *Rabby* browser extension — *not* a second standalone app. It is gated
+on its own =rabby_enabled= flag, *independent of =cast_enabled=*: you can run
+=cast= without ever installing a browser wallet.
+
+It deliberately *reuses the existing fail-closed Mullvad browser path* (privacy
+phase) rather than building new browser/VPN plumbing. Clearnet dapp frontends
+are Tor-hostile (Cloudflare blocks Tor exits, latency breaks dapps), so this
+edge rides *Mullvad*, while =cast= rides *Tor* — the project's existing layered
+model. Rabby runs in a *dedicated =wallet= Chromium profile*, compartmentalized
+from general browsing so the hot wallet is never mixed with anything else.
+
+*** Why a self-packed, force-installed crx (and not the Web Store)
+
+Rabby publishes its extension as a *single GitHub release zip* with *no checksum
+and no signature* — weaker provenance than Foundry (which at least ships a
+Sigstore bundle). This is inherent to the browser-extension model: the signature
+in the normal install path is *Google's*, applied when the Web Store packs the
+=.crx=, not the developer's — the GitHub zip is just the raw pre-store build. So
+the strongest anchor available is a *SHA-256 we pin* (=rabby_sha256=); the
+download is verified against it and *fails closed* on mismatch. Recorded in
+=keys/README.md= as the second non-GPG anchor.
+
+For *install*, pulling from the Chrome Web Store (=ExtensionInstallForcelist=
+with Google's update URL) was rejected: it is a Google round-trip that serves
+*whatever the store currently has* — you cannot pin or audit the bytes, against
+this repo's verify-everything ethos. Loading the raw unzipped directory was also
+rejected: since Chromium 133 *unpacked* extensions are auto-disabled unless
+developer mode is on, and =--load-extension= is being removed. So we *pack the
+verified bytes into a signed =.crx=* with a *locally-generated* key (a packed
+extension is exempt from the developer-mode rule), then *force-install it from a
+local =file://= update manifest*. No Web Store, no remote update server, no
+Google in the loop — the bytes Chromium loads are exactly the ones we verified.
+The packing key's only job is to satisfy Chromium's packed-extension
+requirement and give the extension a *stable ID*; trust comes from the pinned
+SHA-256 of the source zip, not from this self-signed key.
+
+*** What the pin guarantees (and what it does not)
+
+Be clear about what =rabby_sha256= buys, because it is easy to overstate. The pin
+is a *consistency check, not a code audit*. It guarantees you receive the *exact
+bytes that were pinned* — so it *fails closed* against a *targeted* swap (a
+man-in-the-middle, a poisoned mirror, bad DNS serving you a different file). The
+recommended way to set it is to cross-check the published hash over *more than
+one path* (clearnet and Tor) before pinning, the same discipline =keys/README.md=
+prescribes for the GPG keys.
+
+It does *nothing* against *upstream compromise*: if RabbyHub's account is popped
+and a malicious release ships to everyone, or Rabby is simply hostile, every path
+agrees on the same poisoned hash and the pin passes happily. Confirming the bytes
+are authentic is not the same as confirming they are safe — and actually auditing
+a minified, bundled MV3 extension (or its whole npm dependency tree, if built
+from source) is not realistically achievable here. So the pin is the *integrity*
+control; the *safety* backstop is custody, below.
+
+*** Custody and WebRTC
+
+A wallet living in a browser profile is a *hot key*, and — per the section above —
+the extension's provenance is the weakest anchor in this repo and cannot be
+audited away. So for this path a *hardware wallet is the expected posture, not a
+nicety* (Rabby supports Trezor/Ledger; the Trezor udev rules are already
+installed for =cast=). With it, Rabby never holds the key: it builds the
+transaction, but you confirm the *real destination and amount on the Trezor's own
+screen*, outside the extension's reach. That is the one control that survives an
+upstream compromise you cannot audit — a backdoored Rabby can show you a lie in
+the browser, but cannot silently move a hardware-backed account's funds. Treat a
+plain hot key in the profile (no hardware wallet) as a *last resort* for trivial
+amounts only.
+
+The managed policy also sets WebRTC to =disable_non_proxied_udp= as
+belt-and-braces against an IP leak, even though Mullvad is already the only exit.
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    # ------------------------------------------------------------------------
+    # Rabby extension (dapp-UI fallback) — optional, opt-in, off by default.
+    # Gated on `rabby_enabled`, independent of cast. With it false, nothing
+    # below runs: no download, no crx, no Chromium policy.
+    # ------------------------------------------------------------------------
+    - name: Install Rabby packaging dependencies
+      community.general.pacman:
+        name:
+          - chromium     # the Mullvad-path browser the extension rides in
+          - unzip
+          - openssl      # generate the packing key + derive the extension ID
+        state: present
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Fail if Rabby SHA-256 pin is not set
+      fail:
+        msg: |
+          rabby_sha256 must be a pinned 64-char sha256 of Rabby_{{ rabby_version }}.zip
+          (got: '{{ rabby_sha256 | default('') }}'). Rabby ships no checksum/signature,
+          so this pin IS the verification. Set rabby_version + rabby_sha256 in
+          config.yml (confirm the hash out-of-band) before enabling.
+      when:
+        - rabby_enabled | bool
+        - (rabby_sha256 | default('')) is not match('^[a-f0-9]{64}$')
+      tags: [interop]
+
+    - name: Create Rabby install directory
+      file:
+        path: "{{ rabby_install_dir }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Set Rabby source/crx/key paths
+      set_fact:
+        rabby_src_dir: "{{ rabby_install_dir }}/Rabby-{{ rabby_version }}"
+        rabby_crx: "{{ rabby_install_dir }}/Rabby-{{ rabby_version }}.crx"
+        rabby_key: "{{ rabby_install_dir }}/packing-key.pem"
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Check if this Rabby version is already unpacked
+      stat:
+        path: "{{ rabby_src_dir }}/manifest.json"
+      register: rabby_src_exists
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    # get_url verifies the pinned sha256 itself and refuses to keep a mismatched
+    # file — the download fails closed. This pin is the whole chain of trust.
+    - name: Download and verify Rabby release zip (pinned sha256)
+      get_url:
+        url: "{{ rabby_release_base }}/{{ rabby_zip_name }}"
+        dest: /tmp/rabby.zip
+        mode: '0644'
+        checksum: "sha256:{{ rabby_sha256 }}"
+      when:
+        - rabby_enabled | bool
+        - not rabby_src_exists.stat.exists
+      tags: [interop]
+
+    - name: Create Rabby source directory
+      file:
+        path: "{{ rabby_src_dir }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when:
+        - rabby_enabled | bool
+        - not rabby_src_exists.stat.exists
+      tags: [interop]
+
+    - name: Unpack verified Rabby extension
+      unarchive:
+        src: /tmp/rabby.zip
+        dest: "{{ rabby_src_dir }}"
+        remote_src: yes
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      register: rabby_unpacked
+      when:
+        - rabby_enabled | bool
+        - not rabby_src_exists.stat.exists
+      tags: [interop]
+
+    # A persistent RSA key so the extension ID is STABLE across re-packs/upgrades
+    # (the ID is derived from this key). Generated once, never in the repo. Its
+    # only role is to satisfy Chromium's packed-extension requirement — trust is
+    # the pinned sha256 above, not this self-signed key.
+    - name: Generate Rabby packing key (stable extension identity)
+      command:
+        cmd: "openssl genrsa -out {{ rabby_key }} 2048"
+        creates: "{{ rabby_key }}"
+      become: true
+      become_user: "{{ dev_user }}"
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Restrict Rabby packing key permissions
+      file:
+        path: "{{ rabby_key }}"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0600'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    # Pack the VERIFIED source dir into a signed .crx (writes <src_dir>.crx).
+    # Run as the dev user so no root browser profile is created.
+    - name: Pack verified Rabby extension into a signed .crx
+      command:
+        cmd: "chromium --pack-extension={{ rabby_src_dir }} --pack-extension-key={{ rabby_key }}"
+        creates: "{{ rabby_crx }}"
+      become: true
+      become_user: "{{ dev_user }}"
+      environment:
+        HOME: "/home/{{ dev_user }}"
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    # Chromium derives an extension's ID from the first 128 bits of the sha256 of
+    # the public key (hex, mapped 0-9a-f -> a-p). We compute the same value so the
+    # forcelist policy and the update manifest reference the right ID.
+    - name: Derive Rabby extension ID from the packing key
+      shell: |
+        set -o pipefail
+        openssl rsa -in {{ rabby_key }} -pubout -outform DER 2>/dev/null \
+          | sha256sum | cut -c1-32 | tr '0-9a-f' 'a-p'
+      args:
+        executable: /bin/bash
+      register: rabby_ext_id
+      changed_when: false
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Deploy Rabby local update manifest (file://, no remote server)
+      template:
+        src: ../configs/templates/rabby-update.xml.j2
+        dest: "{{ rabby_install_dir }}/update.xml"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0644'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Ensure Chromium managed-policy directory exists
+      file:
+        path: "{{ chromium_policy_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Deploy Rabby force-install + WebRTC managed policy
+      template:
+        src: ../configs/templates/interop-rabby-policy.json.j2
+        dest: "{{ chromium_policy_dir }}/interop-rabby.json"
+        owner: root
+        group: root
+        mode: '0644'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Clean up Rabby download
+      file:
+        path: /tmp/rabby.zip
+        state: absent
+      when:
+        - rabby_enabled | bool
+        - rabby_unpacked.changed
+      tags: [interop]
+#+end_src
+
+*** The local update manifest and the Chromium policy
+
+The update manifest is plain XML pointing at the local =.crx= by a =file://= path
+— there is no remote update server. =ExtensionInstallForcelist= pins the
+extension ID to this local manifest, so Chromium installs exactly our verified,
+self-packed bytes and a force-installed extension cannot be silently disabled.
+
+#+begin_src nxml :tangle ../configs/templates/rabby-update.xml.j2
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Generated from org/30-interop.org. Local self-hosted update manifest for the
+     pinned, self-packed Rabby crx. codebase is a file:// path on THIS box; there
+     is no remote update server and no Chrome Web Store round-trip. -->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='{{ rabby_ext_id.stdout }}'>
+    <updatecheck codebase='file://{{ rabby_crx }}'
+                 version='{{ rabby_version | regex_replace('^v', '') }}' />
+  </app>
+</gupdate>
+#+end_src
+
+#+begin_src json :tangle ../configs/templates/interop-rabby-policy.json.j2
+{
+  "ExtensionInstallForcelist": [
+    "{{ rabby_ext_id.stdout }};file://{{ rabby_install_dir }}/update.xml"
+  ],
+  "WebRtcIPHandlingPolicy": "disable_non_proxied_udp",
+  "WebRtcIPHandling": "disable_non_proxied_udp"
+}
+#+end_src
+
+*** Launcher: rabby-wallet (reuses the fail-closed Mullvad path)
+
+A thin wrapper that opens the dedicated =wallet= profile through the *existing*
+=mullvad-browser.sh= — so the kill-switch (refuses to launch without a confirmed
+Mullvad exit; kills the browser if the tunnel drops) is *single-sourced*, not
+re-implemented here. It only overrides which Chromium profile opens, via the
+=MULLVAD_BROWSER_PROFILE= env var added to the launcher in the privacy phase.
+
+#+begin_src bash :tangle ../configs/templates/rabby-wallet.j2
+#!/bin/bash
+# Launch Chromium in the dedicated Rabby `wallet` profile over the fail-closed
+# Mullvad path. Generated from org/30-interop.org.
+#
+# Reuses mullvad-browser.sh (privacy phase): it brings up wg-mullvad, REFUSES to
+# launch unless am.i.mullvad.net confirms a Mullvad exit, and kills the browser
+# if the tunnel drops. We only override which Chromium profile it opens.
+exec env MULLVAD_BROWSER_PROFILE="{{ rabby_profile }}" mullvad-browser.sh "$@"
+#+end_src
+
+#+begin_src conf :tangle ../configs/templates/rabby-wallet.desktop.j2
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Rabby Wallet (Mullvad)
+GenericName=Dapp Wallet
+Comment=Rabby dapp wallet in a dedicated profile over the fail-closed Mullvad path
+Exec=rabby-wallet %U
+Terminal=false
+Icon=chromium
+Categories=Network;Finance;
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy rabby-wallet launcher
+      template:
+        src: ../configs/templates/rabby-wallet.j2
+        dest: /usr/local/bin/rabby-wallet
+        owner: root
+        group: root
+        mode: '0755'
+      when: rabby_enabled | bool
+      tags: [interop]
+
+    - name: Deploy rabby-wallet desktop entry
+      template:
+        src: ../configs/templates/rabby-wallet.desktop.j2
+        dest: /usr/share/applications/rabby-wallet.desktop
+        owner: root
+        group: root
+        mode: '0644'
+      when: rabby_enabled | bool
+      tags: [interop]
+#+end_src
+
+*** Verify Rabby Component
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Check Rabby crx is packed
+      stat:
+        path: "{{ rabby_crx }}"
+      register: rabby_crx_stat
+      when: rabby_enabled | bool
+      tags: [interop, verify]
+
+    - name: Check Rabby Chromium policy is deployed
+      stat:
+        path: "{{ chromium_policy_dir }}/interop-rabby.json"
+      register: rabby_policy_stat
+      when: rabby_enabled | bool
+      tags: [interop, verify]
+
+    - name: Display Rabby component status
+      debug:
+        msg:
+          - "=== Rabby (dapp-UI fallback) Setup Complete ==="
+          - ""
+          - "Pinned release: {{ rabby_version }}"
+          - "Extension ID:   {{ rabby_ext_id.stdout | default('(unknown)') }}"
+          - "crx packed:     {% if rabby_crx_stat.stat.exists %}yes{% else %}NO{% endif %}"
+          - "Force-install:  {% if rabby_policy_stat.stat.exists %}policy deployed{% else %}MISSING{% endif %}"
+          - ""
+          - "Launch in the dedicated wallet profile over Mullvad:"
+          - "  rabby-wallet            (or the 'Rabby Wallet (Mullvad)' app icon)"
+          - ""
+          - "Verify in the browser: open chrome://policy and chrome://extensions —"
+          - "Rabby should show as force-installed (not removable). Pair it with a"
+          - "hardware wallet; the profile key is hot. Some dapps still block VPN IPs."
+      when: rabby_enabled | bool
+      tags: [interop, verify]
+#+end_src
+
 ** Notes
 
 *** Three layers of "off"
@@ -706,8 +1083,28 @@ private (self-hosted, Tor-routed, no trusted RPC that logs your IP) and keeps
 private. It exists because some interop is necessary, and this is the least-leaky
 way to do it.
 
+*** The Rabby fallback is the least-private edge — use it rarely
+
+Everything that makes the chain transparent applies, *plus* a browser attack
+surface and Rabby's DeBank phone-home. This path neutralizes the IP exposure
+(Mullvad-only egress, WebRTC off) and compartmentalizes it (dedicated =wallet=
+profile, hardware-wallet custody), but it cannot make a browser-driven dapp as
+private as =cast=. Reach for =cast= first; use =rabby-wallet= only when a dapp
+genuinely has no non-browser path. Honest limits: some sites still challenge or
+block VPN exit IPs, so a given dapp may simply not load.
+
+To prove the Mullvad path doesn't leak, the same kind of on-box check as cast's
+applies — sniff the real uplink while =rabby-wallet= runs and confirm traffic
+only goes to the Mullvad endpoint (no direct connection to the dapp/RPC host).
+
 *** Updating
 
 A presence-based =update-cast= (bump =foundry_version= in =config.yml=, re-verify
 via cosign, atomic =/opt/foundry= symlink switch) is added with the other
 updaters. There is no service to restart.
+
+=update-rabby= follows the same shape: bump =rabby_version= *and* =rabby_sha256=
+in =config.yml= (the new hash audited out-of-band), re-run =--tags interop=. The
+download re-verifies against the new pin, re-packs the =.crx= with the existing
+key (so the extension ID is unchanged), and refreshes the local update manifest;
+Chromium reloads the force-installed extension. No service to restart.

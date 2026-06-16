@@ -686,6 +686,7 @@ without touching node traffic.
 #     confirms a Mullvad exit IP
 #   - watchdog kills the browser if the tunnel interface disappears
 
+import os
 import sys
 import json
 import subprocess
@@ -695,6 +696,12 @@ import urllib.request
 from pathlib import Path
 
 WG_INTERFACE = "wg-mullvad"
+# Optional override of which Chromium profile to open, as a literal
+# --profile-directory name. The interop phase's `rabby-wallet` launcher sets it
+# to its dedicated wallet profile, reusing this fail-closed path instead of
+# duplicating it. Unset (the normal case) → the mullvad-fallback profile,
+# resolved by display name exactly as before.
+BROWSER_PROFILE = os.environ.get("MULLVAD_BROWSER_PROFILE")
 MULLVAD_CHECK_URL = "https://am.i.mullvad.net/json"
 WATCHDOG_INTERVAL_SECONDS = 5
 
@@ -771,8 +778,10 @@ def main():
                            capture_output=True)
         sys.exit(1)
 
-    # Get profile directory
-    profile_dir = get_profile_directory("mullvad-fallback")
+    # Get profile directory. An explicit override is used as a literal directory
+    # (deterministic path, e.g. for the interop wallet); otherwise resolve the
+    # mullvad-fallback profile's directory by its display name.
+    profile_dir = BROWSER_PROFILE or get_profile_directory("mullvad-fallback")
 
     # Launch Chromium
     args = ["chromium", f"--profile-directory={profile_dir}"] + sys.argv[1:]

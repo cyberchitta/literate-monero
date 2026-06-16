@@ -89,3 +89,37 @@ from the actual decoded signing cert in the published
 workflow at tag `v1.7.1`. `cosign` itself is the official Arch `extra/cosign`
 package. If the workflow path or issuer ever changes upstream, treat it as an
 incident (as with the GPG keys above) before updating the pinned identity.
+
+## Non-GPG trust anchor: Rabby extension (pinned SHA-256)
+
+The `interop` phase also installs the **Rabby** browser extension (dapp-UI
+fallback). Rabby publishes its extension as a single GitHub release zip with
+**no GPG key, no checksum file, and no Sigstore bundle** — the weakest upstream
+provenance of anything in this repo. The only anchor available is therefore a
+**SHA-256 we audit once and pin** (`rabby_sha256` in `config.yml`). The phase
+downloads `Rabby_<version>.zip`, verifies it against that pin (fail-closed on
+mismatch), then self-packs it into a signed `.crx` and force-installs it from a
+**local `file://` update manifest** — no Chrome Web Store round-trip, so Chromium
+loads exactly the bytes we verified.
+
+| Field | Value |
+|-------|-------|
+| Release | `RabbyHub/Rabby` `Rabby_<version>.zip` (GitHub Releases) |
+| `rabby_version` | `v0.93.93` |
+| `rabby_sha256` | `90414ede7551338ac7e29616c3f7debd71592a5a7651aed69d4ae7a34ffcac74` |
+
+Provenance (confirmed 2026-06-16): hash computed from the asset published at
+<https://github.com/RabbyHub/Rabby/releases/tag/v0.93.93> (the only attached
+asset; manifest version `0.93.93`, MV3).
+
+This is a **consistency check, not a code audit** — and weaker than the GPG/cosign
+anchors above. The pin guarantees you get the *same bytes that were pinned*, so it
+fails closed against a *targeted* swap (MITM, poisoned mirror, bad DNS). It does
+**not** protect against an *upstream compromise* — a malicious release shipped to
+everyone produces one hash that every path agrees on, and actually auditing a
+minified MV3 bundle (or its npm tree, if built from source) is not realistic here.
+So integrity rests on this pin; **safety rests on the hardware wallet** the interop
+phase expects for the Rabby path (the extension never holds the key; you confirm
+the real destination/amount on the device). To bump, change `rabby_version` +
+`rabby_sha256` together and cross-check the published hash over **more than one
+path** (clearnet + Tor) before pinning, e.g. `curl -L <release-zip-url> | sha256sum`.

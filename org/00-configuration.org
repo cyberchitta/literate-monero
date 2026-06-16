@@ -176,6 +176,22 @@ interop_tor_data_dir: /var/lib/tor-interop
 # on disk). Default `cast wallet import` location. Backed up if present.
 foundry_keystore_dir: "/home/{{ dev_user }}/.foundry/keystores"
 
+# Interop: Rabby extension (dapp-UI fallback) — off by default (rabby_enabled in
+# config.yml). The pinned, self-audited release zip is verified against
+# rabby_sha256, self-packed into a signed .crx with a locally-generated key, and
+# force-installed into Chromium from a local file:// update manifest — no Chrome
+# Web Store round-trip. It rides the fail-closed Mullvad path (privacy phase) in
+# a dedicated profile. Independent of cast_enabled.
+rabby_install_dir: /opt/rabby
+rabby_release_base: "https://github.com/RabbyHub/Rabby/releases/download/{{ rabby_version }}"
+rabby_zip_name: "Rabby_{{ rabby_version }}.zip"
+# Dedicated Chromium profile for the hot wallet, compartmentalized from general
+# mullvad-fallback browsing (avoids address-clustering / mixing the wallet with
+# anything else). The rabby-wallet launcher opens the Mullvad path in this one.
+rabby_profile: wallet
+# Chromium reads enterprise policy (force-install + WebRTC hardening) from here.
+chromium_policy_dir: /etc/chromium/policies/managed
+
 # MSR (model-specific register) access for XMRig. Gives ~5-15% more
 # hashrate but grants the miner cap_sys_rawio + kernel MSR write access
 # — real hardware-level privilege for a network-facing workload.

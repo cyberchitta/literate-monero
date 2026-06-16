@@ -87,6 +87,14 @@ backup_path "{{ haveno_data_dir }}" "$BACKUP_PATH/haveno"
 echo "--- Interop (cast keystore) ---"
 backup_path "{{ foundry_keystore_dir }}" "$BACKUP_PATH/cast"
 
+# Interop: Rabby wallet Chromium profile (dapp-UI fallback). Holds the
+# extension's settings and, if not paired with a hardware wallet, the encrypted
+# hot key. backup_path skips cleanly when the Rabby fallback is not installed.
+# Paired with a hardware wallet, the seed is on the device (backed up out-of-band)
+# and the profile is re-derivable — so this is a convenience backup, not custody.
+echo "--- Interop (Rabby wallet profile) ---"
+backup_path "/home/{{ dev_user }}/.config/chromium/{{ rabby_profile }}" "$BACKUP_PATH/rabby"
+
 # Create backup manifest
 echo "--- Creating Manifest ---"
 cat > "$BACKUP_PATH/manifest.txt" << EOF
@@ -111,6 +119,7 @@ Critical configs backed up:
 - XMRig config: /opt/xmrig/build/config.json
 - Haveno trade wallet: {{ haveno_data_dir }} (trade wallet, Tor onion key) [if installed]
 - cast keystore: {{ foundry_keystore_dir }} (encrypted; no-HW fallback only) [if present]
+- Rabby wallet profile: ~/.config/chromium/{{ rabby_profile }} (dapp-UI fallback) [if present]
 
 NOT backed up (Ansible regenerates):
 - Systemd service files
@@ -184,6 +193,7 @@ if [ $# -lt 1 ]; then
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining    # Restore mining config"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age haveno    # Restore Haveno trade wallet"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age cast      # Restore cast keystore"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age rabby     # Restore Rabby wallet profile"
   exit 1
 fi
 
@@ -338,10 +348,21 @@ if [ -n "$RESTORE_PATH" ]; then
         echo "✓ Restored cast keystore"
         echo "  Use: cast-tor ... --account <name> --password-file ..."
         ;;
+      rabby)
+        echo "Restoring Rabby wallet profile..."
+        install -d -o {{ dev_user }} -g {{ dev_user }} -m 700 \
+          "/home/{{ dev_user }}/.config/chromium/{{ rabby_profile }}"
+        rsync -av "$EXTRACTED_DIR/rabby/" \
+          "/home/{{ dev_user }}/.config/chromium/{{ rabby_profile }}/"
+        chown -R {{ dev_user }}:{{ dev_user }} \
+          "/home/{{ dev_user }}/.config/chromium/{{ rabby_profile }}"
+        echo "✓ Restored Rabby wallet profile"
+        echo "  Launch when ready (no service): rabby-wallet"
+        ;;
       *)
         # Whitelist only - a free-form path here would let a tampered
         # backup (or a typo) overwrite arbitrary system directories.
-        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining, haveno, cast)"
+        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining, haveno, cast, rabby)"
         exit 1
         ;;
     esac

@@ -79,7 +79,7 @@ The Makefile tracks dependencies between org files and their generated fragments
 - `01-validation.org` → Pre-flight validation playbook
 - `10`–`19` range → Installation phases (base system → mining), executed sequentially
 - `20-exchange.org` → Opt-in Monero-native exchange (RetoSwap/Haveno), off by default
-- `30-interop.org` → Opt-in interop tier: `cast` (Foundry) EVM-chain tooling, off by default — first tier beyond the Monero-native core
+- `30-interop.org` → Opt-in interop tier, off by default — first tier beyond the Monero-native core. Two independently-gated components: `cast` (Foundry) EVM CLI signer over Tor (`cast_enabled`), and the Rabby browser-extension dapp-UI fallback on the Mullvad path (`rabby_enabled`)
 - `80`–`84` range → Post-install phases (secrets, firewall, monitoring, backup, verification)
 - `97-updates.org` → Version upgrade management
 - `98-handlers.org` → Ansible handlers (service restarts, reloads)
@@ -90,7 +90,7 @@ The Makefile tracks dependencies between org files and their generated fragments
 - Privacy requires the base system
 - Monerod requires the privacy services for I2P networking
 - Mining requires monerod for blockchain data
-- Interop (`cast`) requires privacy (Tor) and the sandbox hardening posture, but NOT monerod/mining — EVM interop is independent of the Monero node
+- Interop requires privacy and the sandbox hardening posture, but NOT monerod/mining — EVM interop is independent of the Monero node. `cast` uses the Tor path; the Rabby fallback reuses the privacy phase's fail-closed Mullvad browser path (it sets `MULLVAD_BROWSER_PROFILE` to open a dedicated `wallet` profile through the same kill-switch)
 - Firewall depends on all service installations being complete
 
 ### Generated vs Source Files

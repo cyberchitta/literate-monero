@@ -147,6 +147,29 @@ foundry_version: "v1.7.1"
 # PublicNode, LlamaRPC). No chain/asset is baked in — this is general infra.
 cast_rpc_url: ""
 
+# Rabby browser-extension fallback — the dapp-UI path for the rare interaction
+# that genuinely needs a web frontend (cast is the primary workhorse). Runs in a
+# dedicated `wallet` Chromium profile on the fail-closed Mullvad path. OFF by
+# default and INDEPENDENT of cast_enabled — you can run cast without it.
+rabby_enabled: false
+
+# Pinned Rabby release. Rabby publishes NO checksum and NO signature (inherent to
+# the extension model — the Web Store, not the dev, signs the canonical .crx), so
+# the SHA-256 below is a pin you set yourself: the phase downloads
+# Rabby_<version>.zip, verifies it against this hash, fails closed on mismatch,
+# then self-packs it into a signed .crx and force-installs it from a local
+# file:// manifest (no Web Store round-trip).
+#   NOTE: this is a CONSISTENCY CHECK, not a code audit. It stops a targeted swap
+#   (you getting different bytes than everyone else); it does NOT protect against
+#   an upstream compromise (a bad release shipped to all). The real safety
+#   backstop is a hardware wallet — strongly recommended for this path.
+# To bump: change both lines together and cross-check the hash over >1 path
+# (clearnet + Tor) before pinning:
+#   curl -L <release-zip-url> | sha256sum
+# See keys/README.md for the trust anchor.
+rabby_version: "v0.93.93"
+rabby_sha256: "90414ede7551338ac7e29616c3f7debd71592a5a7651aed69d4ae7a34ffcac74"
+
 # ----------------------------------------------------------------------------
 # Backup Configuration
 # ----------------------------------------------------------------------------
