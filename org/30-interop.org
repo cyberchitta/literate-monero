@@ -333,8 +333,14 @@ SocksPort 0
 
 # Transparent proxy + DNS for everything in the namespace. Stream isolation so
 # distinct destinations get distinct circuits.
-TransPort 127.0.0.1:{{ interop_tor_trans_port }} IsolateClientAddr IsolateDestAddr IsolateDestPort
-DNSPort 127.0.0.1:{{ interop_tor_dns_port }}
+#
+# Bind on the namespace's veth IP, NOT 127.0.0.1: cast's traffic to a remote RPC
+# gets the veth IP as its source, and REDIRECT-ing that to a loopback-bound port
+# makes the kernel drop the packet as a martian (non-loopback source -> 127/8).
+# dnat-ing to this veth IP (see cast-tor) keeps source and dest on the same real
+# local IP, which routes normally.
+TransPort {{ interop_veth_ns_ip }}:{{ interop_tor_trans_port }} IsolateClientAddr IsolateDestAddr IsolateDestPort
+DNSPort {{ interop_veth_ns_ip }}:{{ interop_tor_dns_port }}
 
 # Map resolved names (incl. .onion) to virtual IPs the TransPort recognizes, so
 # an .onion RPC endpoint works the same as a clearnet one.
@@ -541,22 +547,29 @@ ip netns exec "$NETNS" runuser -u tor -- \
 TOR_PID=$!
 
 # 4. nftables INSIDE the namespace — the fail-closed core.
-#    nat_out: tor's own traffic and traffic to the host IP pass through; DNS is
-#    redirected to Tor's DNSPort; every other TCP to Tor's TransPort.
-#    filter_out: default DROP — only loopback, tor's own egress, and the veth
-#    host IP may leave. A static binary issuing raw syscalls has nowhere to go.
+#    nat_out: tor's own traffic (and anything already aimed at the veth IP) passes
+#    through; DNS is dnat'd to Tor's DNSPort and every other TCP to Tor's
+#    TransPort — both on the veth IP ($NS_IP), NOT 127.0.0.1. cast's traffic has
+#    the veth IP as its source, and the kernel drops a non-loopback-source packet
+#    redirected to 127/8 as a martian; dnat-ing to the veth IP keeps source and
+#    dest on the same real local IP, which routes normally.
+#    filter_out: default DROP — only loopback, traffic to the veth IP (the dnat
+#    target), and tor's own egress may leave. A static binary issuing raw
+#    syscalls has nowhere to go.
 ip netns exec "$NETNS" nft -f - <<EOF
 table ip torify {
   chain nat_out {
     type nat hook output priority -100;
     meta skuid tor return
-    meta l4proto udp udp dport 53 redirect to :$DNS_PORT
-    meta l4proto tcp tcp dport 53 redirect to :$DNS_PORT
-    meta l4proto tcp redirect to :$TRANS_PORT
+    ip daddr $NS_IP return
+    meta l4proto udp udp dport 53 dnat to $NS_IP:$DNS_PORT
+    meta l4proto tcp tcp dport 53 dnat to $NS_IP:$DNS_PORT
+    meta l4proto tcp dnat to $NS_IP:$TRANS_PORT
   }
   chain filter_out {
     type filter hook output priority 0; policy drop;
     oifname "lo" accept
+    ip daddr $NS_IP accept
     meta skuid tor accept
     ct state established,related accept
   }
