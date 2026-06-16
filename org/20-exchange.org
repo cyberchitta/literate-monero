@@ -395,6 +395,18 @@ Keywords=monero;xmr;haveno;retoswap;exchange;usdt;
         mode: '0644'
       when: haveno_enabled | bool
       tags: [exchange]
+
+    # When disabled, take the app OUT of the launcher menu so a non-working
+    # (or simply off) RetoSwap isn't advertised or launched by accident. The
+    # AppImage and the /usr/local/bin/haveno-sandboxed CLI launcher are
+    # deliberately left in place (disable is not uninstall) so you can still
+    # launch it by hand to check whether the network has recovered.
+    - name: Remove RetoSwap desktop entry when disabled
+      file:
+        path: /usr/share/applications/retoswap.desktop
+        state: absent
+      when: not (haveno_enabled | bool)
+      tags: [exchange]
 #+end_src
 
 ** Verify Exchange Phase
