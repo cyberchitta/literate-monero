@@ -389,6 +389,39 @@ Log notice stderr
         mode: '0644'
       when: cast_enabled | bool
       tags: [interop]
+
+    # systemd-networkd ships 80-container-ve.network matching `ve-*` (for nspawn
+    # container veths); it would grab cast-tor's ve-interop-* host side, assign
+    # it a 192.168.x/link-local address, and clobber the 10.x gateway the
+    # namespace needs — so the namespace's Tor gets "No route to host". This
+    # higher-priority rule (10- sorts before 80-) marks ve-interop-* Unmanaged,
+    # so networkd leaves cast-tor's addressing alone.
+    - name: Keep systemd-networkd off the cast-tor veth
+      copy:
+        content: |
+          # Generated from org/30-interop.org. Leave the cast-tor veth alone:
+          # ve-interop-* otherwise matches networkd's built-in
+          # 80-container-ve.network, which overwrites cast-tor's address and
+          # breaks the namespace's egress.
+          [Match]
+          Name=ve-interop-*
+
+          [Link]
+          Unmanaged=yes
+        dest: /etc/systemd/network/10-interop-veth.network
+        owner: root
+        group: root
+        mode: '0644'
+      register: interop_veth_netdev
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Reload systemd-networkd so the veth rule takes effect
+      command: networkctl reload
+      when:
+        - cast_enabled | bool
+        - interop_veth_netdev.changed
+      tags: [interop]
 #+end_src
 
 ** Fail-Closed Tor Launcher (=cast-tor=)
@@ -478,6 +511,11 @@ ip link del "$VETH_HOST" 2>/dev/null || true
 ip netns add "$NETNS"
 ip link add "$VETH_HOST" type veth peer name "$VETH_NS"
 ip link set "$VETH_NS" netns "$NETNS"
+# Belt-and-braces: drop any address a network manager raced to assign before we
+# set ours. The deployed 10-interop-veth.network tells systemd-networkd to leave
+# ve-interop-* unmanaged (its built-in 80-container-ve.network matches ve-* and
+# would otherwise overwrite this address and kill the namespace's egress).
+ip addr flush dev "$VETH_HOST" 2>/dev/null || true
 ip addr add "$HOST_IP/24" dev "$VETH_HOST"
 ip link set "$VETH_HOST" up
 ip -n "$NETNS" addr add "$NS_IP/24" dev "$VETH_NS"
