@@ -23,6 +23,7 @@
 #   Feather Wallet: https://github.com/feather-wallet/feather/releases
 #   Trezor Suite: https://github.com/trezor/trezor-suite/releases
 #   Haveno (RetoSwap): https://github.com/retoaccess1/haveno-reto/releases
+#   Foundry (cast): https://github.com/foundry-rs/foundry/releases
 
 # Note: getmonero.org hashes.txt only covers the current release, so fresh
 # installs can only hash-verify the latest version.
@@ -123,6 +124,28 @@ haveno_version: "1.6.0-reto"
 # Asset/rail (USDT on the TRON rail) are chosen at trade time in the GUI, so
 # there is no config var for them. NOTE: the Haveno trade wallet holds HOT,
 # at-risk funds — keep only working balance + open-trade deposits there.
+
+# ----------------------------------------------------------------------------
+# Interop Configuration (cast / Foundry) — optional, opt-in
+# ----------------------------------------------------------------------------
+
+# EVM-chain interop via `cast` (the Foundry CLI signer): receive, balances,
+# transfers, and direct contract calls over Tor. The first tier BEYOND the
+# Monero-native core. OFF by default: with this false the `interop` phase is a
+# complete no-op (no binary, no toolchain). Turn on, then deploy with:
+#   ansible-playbook playbook.yml --tags interop -K
+cast_enabled: false
+
+# Pinned Foundry release tag. Use a VERSIONED tag (vX.Y.Z) — the rolling
+# `stable` tag omits the .sha256 + .sigstore.json this phase verifies against.
+# Foundry publishes no GPG key; the binary is verified via cosign/Sigstore
+# against a pinned certificate identity (see keys/README.md).
+foundry_version: "v1.7.1"
+
+# Optional documented default JSON-RPC endpoint. Leave blank and pass --rpc-url
+# per call, OR set a NO-LOG endpoint here (e.g. https://1rpc.io/eth,
+# PublicNode, LlamaRPC). No chain/asset is baked in — this is general infra.
+cast_rpc_url: ""
 
 # ----------------------------------------------------------------------------
 # Backup Configuration

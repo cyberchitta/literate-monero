@@ -81,6 +81,12 @@ backup_path "/opt/xmrig/build/config.json" "$BACKUP_PATH/mining"
 echo "--- Haveno Exchange ---"
 backup_path "{{ haveno_data_dir }}" "$BACKUP_PATH/haveno"
 
+# Interop: cast encrypted keystore (no-HW-wallet fallback only). Absent when
+# signing is hardware-backed (the preferred path) — backup_path skips cleanly.
+# A hardware wallet's seed is NEVER on the box; back it up out-of-band.
+echo "--- Interop (cast keystore) ---"
+backup_path "{{ foundry_keystore_dir }}" "$BACKUP_PATH/cast"
+
 # Create backup manifest
 echo "--- Creating Manifest ---"
 cat > "$BACKUP_PATH/manifest.txt" << EOF
@@ -104,6 +110,7 @@ Critical configs backed up:
 - KeePassXC databases: /home/{{ dev_user }}/Documents/*.kdbx (encrypted blobs)
 - XMRig config: /opt/xmrig/build/config.json
 - Haveno trade wallet: {{ haveno_data_dir }} (trade wallet, Tor onion key) [if installed]
+- cast keystore: {{ foundry_keystore_dir }} (encrypted; no-HW fallback only) [if present]
 
 NOT backed up (Ansible regenerates):
 - Systemd service files
@@ -176,6 +183,7 @@ if [ $# -lt 1 ]; then
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age home      # Restore user data"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age mining    # Restore mining config"
   echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age haveno    # Restore Haveno trade wallet"
+  echo "  $0 {{ backup_dir }}/backup_20250101_120000.tar.gz.age cast      # Restore cast keystore"
   exit 1
 fi
 
@@ -320,10 +328,20 @@ if [ -n "$RESTORE_PATH" ]; then
         echo "✓ Restored Haveno data dir"
         echo "  Launch when ready (no service): haveno-sandboxed"
         ;;
+      cast)
+        echo "Restoring cast keystore..."
+        install -d -o {{ dev_user }} -g {{ dev_user }} -m 700 \
+          "/home/{{ dev_user }}/.foundry"
+        rsync -av "$EXTRACTED_DIR/cast/" "{{ foundry_keystore_dir }}/"
+        chown -R {{ dev_user }}:{{ dev_user }} "{{ foundry_keystore_dir }}"
+        chmod -R go-rwx "{{ foundry_keystore_dir }}"
+        echo "✓ Restored cast keystore"
+        echo "  Use: cast-tor ... --account <name> --password-file ..."
+        ;;
       *)
         # Whitelist only - a free-form path here would let a tampered
         # backup (or a typo) overwrite arbitrary system directories.
-        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining, haveno)"
+        echo "Error: unknown restore path: $RESTORE_PATH (valid: etc, home, mining, haveno, cast)"
         exit 1
         ;;
     esac

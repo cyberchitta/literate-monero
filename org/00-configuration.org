@@ -142,6 +142,40 @@ haveno_data_dir: "/home/{{ dev_user }}/.local/share/Haveno-reto"
 haveno_appimage_version: "v{{ haveno_version | regex_replace('-reto$', '') }}"
 haveno_appimage_name: "haveno-{{ haveno_appimage_version }}-linux-x86_64.AppImage"
 
+# Interop: cast (Foundry) EVM-chain tooling — CLI signer, off by default
+# (cast_enabled in config.yml). The first tier beyond the Monero-native core.
+# Verified via cosign/Sigstore (Foundry publishes no GPG key); run on demand
+# inside a fail-closed Tor network namespace, never as a service.
+cast_enabled: false
+foundry_install_dir: /opt/foundry
+# Release assets derived from the pinned tag (config.yml: foundry_version). Pin
+# a VERSIONED tag (vX.Y.Z) — the rolling `stable` tag omits the .sha256 +
+# .sigstore.json we verify against.
+foundry_release_base: "https://github.com/foundry-rs/foundry/releases/download/{{ foundry_version }}"
+foundry_tarball: "foundry_{{ foundry_version }}_linux_amd64.tar.gz"
+foundry_sha_file: "foundry_{{ foundry_version }}_linux_amd64.sha256"
+foundry_sigstore_file: "foundry_{{ foundry_version }}_linux_amd64.sigstore.json"
+# Pinned cosign certificate identity: the Foundry release workflow signs the
+# archive keyless via GitHub Actions OIDC. The identity is the workflow path at
+# THIS exact tag, so a binary signed by any other workflow/tag/repo fails closed.
+# See keys/README.md for provenance. (This is the Sigstore analog of a pinned
+# GPG key + signed-hashes chain.)
+foundry_cosign_identity: "https://github.com/foundry-rs/foundry/.github/workflows/release.yml@refs/tags/{{ foundry_version }}"
+foundry_cosign_issuer: "https://token.actions.githubusercontent.com"
+# Fail-closed Tor network namespace for cast (set up on demand by cast-tor).
+# A dedicated Tor runs inside it; nftables redirects cast's traffic to Tor and
+# drops everything else. Independent of the system Tor (privacy phase).
+interop_netns: interop
+interop_veth_host_ip: "10.200.0.1"
+interop_veth_ns_ip: "10.200.0.2"
+interop_veth_subnet: "10.200.0.0/24"
+interop_tor_trans_port: 9040
+interop_tor_dns_port: 9053
+interop_tor_data_dir: /var/lib/tor-interop
+# Encrypted cast keystore (no-HW-wallet fallback only; HW signing leaves no key
+# on disk). Default `cast wallet import` location. Backed up if present.
+foundry_keystore_dir: "/home/{{ dev_user }}/.foundry/keystores"
+
 # MSR (model-specific register) access for XMRig. Gives ~5-15% more
 # hashrate but grants the miner cap_sys_rawio + kernel MSR write access
 # — real hardware-level privilege for a network-facing workload.

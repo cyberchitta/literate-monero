@@ -77,7 +77,9 @@ The Makefile tracks dependencies between org files and their generated fragments
 
 - `00-configuration.org` → Ansible config files + `group_vars/all.yml`
 - `01-validation.org` → Pre-flight validation playbook
-- `10`–`18` range → Installation phases (base system → mining), executed sequentially
+- `10`–`19` range → Installation phases (base system → mining), executed sequentially
+- `20-exchange.org` → Opt-in Monero-native exchange (RetoSwap/Haveno), off by default
+- `30-interop.org` → Opt-in interop tier: `cast` (Foundry) EVM-chain tooling, off by default — first tier beyond the Monero-native core
 - `80`–`84` range → Post-install phases (secrets, firewall, monitoring, backup, verification)
 - `97-updates.org` → Version upgrade management
 - `98-handlers.org` → Ansible handlers (service restarts, reloads)
@@ -88,6 +90,7 @@ The Makefile tracks dependencies between org files and their generated fragments
 - Privacy requires the base system
 - Monerod requires the privacy services for I2P networking
 - Mining requires monerod for blockchain data
+- Interop (`cast`) requires privacy (Tor) and the sandbox hardening posture, but NOT monerod/mining — EVM interop is independent of the Monero node
 - Firewall depends on all service installations being complete
 
 ### Generated vs Source Files

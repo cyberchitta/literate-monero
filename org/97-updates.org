@@ -91,6 +91,24 @@ if [ -n "$HAVENO_CURRENT" ]; then
     IFS='|' read -r HAVENO_STATUS HAVENO_LATEST HAVENO_URL <<< "$HAVENO_CHECK"
 fi
 
+# Check cast (Foundry) - only if the interop phase is enabled. Foundry's
+# releases/latest can point at a nightly, so we match the latest VERSIONED tag
+# (vX.Y.Z) explicitly - the same tags update-cast.sh installs.
+CAST_CURRENT=$(get_current_version "foundry")
+if [ -n "$CAST_CURRENT" ]; then
+    echo -e "${YELLOW}Checking cast (Foundry)...${NC}"
+    CAST_LATEST=$(curl -s "https://api.github.com/repos/foundry-rs/foundry/releases" \
+        | grep '"tag_name"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [ -z "$CAST_LATEST" ]; then
+        CAST_STATUS="error"; CAST_LATEST="unknown"
+    elif [ "${CAST_CURRENT#v}" = "${CAST_LATEST#v}" ]; then
+        CAST_STATUS="up-to-date"
+    else
+        CAST_STATUS="available"
+    fi
+    CAST_URL="https://github.com/foundry-rs/foundry/releases/tag/$CAST_LATEST"
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Summary ===${NC}"
 echo ""
@@ -139,6 +157,18 @@ if [ -n "$HAVENO_CURRENT" ]; then
     fi
 fi
 
+# cast (only shown when the interop phase is configured)
+if [ -n "$CAST_CURRENT" ]; then
+    if [ "$CAST_STATUS" = "available" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${YELLOW}%-10s${NC}\n" "cast" "$CAST_CURRENT" "$CAST_LATEST" "UPDATE"
+        echo "  Release: $CAST_URL"
+    elif [ "$CAST_STATUS" = "up-to-date" ]; then
+        printf "%-15s %-20s ${GREEN}%-20s${NC} ${GREEN}%-10s${NC}\n" "cast" "$CAST_CURRENT" "$CAST_LATEST" "CURRENT"
+    else
+        printf "%-15s %-20s ${RED}%-20s${NC} ${RED}%-10s${NC}\n" "cast" "$CAST_CURRENT" "unknown" "ERROR"
+    fi
+fi
+
 echo ""
 echo -e "${BLUE}=== Update Instructions ===${NC}"
 echo "To update a component:"
@@ -148,6 +178,9 @@ echo "  sudo update-xmrig.sh     # Update XMRig"
 if [ -n "$HAVENO_CURRENT" ]; then
 echo "  sudo update-haveno.sh    # Update Haveno (RetoSwap)"
 fi
+if [ -n "$CAST_CURRENT" ]; then
+echo "  sudo update-cast.sh      # Update cast (Foundry)"
+fi
 echo ""
 echo "To rollback after update:"
 echo "  sudo rollback-monerod.sh  # Rollback Monerod"
@@ -155,6 +188,9 @@ echo "  sudo rollback-p2pool.sh   # Rollback P2Pool"
 echo "  sudo rollback-xmrig.sh    # Rollback XMRig"
 if [ -n "$HAVENO_CURRENT" ]; then
 echo "  sudo rollback-haveno.sh   # Rollback Haveno (RetoSwap)"
+fi
+if [ -n "$CAST_CURRENT" ]; then
+echo "  sudo rollback-cast.sh     # Rollback cast (Foundry)"
 fi
 echo ""
 #+end_src
@@ -735,6 +771,133 @@ echo ""
 rm -f "$BACKUP_CONFIG"
 #+end_src
 
+** Update cast Script
+
+=cast= (Foundry) is a CLI with *no systemd service*. This updater bumps the
+pinned =foundry_version=, re-runs the =interop= phase (which re-downloads,
+re-checks the SHA-256, and re-verifies the cosign/Sigstore signature against the
+pinned cert identity for the *new* tag), then verifies the =/opt/foundry=
+symlink + =cast= binary are in place. On any failure the symlink is repointed
+back to the previous version. Only versioned tags (=vX.Y.Z=) are offered — the
+rolling =stable= tag omits the signature artifacts we verify.
+
+#+begin_src bash :tangle ../configs/templates/update-cast.sh.j2
+#!/bin/bash
+# Update cast (Foundry) to the latest versioned release.
+# Safe atomic update (symlink switch) with automatic rollback on failure.
+# No systemd service: health is verified by cast binary/symlink presence.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
+BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Must run as root${NC}"
+    exit 1
+fi
+
+# Must already be installed (interop phase enabled + deployed)
+if [ ! -e /opt/foundry ]; then
+    echo -e "${RED}cast is not installed.${NC}"
+    echo "Enable it first: set cast_enabled: true in config.yml, then"
+    echo "  ansible-playbook playbook.yml --tags interop -K"
+    exit 1
+fi
+
+CURRENT_VERSION=$(grep "^foundry_version:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+
+# Latest VERSIONED tag (vX.Y.Z). We deliberately skip `stable`/`nightly-*` tags:
+# only versioned releases carry the .sha256 + .sigstore.json the phase verifies.
+echo -e "${BLUE}Checking for latest Foundry (cast) release...${NC}"
+LATEST_VERSION=$(curl -s "https://api.github.com/repos/foundry-rs/foundry/releases" \
+    | grep '"tag_name"' \
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
+    | head -1)
+
+if [ -z "$LATEST_VERSION" ]; then
+    echo -e "${RED}Error: Could not determine latest versioned release${NC}"
+    exit 1
+fi
+
+if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+    echo -e "${GREEN}Already up to date: $CURRENT_VERSION${NC}"
+    exit 0
+fi
+
+echo ""
+echo -e "${YELLOW}Update Available:${NC}"
+echo "  Current: $CURRENT_VERSION"
+echo "  Latest:  $LATEST_VERSION"
+echo ""
+read -p "Proceed with update? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Update cancelled"
+    exit 0
+fi
+
+echo ""
+echo -e "${BLUE}=== Starting cast Update ===${NC}"
+
+echo "Backing up config.yml..."
+cp "$CONFIG_FILE" "$BACKUP_CONFIG"
+
+echo "Updating config.yml to $LATEST_VERSION..."
+sed -i "s/^foundry_version:.*/foundry_version: \"$LATEST_VERSION\"/" "$CONFIG_FILE"
+
+echo "Re-tangling org files..."
+cd "{{ lookup('env', 'HOME') }}/literate-monero"
+./tangle.sh > /dev/null 2>&1
+
+echo "Running Ansible playbook (re-downloads + cosign-verifies the new release)..."
+cd ansible
+if ansible-playbook playbook.yml --tags interop -v; then
+    echo -e "${GREEN}✓ Ansible playbook completed successfully${NC}"
+else
+    echo -e "${RED}✗ Ansible playbook failed${NC}"
+    echo "Rolling back to $CURRENT_VERSION..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    rm -f /opt/foundry
+    ln -s "/opt/foundry-${CURRENT_VERSION}" /opt/foundry
+    exit 1
+fi
+
+echo "Verifying installation..."
+if [ "$(readlink -f /opt/foundry)" = "/opt/foundry-${LATEST_VERSION}" ] \
+   && [ -x /opt/foundry/cast ]; then
+    echo -e "${GREEN}✓ cast ${LATEST_VERSION} installed and verified${NC}"
+else
+    echo -e "${RED}✗ cast binary/symlink not in place after update${NC}"
+    echo "Rolling back to $CURRENT_VERSION..."
+    cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+    rm -f /opt/foundry
+    ln -s "/opt/foundry-${CURRENT_VERSION}" /opt/foundry
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}=== cast Update Complete ===${NC}"
+echo "  Updated: $CURRENT_VERSION → $LATEST_VERSION"
+echo "  Old version kept at: /opt/foundry-${CURRENT_VERSION}"
+echo "  Current version at: /opt/foundry → /opt/foundry-${LATEST_VERSION}"
+echo ""
+echo "Run over Tor (no service):"
+echo "  cast-tor block-number --rpc-url <no-log RPC>"
+echo ""
+echo "Rollback if needed:"
+echo "  sudo rollback-cast.sh"
+echo ""
+
+rm -f "$BACKUP_CONFIG"
+#+end_src
+
 ** Rollback Monerod Script
 
 #+begin_src bash :tangle ../configs/templates/rollback-monerod.sh.j2
@@ -1167,6 +1330,91 @@ echo "  haveno-sandboxed"
 echo ""
 #+end_src
 
+** Rollback cast Script
+
+#+begin_src bash :tangle ../configs/templates/rollback-cast.sh.j2
+#!/bin/bash
+# Rollback cast (Foundry) to a previous version
+# No systemd service: this just repoints /opt/foundry to an older versioned dir.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error: Must run as root${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}=== cast Rollback ===${NC}"
+echo ""
+
+echo "Available cast versions:"
+VERSIONS=()
+INDEX=1
+for dir in /opt/foundry-*; do
+    if [ -d "$dir" ]; then
+        VERSION=$(basename "$dir" | sed 's/foundry-//')
+        VERSIONS+=("$VERSION")
+
+        CURRENT=$(readlink -f /opt/foundry 2>/dev/null | xargs basename 2>/dev/null | sed 's/foundry-//')
+        if [ "$VERSION" = "$CURRENT" ]; then
+            echo "  $INDEX) $VERSION ${GREEN}(current)${NC}"
+        else
+            echo "  $INDEX) $VERSION"
+        fi
+        ((INDEX++))
+    fi
+done
+
+if [ {% raw %}${#VERSIONS[@]}{% endraw %} -eq 0 ]; then
+    echo -e "${RED}No cast versions found in /opt${NC}"
+    exit 1
+fi
+
+echo ""
+read -p "Select version to rollback to (1-{% raw %}${#VERSIONS[@]}{% endraw %}): " SELECTION
+
+if ! [[ "$SELECTION" =~ ^[0-9]+$ ]] || [ "$SELECTION" -lt 1 ] || [ "$SELECTION" -gt {% raw %}${#VERSIONS[@]}{% endraw %} ]; then
+    echo -e "${RED}Invalid selection${NC}"
+    exit 1
+fi
+
+TARGET_VERSION="${VERSIONS[$((SELECTION-1))]}"
+
+echo ""
+echo -e "${YELLOW}Rolling back to: $TARGET_VERSION${NC}"
+read -p "Proceed? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Rollback cancelled"
+    exit 0
+fi
+
+echo "Updating symlink..."
+rm -f /opt/foundry
+ln -s "/opt/foundry-${TARGET_VERSION}" /opt/foundry
+
+if [ -x /opt/foundry/cast ]; then
+    echo -e "${GREEN}✓ cast now linked to: $TARGET_VERSION${NC}"
+else
+    echo -e "${RED}✗ No cast binary found under /opt/foundry-${TARGET_VERSION}${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}=== Rollback Complete ===${NC}"
+echo "  cast now at: $TARGET_VERSION"
+echo ""
+echo "Run over Tor (no service):"
+echo "  cast-tor block-number --rpc-url <no-log RPC>"
+echo ""
+#+end_src
+
 ** Deploy Update Management Scripts
 
 #+begin_src yaml :tangle ../ansible/fragments/97-updates.yml
@@ -1185,10 +1433,12 @@ echo ""
         - update-p2pool.sh
         - update-xmrig.sh
         - update-haveno.sh
+        - update-cast.sh
         - rollback-monerod.sh
         - rollback-p2pool.sh
         - rollback-xmrig.sh
         - rollback-haveno.sh
+        - rollback-cast.sh
       tags: [updates, scripts]
 #+end_src
 
@@ -1233,12 +1483,14 @@ echo ""
           - "  sudo update-p2pool.sh        # Update P2Pool"
           - "  sudo update-xmrig.sh         # Update XMRig"
           - "  sudo update-haveno.sh        # Update Haveno (RetoSwap, if enabled)"
+          - "  sudo update-cast.sh          # Update cast (Foundry, if enabled)"
           - ""
           - "Rollback commands:"
           - "  sudo rollback-monerod.sh     # Rollback Monerod"
           - "  sudo rollback-p2pool.sh      # Rollback P2Pool"
           - "  sudo rollback-xmrig.sh       # Rollback XMRig"
           - "  sudo rollback-haveno.sh      # Rollback Haveno (RetoSwap, if enabled)"
+          - "  sudo rollback-cast.sh        # Rollback cast (Foundry, if enabled)"
           - ""
           - "All updates are atomic with automatic rollback on failure"
           - "Old versions are kept in /opt/<component>-<version>"

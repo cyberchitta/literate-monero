@@ -60,3 +60,32 @@ Provenance, ideally over more than one network path (clearnet + Tor).
 If a key ever changes upstream, treat it as an incident: investigate
 before updating the pinned copy, and record the rationale in the commit
 message.
+
+## Non-GPG trust anchor: Foundry `cast` (cosign / Sigstore)
+
+The `interop` phase (`org/30-interop.org`) verifies the `cast` binary, but
+**Foundry publishes no GPG key** — so there is no `.asc` file for it here.
+Its first-party signature chain is **cosign / Sigstore** instead: each
+versioned release ships `foundry_<ver>_linux_amd64.sigstore.json`, a keyless
+signature produced by Foundry's release GitHub Actions workflow. The trust
+anchor is therefore not a key file but a **pinned certificate identity**,
+recorded here for auditability (it lives in `group_vars` as
+`foundry_cosign_identity` / `foundry_cosign_issuer`):
+
+| Field | Value |
+|-------|-------|
+| `--certificate-identity` | `https://github.com/foundry-rs/foundry/.github/workflows/release.yml@refs/tags/<tag>` |
+| `--certificate-oidc-issuer` | `https://token.actions.githubusercontent.com` |
+
+The phase checks the release `.sha256`, then runs `cosign verify-blob` over
+the `.tar.gz` against that identity, failing closed on any mismatch. We pin a
+**versioned** tag (`vX.Y.Z`); the rolling `stable` tag omits the `.sha256` and
+`.sigstore.json`. Foundry documents this verification (plus the equivalent
+`gh attestation verify --repo foundry-rs/foundry`) in its `SECURITY.md`.
+
+Provenance (confirmed 2026-06-16): the certificate identity above was read
+from the actual decoded signing cert in the published
+`foundry_v1.7.1_linux_amd64.sigstore.json`, and matches the `release.yml`
+workflow at tag `v1.7.1`. `cosign` itself is the official Arch `extra/cosign`
+package. If the workflow path or issuer ever changes upstream, treat it as an
+incident (as with the GPG keys above) before updating the pinned identity.

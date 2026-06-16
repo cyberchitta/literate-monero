@@ -1,0 +1,713 @@
+** Overview
+
+This phase adds an *optional, opt-in* way to interact with *external (non-Monero)
+EVM chains* from the sovereign node, using *=cast=* (the Foundry CLI). It is the
+first tier *beyond* the Monero-native core — hence the 30s file band, deliberately
+outside the 10–20 install sequence — per the widened project scope: a *sovereign,
+privacy-first crypto stack anchored by Monero*.
+
+This is *general EVM-interop infrastructure*, not a use-case recipe. =cast= is a
+CLI signer that talks JSON-RPC directly to an EVM node: it covers *receive* (just
+an address), *balances*, *transfers*, and *direct contract calls*
+(=cast call= for reads, =cast send= for writes). No dapp frontend, no browser, no
+Cloudflare-fronted website in the loop — so it routes cleanly over Tor and is
+fully auditable and scriptable. (A browser-based dapp fallback — the Rabby
+extension in the existing Mullvad-Chromium path — is a *separate, later* component
+and is not built here.)
+
+It is *off by default*. Nothing is installed unless =cast_enabled: true= in
+=config.yml=. Even when enabled there is *no systemd service and no autostart*:
+=cast= is a CLI you invoke by hand, and its network path (a dedicated Tor inside a
+throwaway network namespace) only exists for the duration of a single invocation.
+
+*** Dependencies
+
+This phase depends on *privacy* (Tor must be installed — phase =privacy=) and
+the *sandbox* phase's hardening posture. It does *NOT* depend on monerod or
+mining: EVM interop is independent of the Monero node.
+
+*** Why Tor in a network namespace (and not torsocks or a proxy flag)
+
+=cast= is a statically-linked Rust binary. Two tempting routes both fail:
+
+- *=torsocks=* works by =LD_PRELOAD=-intercepting libc calls. A static Rust
+  binary has libc compiled in (or issues raw syscalls), so the interposition is
+  a no-op and traffic egresses *in the clear* — and torsocks then *runs anyway*
+  (fail-*open*). Unacceptable.
+- *A SOCKS proxy env var* (=ALL_PROXY=socks5h://…=) relies on Foundry's reqwest
+  stack having the =socks= feature compiled in. Its release builds *do not*, so
+  =cast= rejects a SOCKS URL. Not dependable.
+
+So we put =cast= in a *network namespace whose only egress is Tor*. A dedicated
+=tor= runs inside the namespace; nftables transparently redirects =cast='s TCP to
+Tor's =TransPort= and its DNS to Tor's =DNSPort=, with a default-=drop= policy.
+Anything that tries to leave another way — raw syscalls, ignored proxy env, a
+static binary — has *nowhere to go* and is dropped. This is *fail-closed* and
+*binary-agnostic*, and every rule is plain =ip=/=nft= you can read. The launcher
+additionally *refuses to run =cast= until it has confirmed* (via
+=check.torproject.org/api/ip=) that the namespace's exit really is a Tor relay.
+
+*** Why cosign / Sigstore (and not a pinned GPG key)
+
+Every other download-verifying phase here pins a maintainer *GPG key* in =keys/=
+and checks a signed hashes manifest. *Foundry publishes no GPG key.* Its
+first-party signature chain is *Sigstore / cosign*: each versioned release ships
+=foundry_<ver>_linux_amd64.sigstore.json=, a keyless signature produced by the
+release GitHub Actions workflow and verifiable *offline* against a *pinned
+certificate identity* (the workflow path + the exact tag). We therefore verify
+the SHA-256, then =cosign verify-blob= against that pinned identity, failing
+closed on any mismatch. The pinned identity is recorded in =keys/README.md=
+alongside the GPG fingerprints — it is the same kind of trust anchor, just a
+different signature scheme. (We pin a *versioned* tag, never the rolling =stable=
+tag: only versioned tags carry the =.sha256= + =.sigstore.json=.)
+
+*** Custody: hardware wallet first, no resident hot key
+
+=cast= signs with a *hardware wallet* (=cast … --trezor= / =--ledger=): the
+private key never touches the disk, and every signature needs a physical button
+press at the box's console. We install the Trezor udev rules so this works for
+the =dev= user. An *encrypted keystore* (=cast wallet import --keystore=, stored
+under =~/.foundry/keystores=) is the *no-hardware fallback* — still never a
+plaintext key on disk. There is no default key material; you provision one
+out-of-band.
+
+** Install Dependencies
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    # ------------------------------------------------------------------------
+    # Interop: cast (Foundry) — optional, opt-in, off by default
+    # ------------------------------------------------------------------------
+    # Everything here is gated on `cast_enabled` (config.yml). With it false
+    # (the default) the whole `interop` tag is a no-op: no download, no
+    # toolchain, no namespace, nothing.
+
+    - name: Install cast (Foundry) runtime + verification dependencies
+      community.general.pacman:
+        name:
+          - cosign       # verifies the Sigstore bundle (Arch extra/cosign)
+          - nftables     # transparent-torify rules inside the netns
+          - tor          # dedicated Tor instance runs inside the netns
+        state: present
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+** Verify and Install the cast Binary
+
+Foundry's versioned release ships =foundry_<ver>_linux_amd64.tar.gz= (bundling
+=forge=, =cast=, =anvil=, =chisel=), a =.sha256= of that archive, and a
+=.sigstore.json= cosign bundle. We check the SHA-256, then =cosign verify-blob=
+the archive against the *pinned* certificate identity for this exact tag, and
+only then extract =cast= into a versioned =/opt= directory. A re-run never trusts
+a partially-downloaded or tampered file.
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Set versioned Foundry directory
+      set_fact:
+        foundry_versioned_dir: "{{ foundry_install_dir }}-{{ foundry_version }}"
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Check if this cast version is already installed
+      stat:
+        path: "{{ foundry_versioned_dir }}/cast"
+      register: cast_version_exists
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Download Foundry release archive
+      get_url:
+        url: "{{ foundry_release_base }}/{{ foundry_tarball }}"
+        dest: /tmp/foundry.tar.gz
+        mode: '0644'
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Download Foundry SHA-256 file
+      get_url:
+        url: "{{ foundry_release_base }}/{{ foundry_sha_file }}"
+        dest: /tmp/foundry.sha256
+        mode: '0644'
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Download Foundry Sigstore bundle
+      get_url:
+        url: "{{ foundry_release_base }}/{{ foundry_sigstore_file }}"
+        dest: /tmp/foundry.sigstore.json
+        mode: '0644'
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Extract expected SHA-256 for the Foundry archive
+      shell: |
+        awk '{ print $1; exit }' /tmp/foundry.sha256
+      register: foundry_expected_hash
+      changed_when: false
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Fail if expected Foundry hash is not a sha256 hex string
+      fail:
+        msg: |
+          Could not extract a valid sha256 from {{ foundry_sha_file }}
+          (got: '{{ foundry_expected_hash.stdout }}').
+
+          The release asset naming may have changed, or {{ foundry_version }}
+          may be the rolling `stable` tag (which omits the .sha256). Pin a
+          versioned tag and check the assets at
+          https://github.com/foundry-rs/foundry/releases/tag/{{ foundry_version }}
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+        - foundry_expected_hash.stdout is not match('^[a-f0-9]{64}$')
+      tags: [interop]
+
+    - name: Compute Foundry download hash
+      stat:
+        path: /tmp/foundry.tar.gz
+        checksum_algorithm: sha256
+      register: foundry_download_stat
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Fail if Foundry archive hash mismatch
+      fail:
+        msg: |
+          Foundry archive SHA-256 verification failed!
+          Expected: {{ foundry_expected_hash.stdout }}
+          Got:      {{ foundry_download_stat.stat.checksum }}
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+        - foundry_download_stat.stat.checksum != foundry_expected_hash.stdout
+      tags: [interop]
+
+    # The cosign bundle is the real first-party signature: a keyless Sigstore
+    # signature whose certificate identity is the Foundry release workflow at
+    # THIS exact tag. Pinning --certificate-identity to that SAN (not a loose
+    # regexp) means a binary signed by any other workflow/tag/repo fails closed.
+    # The signature is over the .tar.gz, so we verify the archive, then extract.
+    - name: Verify Foundry archive Sigstore signature (cosign)
+      command: >
+        cosign verify-blob
+        --bundle /tmp/foundry.sigstore.json
+        --certificate-identity {{ foundry_cosign_identity }}
+        --certificate-oidc-issuer {{ foundry_cosign_issuer }}
+        /tmp/foundry.tar.gz
+      changed_when: false
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Create versioned Foundry directory
+      file:
+        path: "{{ foundry_versioned_dir }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0755'
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    # Extract only `cast` from the verified archive. forge/anvil/chisel are dev
+    # tooling we deliberately do not install on the node.
+    - name: Extract verified cast binary
+      unarchive:
+        src: /tmp/foundry.tar.gz
+        dest: "{{ foundry_versioned_dir }}"
+        remote_src: yes
+        include:
+          - cast
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+      register: cast_installed
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Ensure cast is executable
+      file:
+        path: "{{ foundry_versioned_dir }}/cast"
+        mode: '0755'
+      when:
+        - cast_enabled | bool
+        - not cast_version_exists.stat.exists
+      tags: [interop]
+
+    - name: Clean up Foundry download files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/foundry.tar.gz
+        - /tmp/foundry.sha256
+        - /tmp/foundry.sigstore.json
+      when:
+        - cast_enabled | bool
+        - cast_installed.changed
+      tags: [interop]
+
+    - name: Update Foundry symlink to current version
+      file:
+        src: "{{ foundry_versioned_dir }}"
+        dest: "{{ foundry_install_dir }}"
+        state: link
+        force: yes
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+** Hardware-Wallet Access (Trezor udev rules)
+
+So =cast … --trezor= can reach the device as the =dev= user (USB passes straight
+through the network namespace — it isolates the network only, not USB). These are
+SatoshiLabs' published rules for Trezor One (=534c:0001=) and Trezor Model
+T/Safe (=1209:53c0/53c1=).
+
+#+begin_src udevrules :tangle ../configs/templates/51-trezor.rules.j2
+# Trezor udev rules (SatoshiLabs) — deployed by org/30-interop.org so the
+# dev user can sign with `cast --trezor`. Provenance: trezor/trezor-firmware
+# (common/udev/51-trezor.rules).
+
+# Trezor One
+SUBSYSTEM=="usb", ATTR{idVendor}=="534c", ATTR{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="trezor%n"
+KERNEL=="hidraw*", ATTRS{idVendor}=="534c", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+# Trezor Model T / Safe
+SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="53c0", MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="trezor%n"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="53c1", MODE="0660", GROUP="plugdev", TAG+="uaccess", SYMLINK+="trezor%n"
+KERNEL=="hidraw*", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="53c0", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="53c1", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Install Trezor udev rules (for cast --trezor signing)
+      template:
+        src: ../configs/templates/51-trezor.rules.j2
+        dest: /etc/udev/rules.d/51-trezor.rules
+        owner: root
+        group: root
+        mode: '0644'
+      register: trezor_udev
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Reload udev rules after installing Trezor rules
+      shell: udevadm control --reload-rules && udevadm trigger
+      when:
+        - cast_enabled | bool
+        - trezor_udev.changed
+      tags: [interop]
+#+end_src
+
+** Dedicated Tor Config for the Interop Namespace
+
+A *separate* Tor instance, run *only inside* the =interop= network namespace by
+the launcher below. It listens on the namespace's loopback; the namespace's
+nftables rules redirect =cast='s traffic to these ports. It is unrelated to the
+system Tor from the =privacy= phase (which keeps its own =torrc=, ports, and data
+dir untouched).
+
+#+begin_src conf :tangle ../configs/templates/interop-torrc.j2
+## Dedicated Tor for the interop network namespace.
+## Generated from org/30-interop.org. Started on demand by cast-tor, never as a
+## service. DataDirectory is passed on the command line (interop_tor_data_dir).
+
+# No SOCKS — cast cannot use it; we torify transparently instead.
+SocksPort 0
+
+# Transparent proxy + DNS for everything in the namespace. Stream isolation so
+# distinct destinations get distinct circuits.
+TransPort 127.0.0.1:{{ interop_tor_trans_port }} IsolateClientAddr IsolateDestAddr IsolateDestPort
+DNSPort 127.0.0.1:{{ interop_tor_dns_port }}
+
+# Map resolved names (incl. .onion) to virtual IPs the TransPort recognizes, so
+# an .onion RPC endpoint works the same as a clearnet one.
+AutomapHostsOnResolve 1
+VirtualAddrNetworkIPv4 10.192.0.0/10
+
+ClientOnly 1
+AvoidDiskWrites 1
+Log notice stderr
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy dedicated interop Tor configuration
+      template:
+        src: ../configs/templates/interop-torrc.j2
+        dest: /etc/tor/interop-torrc
+        owner: root
+        group: root
+        mode: '0644'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Create interop Tor data directory
+      file:
+        path: "{{ interop_tor_data_dir }}"
+        state: directory
+        owner: tor
+        group: tor
+        mode: '0700'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    # Inside `ip netns exec`, /etc/netns/<ns>/* is bind-mounted over /etc/*.
+    # Point the namespace's resolver at its own loopback so getaddrinfo() hits
+    # the redirect rule (-> Tor DNSPort), never a real resolver.
+    - name: Create interop netns /etc directory
+      file:
+        path: "/etc/netns/{{ interop_netns }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Deploy interop netns resolv.conf (loopback only)
+      copy:
+        content: "nameserver 127.0.0.1\n"
+        dest: "/etc/netns/{{ interop_netns }}/resolv.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+** Fail-Closed Tor Launcher (=cast-tor=)
+
+This wrapper is to =cast= what =mullvad-browser.py= is to the browser: it brings
+the private network path up, *verifies it before use*, runs the tool, and tears
+everything down on exit. Run it as =cast-tor <cast args>= — it re-execs under
+=sudo= for the privileged namespace setup, then runs =cast= as you.
+
+What it guarantees:
+- A throwaway =interop= network namespace whose *only* viable egress is Tor.
+- nftables with =policy drop=: =cast='s TCP is redirected to Tor's =TransPort=,
+  its DNS to Tor's =DNSPort=, and *everything else is dropped* — no leak path.
+- It *refuses to run =cast=* unless =check.torproject.org/api/ip= confirms the
+  exit is a Tor relay.
+- A =trap= tears the namespace, the dedicated Tor, and the host masquerade rule
+  down however the script exits (success, error, Ctrl-C).
+
+#+begin_src bash :tangle ../configs/templates/cast-tor.j2
+#!/bin/bash
+# Fail-closed Tor launcher for cast (Foundry).
+# Generated from org/30-interop.org.
+#
+# Runs `cast` inside a throwaway network namespace whose only egress is a
+# dedicated Tor. nftables redirects cast's TCP -> Tor TransPort and DNS ->
+# Tor DNSPort with a default-drop policy, so nothing can leak around Tor.
+# The launcher confirms a Tor exit before running cast, and tears the whole
+# setup down on exit.
+
+set -euo pipefail
+
+NETNS="{{ interop_netns }}"
+VETH_HOST="ve-interop-h"
+VETH_NS="ve-interop-n"
+HOST_IP="{{ interop_veth_host_ip }}"
+NS_IP="{{ interop_veth_ns_ip }}"
+SUBNET="{{ interop_veth_subnet }}"
+TOR_RC="/etc/tor/interop-torrc"
+TOR_DATA="{{ interop_tor_data_dir }}"
+TRANS_PORT="{{ interop_tor_trans_port }}"
+DNS_PORT="{{ interop_tor_dns_port }}"
+CAST="{{ foundry_install_dir }}/cast"
+
+# The user cast should run as (the human who invoked us, even via sudo).
+RUN_USER="${SUDO_USER:-{{ dev_user }}}"
+
+if [ ! -x "$CAST" ]; then
+  echo "cast-tor: cast not found/verified at $CAST" >&2
+  echo "Enable and install the interop phase first:" >&2
+  echo "  set cast_enabled: true in config.yml, then" >&2
+  echo "  ansible-playbook playbook.yml --tags interop -K" >&2
+  exit 1
+fi
+
+# Privileged setup needs root; re-exec under sudo, preserving args.
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo -- "$0" "$@"
+fi
+
+WAN_IF="$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')"
+if [ -z "$WAN_IF" ]; then
+  echo "cast-tor: no default route — cannot reach Tor network" >&2
+  exit 1
+fi
+
+TOR_PID=""
+cleanup() {
+  set +e
+  [ -n "$TOR_PID" ] && kill "$TOR_PID" 2>/dev/null
+  # Kill any stragglers still living in the namespace.
+  ip netns pids "$NETNS" 2>/dev/null | xargs -r kill 2>/dev/null
+  # Remove the host masquerade + forward-allow rules we added.
+  iptables -t nat -D POSTROUTING -s "$SUBNET" -o "$WAN_IF" -j MASQUERADE 2>/dev/null
+  iptables -D FORWARD -i "$VETH_HOST" -o "$WAN_IF" -j ACCEPT 2>/dev/null
+  iptables -D FORWARD -i "$WAN_IF" -o "$VETH_HOST" -j ACCEPT 2>/dev/null
+  ip netns del "$NETNS" 2>/dev/null
+  ip link del "$VETH_HOST" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# Clear any stale namespace from a previous crashed run.
+ip netns del "$NETNS" 2>/dev/null || true
+ip link del "$VETH_HOST" 2>/dev/null || true
+
+# 1. Namespace + veth pair. The namespace's default route is the host side of
+#    the veth; it has no other interface.
+ip netns add "$NETNS"
+ip link add "$VETH_HOST" type veth peer name "$VETH_NS"
+ip link set "$VETH_NS" netns "$NETNS"
+ip addr add "$HOST_IP/24" dev "$VETH_HOST"
+ip link set "$VETH_HOST" up
+ip -n "$NETNS" addr add "$NS_IP/24" dev "$VETH_NS"
+ip -n "$NETNS" link set "$VETH_NS" up
+ip -n "$NETNS" link set lo up
+ip -n "$NETNS" route add default via "$HOST_IP"
+
+# 2. Host masquerade + forwarding for ONLY this namespace's subnet out the WAN.
+#    The only namespace traffic that ever reaches here is the dedicated Tor's
+#    own outbound (everything else is redirected to Tor or dropped, in step 4).
+#    The FORWARD rules are inserted at the TOP of the chain so they take effect
+#    even though ufw's default forward policy is DROP (this box runs ufw).
+sysctl -q -w net.ipv4.ip_forward=1
+iptables -t nat -A POSTROUTING -s "$SUBNET" -o "$WAN_IF" -j MASQUERADE
+iptables -I FORWARD -i "$VETH_HOST" -o "$WAN_IF" -j ACCEPT
+iptables -I FORWARD -i "$WAN_IF" -o "$VETH_HOST" -j ACCEPT
+
+# 3. Dedicated Tor INSIDE the namespace, running as the tor user so the
+#    owner-match in step 4 can exempt its outbound. Persistent DataDirectory
+#    means guard nodes are remembered, so later runs bootstrap fast.
+ip netns exec "$NETNS" runuser -u tor -- \
+  tor -f "$TOR_RC" --DataDirectory "$TOR_DATA" --quiet &
+TOR_PID=$!
+
+# 4. nftables INSIDE the namespace — the fail-closed core.
+#    nat_out: tor's own traffic and traffic to the host IP pass through; DNS is
+#    redirected to Tor's DNSPort; every other TCP to Tor's TransPort.
+#    filter_out: default DROP — only loopback, tor's own egress, and the veth
+#    host IP may leave. A static binary issuing raw syscalls has nowhere to go.
+ip netns exec "$NETNS" nft -f - <<EOF
+table ip torify {
+  chain nat_out {
+    type nat hook output priority -100;
+    meta skuid tor return
+    meta l4proto udp udp dport 53 redirect to :$DNS_PORT
+    meta l4proto tcp tcp dport 53 redirect to :$DNS_PORT
+    meta l4proto tcp redirect to :$TRANS_PORT
+  }
+  chain filter_out {
+    type filter hook output priority 0; policy drop;
+    oifname "lo" accept
+    meta skuid tor accept
+    ct state established,related accept
+  }
+}
+EOF
+
+# 5. Fail-closed verification: do not run cast until the namespace's exit is a
+#    confirmed Tor relay. This also waits out Tor's bootstrap (the check only
+#    succeeds once circuits are up).
+confirm_tor() {
+  local out
+  for _ in $(seq 1 30); do
+    out="$(ip netns exec "$NETNS" curl -s --max-time 15 \
+            https://check.torproject.org/api/ip 2>/dev/null || true)"
+    if printf '%s' "$out" | grep -q '"IsTor":true'; then
+      echo "cast-tor: Tor exit confirmed ($(printf '%s' "$out" \
+            | grep -o '"IP":"[^"]*"'))" >&2
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+if ! confirm_tor; then
+  echo "cast-tor: REFUSING to run — could not confirm a Tor exit." >&2
+  echo "  No traffic was sent in the clear; the namespace is fail-closed." >&2
+  exit 1
+fi
+
+# 6. Run cast as the invoking user, inside the torified namespace. We do NOT
+#    exec, so the trap above still tears everything down afterwards.
+set +e
+ip netns exec "$NETNS" runuser -u "$RUN_USER" -- \
+  env HOME="/home/$RUN_USER" "$CAST" "$@"
+rc=$?
+set -e
+exit "$rc"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy cast-tor launcher
+      template:
+        src: ../configs/templates/cast-tor.j2
+        dest: /usr/local/bin/cast-tor
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    # The launcher needs root for namespace/nftables setup but runs cast as the
+    # human. Allow the dev user to invoke exactly this script without a password
+    # (mirrors the mullvad-vpn sudoers grant in the privacy phase).
+    - name: Configure sudo access for the cast-tor launcher
+      copy:
+        content: |
+          # Allow dev user to run the fail-closed cast Tor launcher
+          {{ dev_user }} ALL=(ALL) NOPASSWD: /usr/local/bin/cast-tor
+        dest: /etc/sudoers.d/interop-cast
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+** Verify Interop Phase
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Check cast binary is installed
+      stat:
+        path: "{{ foundry_install_dir }}/cast"
+      register: cast_binary
+      when: cast_enabled | bool
+      tags: [interop, verify]
+
+    - name: Get installed cast version
+      command: "{{ foundry_install_dir }}/cast --version"
+      register: cast_version_out
+      changed_when: false
+      failed_when: false
+      when:
+        - cast_enabled | bool
+        - cast_binary.stat.exists
+      tags: [interop, verify]
+
+    - name: Display interop phase status
+      debug:
+        msg:
+          - "=== Interop (cast / Foundry) Setup Complete ==="
+          - ""
+          - "Pinned release: {{ foundry_version }}"
+          - "cast: {% if cast_binary.stat.exists %}installed and verified (cosign){% else %}MISSING{% endif %}"
+          - "{% if cast_version_out.stdout is defined %}{{ cast_version_out.stdout_lines[0] | default('') }}{% endif %}"
+          - ""
+          - "No service and no autostart by design. Run over Tor on demand:"
+          - "  cast-tor block-number --rpc-url <no-log RPC>"
+          - "  cast-tor balance <addr> --rpc-url <no-log RPC>"
+          - ""
+          - "cast-tor runs cast in a fail-closed Tor network namespace and"
+          - "refuses to proceed unless a Tor exit is confirmed."
+          - ""
+          - "Sign with a hardware wallet (cast … --trezor); the Trezor udev"
+          - "rules are installed. Keys are never resident on disk."
+      when: cast_enabled | bool
+      tags: [interop, verify]
+#+end_src
+
+** Notes
+
+*** Three layers of "off"
+
+1. =cast_enabled: false= → nothing lands (no binary, no cosign/nftables, no
+   namespace config).
+2. Installed-but-no-service → nothing runs at boot.
+3. On-demand =cast-tor= → the dedicated Tor and the network namespace exist only
+   for the duration of one =cast= invocation, then are torn down.
+
+*** Running cast
+
+#+begin_example
+# Always via the launcher (never bare `cast` — that would not be torified):
+cast-tor block-number --rpc-url https://1rpc.io/eth
+cast-tor balance 0xYourAddress --rpc-url https://1rpc.io/eth
+cast-tor call <contract> "name()(string)" --rpc-url https://1rpc.io/eth
+
+# Sending (hardware wallet; confirm on the Trezor at the console):
+cast-tor send <contract> "transfer(address,uint256)" <to> <amount> \
+  --trezor --rpc-url https://1rpc.io/eth
+#+end_example
+
+The first run with a fresh Tor data dir takes ~10–30 s to bootstrap; later runs
+are faster because the guard nodes persist in ={{ interop_tor_data_dir }}=.
+
+*** No-log RPC endpoints
+
+=cast= needs a JSON-RPC endpoint. Choose a *no-log* provider and pass it
+explicitly with =--rpc-url= — never rely on a hidden default. Reasonable choices
+(set =cast_rpc_url= in =config.yml= if you want a documented default, or just
+pass =--rpc-url= each time):
+
+- =https://1rpc.io/…= (TEE-attested, zero-trace)
+- PublicNode (=https://…-rpc.publicnode.com=)
+- LlamaRPC (=https://…/rpc.llamarpc.com=)
+
+No chain or asset is baked in — this is general infrastructure; you pick the
+endpoint per call.
+
+*** Confirming there is no leak (on-box acceptance test)
+
+The launcher already refuses to run unless =check.torproject.org/api/ip= reports
+a Tor exit. To prove independently that *nothing* bypasses Tor, sniff the real
+uplink while a =cast-tor= command runs:
+
+#+begin_example
+# Terminal A (host, real interface — expect ONLY encrypted Tor guard traffic,
+# no plaintext DNS, no direct connection to the RPC host):
+sudo tcpdump -ni <wan-iface> 'port 53 or host <rpc-ip>'
+
+# Terminal B:
+cast-tor block-number --rpc-url https://1rpc.io/eth
+#+end_example
+
+A DNS packet or a direct connection to the RPC host on the real interface would
+indicate a leak; none should appear.
+
+*** Custody and keys
+
+- *Hardware wallet (preferred):* =cast … --trezor= (or =--ledger=). The key never
+  touches disk; each signature needs a console button press. Trezor udev rules
+  are installed by this phase. Back up the *seed* out-of-band (paper/steel) — it
+  is never on the box.
+- *Encrypted keystore (no-HW fallback):* =cast wallet import <name> --interactive=
+  writes an encrypted JSON keystore under =~/.foundry/keystores=; use it with
+  =--account <name> --password-file=… =. Still no plaintext key on disk. (Backing
+  this directory up is handled when the backup hook for it is added.)
+
+*** Why this is the "least-leaky" edge, not a maximally-private one
+
+Interacting with a transparent public EVM chain is inherently less private than
+Monero: balances, transfers, and contract calls are visible on-chain, and the
+address graph is analyzable. This phase makes the *network* path sovereign and
+private (self-hosted, Tor-routed, no trusted RPC that logs your IP) and keeps
+*custody* hardware-backed — but it does not, and cannot, make the *chain*
+private. It exists because some interop is necessary, and this is the least-leaky
+way to do it.
+
+*** Updating
+
+A presence-based =update-cast= (bump =foundry_version= in =config.yml=, re-verify
+via cosign, atomic =/opt/foundry= symlink switch) is added with the other
+updaters. There is no service to restart.
