@@ -124,8 +124,12 @@ Runs =$SSH_ORIGINAL_COMMAND= (for =ssh ops@box "cmd"=) — or an interactive log
 #
 # The real boundary is uid separation: ops cannot read {{ dev_user }}/root keys
 # (0700, owned by another uid). bubblewrap is defense-in-depth — it blanks the
-# secret paths and narrows the FS. Mount set KEEP IN SYNC with
+# secret paths and narrows the FS. The secret-blanking set (--bind home, then the
+# .secrets/.config tmpfs overlays) is KEEP IN SYNC with
 # /usr/local/bin/claude-code-sandboxed and org/80-secrets-isolation.org.
+# The extra --bind-try of the interop proposal spool is ops-only (no secret path)
+# so a sandboxed session can stage cast-propose artifacts; it is a no-op when the
+# interop phase is not deployed.
 set -euo pipefail
 
 jail() {
@@ -137,6 +141,7 @@ jail() {
     --tmpfs /home/{{ dev_user }}/.secrets \
     --tmpfs /home/{{ dev_user }}/.config/chromium \
     --bind /tmp /tmp \
+    --bind-try {{ interop_proposal_dir }} {{ interop_proposal_dir }} \
     --unshare-all \
     --share-net \
     --die-with-parent \
@@ -326,7 +331,7 @@ ssh ops@<box>.local "cast --version"
 ssh ops@<box>.local
 #+end_example
 
-Every =ops= session is forced through =/usr/local/bin/ops-sandbox= (bubblewrap), runs as a non-privileged uid with no sudo, and cannot read =dev=/root secrets. The propose/approve signer for trades is added in the interop phase (PASS 2).
+Every =ops= session is forced through =/usr/local/bin/ops-sandbox= (bubblewrap), runs as a non-privileged uid with no sudo, and cannot read =dev=/root secrets. To place a trade it runs =cast-propose= (offline tx staging — no key, no network); the operator signs it with =cast-approve= from a privileged channel. Both live in the interop phase (gated on =cast_enabled=); the jail bind-mounts the proposal spool so an =ops= session can stage proposals into it.
 
 *** dev on-box Claude Code Usage (opt-in)
 

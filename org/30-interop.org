@@ -71,6 +71,45 @@ under =~/.foundry/keystores=) is the *no-hardware fallback* — still never a
 plaintext key on disk. There is no default key material; you provision one
 out-of-band.
 
+*** Remote-operator signing: the propose/approve split
+
+When the box is driven by *laptop-side Claude over wg0* (the =ops= sandboxed
+front door — see =org/14-sandbox.org=), the agent must never hold the signing
+material or sit in the authorization decision. Signing is therefore split:
+
+- =cast-propose= runs as the sandboxed =ops= uid and is *fully offline*. It
+  ABI-encodes the calldata locally (=cast calldata=, pure local serialization),
+  and writes a staged artifact — =to=, =value=, =calldata=, =chain=, signature +
+  args — into a shared spool. *No key, no nonce/gas lookup, no broadcast*: the
+  sandboxed session never touches the network or the keys. (Live simulation is
+  deliberately deferred to approval, so the untrusted party emits no packets at
+  all — nothing to leak to an RPC.)
+- =cast-approve= is run by *you*, the operator, as the *key-owner uid* (never
+  =ops=). It re-reads the artifact, *independently re-encodes* the calldata from
+  the human-readable signature+args and refuses to proceed unless that matches
+  the staged calldata (so what you read is provably what you sign), *re-simulates
+  over the Tor netns* via =cast-tor=, shows you everything, and only after you
+  type =APPROVE= signs+broadcasts.
+
+The decisive property: the dangerous part of a dapp trade is the *calldata* —
+opaque hex you cannot eyeball. The authorization decision must not rest on the
+untrusted agent's own rendering of it, so the *trusted* =cast-approve= re-derives
+and re-simulates what it is about to sign. =ops= stays out of the trust path for
+the decision, not merely away from the key.
+
+*Custody is selectable per trade* with =cast-approve --custody=:
+- =keystore= — the encrypted keystore on the box; you type its password on *your*
+  approve TTY (it never reaches =ops=). Fully remote.
+- =trezor= — a Trezor at the box console; you confirm with the physical button.
+  USB already passes through the netns, so this is one flag from =keystore=.
+- =airgap= — a *reserved future seam* (Trezor at the laptop: box emits an unsigned
+  tx and broadcasts, laptop signs offline). Documented, not yet built.
+
+No new sudo grant is added for this: =cast-approve= runs *as* the key owner and
+delegates only the netns broadcast to the existing =sudo cast-tor= grant, so
+=ops= gains *nothing* privileged. The propose spool is transient scratch and is
+not backed up.
+
 ** Install Dependencies
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
@@ -636,6 +675,424 @@ exit "$rc"
       tags: [interop]
 #+end_src
 
+** Propose/Approve Signer (remote-operator custody)
+
+The sandboxed =ops= front door stages trades with =cast-propose= (offline); the
+operator signs them with =cast-approve= (trusted, over Tor). See the custody
+prose above for the threat model. Both are gated on =cast_enabled=.
+
+*** Shared proposal spool
+
+=cast-propose= (run as =ops=) writes; =cast-approve= (run as the key owner)
+reads. A dedicated =interop_group= holds both principals, and the spool is
+*setgid* so artifacts =ops= writes inherit the group and stay readable to the
+approver — without =ops= gaining any access to the key owner's home or keystore.
+The ops jail bind-mounts this dir (=org/14-sandbox.org=), so a sandboxed session
+can stage into it across the bubblewrap boundary.
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Create the interop group (shared proposal-spool access)
+      group:
+        name: "{{ interop_group }}"
+        state: present
+      when: cast_enabled | bool
+      tags: [interop]
+
+    # ops (the proposer) is only added when its landing zone is enabled; the key
+    # owner (the approver) is always a member so it can read staged proposals.
+    - name: Add proposer and approver to the interop group
+      user:
+        name: "{{ item }}"
+        groups: "{{ interop_group }}"
+        append: yes
+      loop: "{{ ([ops_user] if ops_access_enabled | bool else []) + [interop_key_owner] }}"
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Create the proposal spool (shared, setgid so the approver can read)
+      file:
+        path: "{{ interop_proposal_dir }}"
+        state: directory
+        owner: "{{ ops_user if ops_access_enabled | bool else interop_key_owner }}"
+        group: "{{ interop_group }}"
+        mode: '2770'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+*** cast-propose — offline transaction staging (runs as =ops=)
+
+Pure-local ABI encoding with =cast calldata=; *no network, no key, no
+broadcast*. Writes a strict =KEY=VALUE= artifact that =cast-approve= re-validates
+field by field. A plain value transfer carries no calldata (=SIG= empty); a
+contract call requires =--sig 'f(types)'= so the calldata is human-decodable and
+re-derivable at approval.
+
+#+begin_src bash :tangle ../configs/templates/cast-propose.j2
+#!/bin/bash
+# cast-propose — stage an EVM transaction for operator approval (OFFLINE).
+# Generated from org/30-interop.org.
+#
+# Runs as the sandboxed `ops` uid inside the ForceCommand jail. It makes NO
+# network connection: it only ABI-encodes the calldata locally with `cast
+# calldata` and writes a staged artifact to the shared proposal spool. The
+# operator later runs `cast-approve`, which re-encodes, re-simulates over Tor,
+# and signs+broadcasts. No key, no nonce/gas lookup, no broadcast happen here —
+# so the sandboxed session never touches the network or the signing material.
+set -euo pipefail
+
+CAST="{{ foundry_install_dir }}/cast"
+SPOOL="{{ interop_proposal_dir }}"
+CUSTODY_DEFAULT="{{ interop_custody_default }}"
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: cast-propose --to <0xADDR> --chain <ID> [options] [ARG...]
+  --to 0xADDR        destination contract / account (required)
+  --chain ID         EVM chain id, e.g. 1 (required)
+  --value WEI        native value to send, decimal wei (default 0)
+  --sig 'f(t,...)'   function signature; ARGs after it are ABI-encoded offline
+  --custody NAME     suggested custody: keystore | trezor | airgap
+  --note 'text'      free-text reminder shown at approval (single line)
+  ARG...             function arguments (only meaningful with --sig)
+
+Stages a transaction WITHOUT signing or broadcasting, then print its path.
+Approve it (as the key owner, NOT ops):  cast-approve <proposal-file>
+USAGE
+  exit 2
+}
+
+TO="" CHAIN="" VALUE="0" SIG="" NOTE="" CUSTODY="$CUSTODY_DEFAULT"
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --to)      TO="${2:?}"; shift 2 ;;
+    --chain)   CHAIN="${2:?}"; shift 2 ;;
+    --value)   VALUE="${2:?}"; shift 2 ;;
+    --sig)     SIG="${2:?}"; shift 2 ;;
+    --custody) CUSTODY="${2:?}"; shift 2 ;;
+    --note)    NOTE="${2:?}"; shift 2 ;;
+    --)        shift; ARGS+=("$@"); break ;;
+    -h|--help) usage ;;
+    -*)        echo "cast-propose: unknown option: $1" >&2; usage ;;
+    *)         ARGS+=("$1"); shift ;;
+  esac
+done
+
+# --- validate (fail closed; these constrain what the operator will sign) ------
+[ -n "$TO" ] && [ -n "$CHAIN" ] || usage
+[[ "$TO"      =~ ^0x[0-9a-fA-F]{40}$ ]]       || { echo "cast-propose: --to must be a 0x 20-byte address" >&2; exit 2; }
+[[ "$CHAIN"   =~ ^[0-9]+$ ]]                   || { echo "cast-propose: --chain must be a decimal chain id" >&2; exit 2; }
+[[ "$VALUE"   =~ ^[0-9]+$ ]]                   || { echo "cast-propose: --value must be decimal wei" >&2; exit 2; }
+[[ "$CUSTODY" =~ ^(keystore|trezor|airgap)$ ]] || { echo "cast-propose: --custody must be keystore|trezor|airgap" >&2; exit 2; }
+# Signature charset: name(types). The arg-list class lists ] first (literal) so
+# array types like uint256[] validate; the regex lives in a var so bash does not
+# mis-parse the brackets as a [[ ]] terminator.
+sig_re='^[A-Za-z_][A-Za-z0-9_]*\([]A-Za-z0-9_,[ ]*\)$'
+if [ -n "$SIG" ] && ! [[ "$SIG" =~ $sig_re ]]; then
+  echo "cast-propose: --sig must look like 'name(type,...)'" >&2; exit 2
+fi
+[ ${#ARGS[@]} -eq 0 ] || [ -n "$SIG" ] \
+  || { echo "cast-propose: function ARGs given without --sig" >&2; exit 2; }
+NOTE="${NOTE//$'\n'/ }"   # the artifact is line-based; keep NOTE single-line
+
+if [ ! -x "$CAST" ]; then
+  echo "cast-propose: cast not found at $CAST (enable the interop phase)" >&2
+  exit 1
+fi
+if [ ! -d "$SPOOL" ] || [ ! -w "$SPOOL" ]; then
+  echo "cast-propose: proposal spool $SPOOL is missing or not writable" >&2
+  echo "  (deploy the interop phase; the ops jail bind-mounts it)" >&2
+  exit 1
+fi
+
+# --- encode calldata OFFLINE (no network) -------------------------------------
+# `cast calldata` is pure local ABI encoding. A plain value transfer has none.
+CALLDATA="0x"
+if [ -n "$SIG" ]; then
+  CALLDATA="$("$CAST" calldata "$SIG" "${ARGS[@]}")"
+  [[ "$CALLDATA" =~ ^0x[0-9a-fA-F]*$ ]] \
+    || { echo "cast-propose: cast calldata produced unexpected output" >&2; exit 1; }
+fi
+
+# --- write the staged artifact (strict KEY=VALUE; approve re-validates) --------
+umask 0027
+ts="$(date -u +%Y%m%dT%H%M%SZ)"
+out="$SPOOL/proposal-${ts}-$$.casttx"
+{
+  echo "# cast-propose staged transaction. UNTRUSTED input: cast-approve"
+  echo "# re-encodes, re-simulates and re-displays everything below before signing."
+  echo "CAST_PROPOSAL_VERSION=1"
+  echo "CHAIN_ID=$CHAIN"
+  echo "TO=$TO"
+  echo "VALUE=$VALUE"
+  echo "SIG=$SIG"
+  echo "ARGC=${#ARGS[@]}"
+  i=0; for a in "${ARGS[@]}"; do echo "ARG_${i}=$a"; i=$((i+1)); done
+  echo "CALLDATA=$CALLDATA"
+  echo "CUSTODY=$CUSTODY"
+  echo "NOTE=$NOTE"
+} > "$out"
+
+# --- human-readable summary (informational; approve recomputes the truth) ------
+{
+  echo "cast-propose: staged $out"
+  echo "  chain    : $CHAIN"
+  echo "  to       : $TO"
+  echo "  value    : $VALUE wei"
+  echo "  function : ${SIG:-<plain value transfer>}"
+  i=0; for a in "${ARGS[@]}"; do echo "  arg[$i]   : $a"; i=$((i+1)); done
+  echo "  calldata : $CALLDATA"
+  echo "  custody  : $CUSTODY (suggested)"
+  echo "  note     : ${NOTE:-<none>}"
+  echo ""
+  echo "Approve it (as the key owner, NOT ops):  cast-approve $out"
+} >&2
+echo "$out"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy cast-propose (offline staging, run as ops)
+      template:
+        src: ../configs/templates/cast-propose.j2
+        dest: /usr/local/bin/cast-propose
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+*** cast-approve — trusted review, simulate, sign (runs as the key owner)
+
+Run by *you*, as the key-owner uid (never =ops=; the script refuses root/ops).
+It re-derives the calldata from the artifact's signature+args and aborts on any
+mismatch, re-simulates over the Tor netns via =sudo cast-tor= (the existing
+grant — no new privilege), prints everything, and signs only after you type
+=APPROVE=. The keystore password / Trezor button is supplied here, never via
+=ops=.
+
+#+begin_src bash :tangle ../configs/templates/cast-approve.j2
+#!/bin/bash
+# cast-approve — review, simulate over Tor, then sign+broadcast a staged tx.
+# Generated from org/30-interop.org.
+#
+# Run by the OPERATOR, as the key-owner uid — NOT by `ops`, NOT under sudo. It
+# re-derives the transaction from the (untrusted) staged artifact, re-simulates
+# it over the fail-closed Tor netns via `sudo cast-tor`, shows it, and — only
+# after you type APPROVE — signs+broadcasts. The signing material (keystore
+# password / Trezor button) is supplied here, on the operator's TTY, and never
+# reaches an ops/Claude session.
+set -euo pipefail
+
+CAST="{{ foundry_install_dir }}/cast"
+CAST_TOR="/usr/local/bin/cast-tor"
+SPOOL="{{ interop_proposal_dir }}"
+OPS_USER="{{ ops_user }}"
+RPC_DEFAULT="{{ cast_rpc_url }}"
+VALUE_CAP="{{ interop_value_cap }}"
+declare -a TO_ALLOWLIST=( {% for a in interop_to_allowlist %}"{{ a }}" {% endfor %})
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: cast-approve <proposal-file> [options]
+  --custody NAME     keystore | trezor | airgap  (default: artifact's suggestion)
+  --account NAME     keystore account name (keystore custody)
+  --keystore PATH    keystore file path (keystore custody, alt to --account)
+  --rpc-url URL      JSON-RPC endpoint (default: cast_rpc_url)
+  --from 0xADDR      sender address used for the read-only simulation (optional)
+
+Re-derives + re-simulates the staged tx over Tor and, after you type APPROVE,
+signs+broadcasts it. Run as the key owner, NOT as ops and NOT under sudo.
+USAGE
+  exit 2
+}
+
+# Must run as the key owner: not root/sudo (keystore lives in the owner's HOME),
+# and never as the sandboxed ops uid (defense-in-depth; ops also lacks the
+# cast-tor sudo grant, so a broadcast would fail closed anyway).
+if [ "$(id -u)" -eq 0 ]; then
+  echo "cast-approve: run as the key owner, not as root/sudo." >&2; exit 3
+fi
+if [ "$(id -un)" = "$OPS_USER" ]; then
+  echo "cast-approve: must NOT be run as $OPS_USER — run as the key owner." >&2; exit 3
+fi
+
+PROPOSAL="" CUSTODY="" ACCOUNT="" KEYSTORE="" RPC="" FROM=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --custody)  CUSTODY="${2:?}"; shift 2 ;;
+    --account)  ACCOUNT="${2:?}"; shift 2 ;;
+    --keystore) KEYSTORE="${2:?}"; shift 2 ;;
+    --rpc-url)  RPC="${2:?}"; shift 2 ;;
+    --from)     FROM="${2:?}"; shift 2 ;;
+    -h|--help)  usage ;;
+    -*)         echo "cast-approve: unknown option: $1" >&2; usage ;;
+    *)          PROPOSAL="$1"; shift ;;
+  esac
+done
+[ -n "$PROPOSAL" ] || usage
+RPC="${RPC:-$RPC_DEFAULT}"
+
+# Resolve the proposal inside the spool; reject anything that escapes it.
+case "$PROPOSAL" in
+  /*) full="$PROPOSAL" ;;
+  *)  full="$SPOOL/$PROPOSAL" ;;
+esac
+full="$(realpath -e -- "$full" 2>/dev/null || true)"
+spool_real="$(realpath -e -- "$SPOOL")"
+[ -n "$full" ] || { echo "cast-approve: no such proposal: $PROPOSAL" >&2; exit 2; }
+case "$full" in
+  "$spool_real"/*) : ;;
+  *) echo "cast-approve: $full is outside the proposal spool $spool_real" >&2; exit 2 ;;
+esac
+
+# Read one KEY=VALUE line and validate it (fail closed on anything unexpected).
+field() {
+  local key="$1" re="$2" val
+  val="$(grep -m1 "^${key}=" -- "$full" | cut -d= -f2- || true)"
+  if ! [[ "$val" =~ $re ]]; then
+    echo "cast-approve: field $key failed validation ('$val')" >&2; return 2
+  fi
+  printf '%s' "$val"
+}
+
+# field() runs in a command substitution (a subshell), so its failure must be
+# caught with `|| exit` here — `set -e` does NOT abort the parent on a failed
+# assignment, which would otherwise let a malformed field slip through.
+VERSION="$(field CAST_PROPOSAL_VERSION '^1$')"                                  || exit 2
+CHAIN="$(field CHAIN_ID '^[0-9]+$')"                                            || exit 2
+TO="$(field TO '^0x[0-9a-fA-F]{40}$')"                                          || exit 2
+VALUE="$(field VALUE '^[0-9]+$')"                                               || exit 2
+SIG="$(field SIG '^([A-Za-z_][A-Za-z0-9_]*\([]A-Za-z0-9_,[ ]*\))?$')"          || exit 2
+CALLDATA="$(field CALLDATA '^0x[0-9a-fA-F]*$')"                                 || exit 2
+ARGC="$(field ARGC '^[0-9]+$')"                                                || exit 2
+CUST_SUGGEST="$(field CUSTODY '^(keystore|trezor|airgap)$')"                    || exit 2
+CUSTODY="${CUSTODY:-$CUST_SUGGEST}"
+NOTE="$(grep -m1 '^NOTE=' -- "$full" | cut -d= -f2- || true)"
+NOTE="$(printf '%s' "$NOTE" | tr -cd '[:print:]')"   # strip control/escape chars
+
+declare -a ARGS=()
+i=0
+while [ "$i" -lt "$ARGC" ]; do
+  v="$(grep -m1 "^ARG_${i}=" -- "$full" | cut -d= -f2-)" \
+    || { echo "cast-approve: missing ARG_$i" >&2; exit 2; }
+  ARGS+=("$v"); i=$((i+1))
+done
+
+# The trust pivot: independently RE-ENCODE the calldata from the human-readable
+# signature+args and require it to equal the staged calldata. So what the
+# operator reads (sig + args) is provably what gets signed — a compromised ops
+# cannot stage a friendly-looking sig with hostile calldata.
+expected="0x"
+[ -n "$SIG" ] && expected="$("$CAST" calldata "$SIG" "${ARGS[@]}")"
+if [ "${expected,,}" != "${CALLDATA,,}" ]; then
+  echo "cast-approve: INTEGRITY FAILURE — calldata does not match sig+args." >&2
+  echo "  staged    : $CALLDATA" >&2
+  echo "  re-derived : $expected" >&2
+  exit 4
+fi
+
+# Trusted-side guardrails (optional; empty config = no limit).
+dec_gt() {  # echo 1 if non-negative decimal $1 > $2 (exact, no 64-bit overflow)
+  local a="${1#"${1%%[!0]*}"}" b="${2#"${2%%[!0]*}"}"
+  a="${a:-0}"; b="${b:-0}"
+  if [ "${#a}" -ne "${#b}" ]; then [ "${#a}" -gt "${#b}" ] && echo 1 || echo 0; return; fi
+  [[ "$a" > "$b" ]] && echo 1 || echo 0
+}
+if [ "${#TO_ALLOWLIST[@]}" -gt 0 ]; then
+  ok=0; for a in "${TO_ALLOWLIST[@]}"; do [ "${a,,}" = "${TO,,}" ] && ok=1; done
+  [ "$ok" = 1 ] || { echo "cast-approve: $TO not in interop_to_allowlist" >&2; exit 5; }
+fi
+if [ -n "$VALUE_CAP" ] && [ "$(dec_gt "$VALUE" "$VALUE_CAP")" = 1 ]; then
+  echo "cast-approve: value $VALUE exceeds interop_value_cap $VALUE_CAP" >&2; exit 5
+fi
+
+cat <<REVIEW
+=== cast-approve — review before signing ===
+proposal : $full
+chain id : $CHAIN
+to       : $TO
+value    : $VALUE wei
+function : ${SIG:-<plain value transfer>}
+$(i=0; for a in "${ARGS[@]}"; do echo "arg[$i]    : $a"; i=$((i+1)); done)
+calldata : $CALLDATA   (verified: re-encodes from sig+args)
+custody  : $CUSTODY
+note     : ${NOTE:-<none>}
+rpc      : ${RPC:-<none>}
+REVIEW
+
+# Re-simulate over Tor (read-only) via the existing fail-closed launcher. A
+# revert here is shown LOUDLY but is NOT fatal: it may be a genuine failing tx,
+# or just a msg.sender-dependent call simulated without --from. You are the
+# trusted decision-maker — judge it at the APPROVE prompt below. (Pass --from
+# <your-address> for a faithful msg.sender simulation.)
+if [ -n "$RPC" ]; then
+  echo "--- simulating over Tor (cast-tor call) ---"
+  sudo "$CAST_TOR" call "$TO" ${SIG:+"$SIG"} "${ARGS[@]}" \
+       ${VALUE:+--value "$VALUE"} ${FROM:+--from "$FROM"} \
+       --chain "$CHAIN" --rpc-url "$RPC" \
+    || echo "cast-approve: !! simulation reverted/failed — review carefully before approving."
+  echo "--- gas estimate over Tor ---"
+  sudo "$CAST_TOR" estimate "$TO" ${SIG:+"$SIG"} "${ARGS[@]}" \
+       ${VALUE:+--value "$VALUE"} ${FROM:+--from "$FROM"} \
+       --chain "$CHAIN" --rpc-url "$RPC" \
+    || echo "cast-approve: gas estimate failed (continuing)."
+else
+  echo "cast-approve: no --rpc-url / cast_rpc_url set — skipping Tor simulation." >&2
+fi
+
+read -r -p "Type APPROVE to sign + broadcast over Tor: " ans
+[ "$ans" = "APPROVE" ] || { echo "cast-approve: aborted (nothing broadcast)."; exit 0; }
+
+# Build the send: high-level sig+args (cast re-encodes → matches the decode the
+# operator just reviewed) or a plain value transfer.
+send=( "$TO" )
+[ -n "$SIG" ] && send+=( "$SIG" "${ARGS[@]}" )
+[ "$VALUE" != "0" ] && send+=( --value "$VALUE" )
+send+=( --chain "$CHAIN" --rpc-url "$RPC" )
+
+case "$CUSTODY" in
+  keystore)
+    if   [ -n "$ACCOUNT" ];  then send+=( --account "$ACCOUNT" )
+    elif [ -n "$KEYSTORE" ]; then send+=( --keystore "$KEYSTORE" )
+    else echo "cast-approve: --custody keystore needs --account NAME or --keystore PATH" >&2; exit 2; fi
+    echo "cast-approve: enter the keystore password at the prompt (it is read here, never by ops)."
+    ;;
+  trezor)
+    send+=( --trezor )
+    echo "cast-approve: confirm the transaction on the Trezor at the box console." ;;
+  airgap)
+    echo "cast-approve: --custody airgap is a reserved future seam (laptop-side" >&2
+    echo "  Trezor signing); not implemented. Use keystore or trezor." >&2
+    exit 2 ;;
+  *)
+    echo "cast-approve: unknown custody '$CUSTODY'" >&2; exit 2 ;;
+esac
+
+set +e
+sudo "$CAST_TOR" send "${send[@]}"
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  mv -- "$full" "${full%.casttx}.broadcast" 2>/dev/null || true
+  echo "cast-approve: broadcast complete."
+fi
+exit "$rc"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy cast-approve (trusted review + sign, run as key owner)
+      template:
+        src: ../configs/templates/cast-approve.j2
+        dest: /usr/local/bin/cast-approve
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
 ** Verify Interop Phase
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
@@ -674,6 +1131,11 @@ exit "$rc"
           - ""
           - "Sign with a hardware wallet (cast … --trezor); the Trezor udev"
           - "rules are installed. Keys are never resident on disk."
+          - ""
+          - "Remote-operator custody (laptop-side Claude over wg0):"
+          - "  ops  : cast-propose --to <0x> --chain 1 --sig 'f(..)' ARGS  (offline)"
+          - "  you  : cast-approve <proposal-file> --custody keystore|trezor"
+          - "Proposals staged in {{ interop_proposal_dir }} (transient; not backed up)."
       when: cast_enabled | bool
       tags: [interop, verify]
 #+end_src

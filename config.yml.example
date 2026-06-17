@@ -160,6 +160,18 @@ foundry_version: "v1.7.1"
 # PublicNode, LlamaRPC). No chain/asset is baked in — this is general infra.
 cast_rpc_url: ""
 
+# Remote-operator propose/approve signer (sandboxed remote access, PASS 2).
+# Laptop-side Claude lands as `ops` and stages trades OFFLINE with `cast-propose`
+# (no key, no network); you (the key owner) review, re-simulate over Tor and sign
+# with `cast-approve`. The defaults in group_vars work as-is — uncomment only to
+# tune custody or add trusted-side guardrails. NOTE: when enabling cast for the
+# first time, deploy BOTH --tags sandbox (so the ops jail bind-mounts the spool)
+# and --tags interop (which creates the spool and installs the signer).
+# interop_custody_default: keystore   # keystore | trezor (airgap = future seam)
+# interop_key_owner: dev              # defaults to dev_user; the uid that signs
+# interop_to_allowlist: []            # if set, cast-approve refuses any other `to`
+# interop_value_cap: ""               # max native value in wei cast-approve will sign
+
 # Rabby browser-extension fallback — the dapp-UI path for the rare interaction
 # that genuinely needs a web frontend (cast is the primary workhorse). Runs in a
 # dedicated `wallet` Chromium profile on the fail-closed Mullvad path. OFF by

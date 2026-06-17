@@ -84,6 +84,8 @@ backup_path "{{ haveno_data_dir }}" "$BACKUP_PATH/haveno"
 # Interop: cast encrypted keystore (no-HW-wallet fallback only). Absent when
 # signing is hardware-backed (the preferred path) — backup_path skips cleanly.
 # A hardware wallet's seed is NEVER on the box; back it up out-of-band.
+# (The propose/approve spool {{ interop_proposal_dir }} is transient scratch —
+# staged trades, no secrets — and is deliberately NOT backed up.)
 echo "--- Interop (cast keystore) ---"
 backup_path "{{ foundry_keystore_dir }}" "$BACKUP_PATH/cast"
 

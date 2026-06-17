@@ -176,6 +176,23 @@ interop_tor_data_dir: /var/lib/tor-interop
 # on disk). Default `cast wallet import` location. Backed up if present.
 foundry_keystore_dir: "/home/{{ dev_user }}/.foundry/keystores"
 
+# Remote-operator propose/approve signer (PASS 2 of sandboxed remote access).
+# The sandboxed `ops` uid runs `cast-propose` OFFLINE (build + ABI-encode the
+# calldata locally, no network, no key) to stage a trade into the spool below;
+# the operator (the key-owner uid, NOT ops) runs `cast-approve` to re-encode +
+# re-simulate it over the fail-closed Tor netns and sign+broadcast. Live signing
+# material never reaches an ops/Claude session. The spool is a shared, setgid
+# dir: `ops` (writer) + the key owner (reader) are both in interop_group; the
+# ops jail bind-mounts it so a sandboxed session can stage proposals. See
+# org/30-interop.org and docs/sandboxed-remote-access-handoff.md.
+interop_proposal_dir: /var/lib/interop/proposals
+interop_group: interop                     # shared spool group (ops + key owner)
+interop_key_owner: "{{ dev_user }}"        # uid that owns the keystore and approves
+interop_custody_default: keystore          # keystore | trezor (airgap = future seam)
+# Optional trusted-side guardrails, enforced by cast-approve (empty = no limit):
+interop_to_allowlist: []                   # if non-empty, `to` must be in this list
+interop_value_cap: ""                      # max native `value` in wei (decimal string)
+
 # Interop: Rabby extension (dapp-UI fallback) — off by default (rabby_enabled in
 # config.yml). The pinned, self-audited release zip is verified against
 # rabby_sha256, self-packed into a signed .crx with a locally-generated key, and
