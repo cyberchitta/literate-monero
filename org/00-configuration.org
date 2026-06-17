@@ -192,6 +192,24 @@ rabby_profile: wallet
 # Chromium reads enterprise policy (force-install + WebRTC hardening) from here.
 chromium_policy_dir: /etc/chromium/policies/managed
 
+# Sandboxed remote access — operate the box from laptop-side Claude over wg0
+# without exposing the box's secrets. Two SSH principals, selected by which uid
+# you land as (enforced on the box, not by trusting Claude):
+#   ops  — sandboxed crypto-ops landing zone; the DEFAULT front door (ON).
+#          Lands in a bubblewrap ForceCommand jail with a non-priv uid, no sudo.
+#          The real wall is uid separation (ops cannot read keys another uid owns
+#          at 0700); bubblewrap is defense-in-depth (blanks secret paths). Most
+#          repo users only ever need this — the stack works out of the box as ops.
+#   dev  — full contributor access + on-box Claude (OFF). Broad system access,
+#          deploy sudo. Opt-in for repo contributors only.
+# ops_authorized_key is the laptop pubkey allowed to land as ops; the phase fails
+# closed (refuses to enable ops access) if ops_access_enabled is set but it is
+# empty. See org/14-sandbox.org and docs/sandboxed-remote-access-handoff.md.
+ops_access_enabled: true
+dev_access_enabled: false
+ops_user: ops
+ops_authorized_key: ""
+
 # MSR (model-specific register) access for XMRig. Gives ~5-15% more
 # hashrate but grants the miner cap_sys_rawio + kernel MSR write access
 # — real hardware-level privilege for a network-facing workload.

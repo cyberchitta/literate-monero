@@ -59,6 +59,19 @@ dev_user_ssh_public_key: ""
 
 mining_user: mining
 
+# Sandboxed remote access (the sandbox phase). Operate the box from a laptop
+# over WireGuard with the box's secrets kept invisible to the (laptop-side)
+# agent. ops is the default sandboxed front door; dev is full contributor
+# access. See docs/sandboxed-remote-access-handoff.md. Defaults live in
+# group_vars (ops_access_enabled: true, dev_access_enabled: false).
+#
+# Laptop pubkey allowed to land as the sandboxed `ops` user. REQUIRED to enable
+# ops access — the phase fails closed if this is empty. Use a DEDICATED key,
+# distinct from dev_user_ssh_public_key.
+ops_authorized_key: ""
+# Uncomment to grant full on-box contributor access (installs on-box Claude).
+# dev_access_enabled: true
+
 # Git identity (anonymous/pseudonymous by default)
 # Used for all git commits on this system
 anon_git_name: "Your Pseudonym"

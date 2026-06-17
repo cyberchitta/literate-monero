@@ -10,6 +10,14 @@ All service restart handlers collected here.
         state: restarted
       listen: restart sshd
 
+    # Prefer reload over restart for sshd_config.d drop-ins (e.g. the ops
+    # landing zone) so an in-flight admin session is not dropped.
+    - name: reload sshd
+      systemd:
+        name: sshd
+        state: reloaded
+      listen: reload sshd
+
     - name: restart tor
       systemd:
         name: tor

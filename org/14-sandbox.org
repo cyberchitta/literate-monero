@@ -1,17 +1,21 @@
 ** Overview
 
-This phase installs application sandboxing infrastructure using bubblewrap to isolate untrusted applications from sensitive credentials.
+This phase installs application sandboxing infrastructure using bubblewrap to isolate untrusted code from sensitive credentials, and provides the **sandboxed remote-access landing zone** that lets you operate the box from a laptop-side Claude over WireGuard without exposing the box's secrets.
 
-**Sandboxed by default:**
-- Claude Code (CLI via bunx)
+**Two SSH principals, selected by which uid you land as** (enforced on the box, not by trusting the agent):
 
-**How it works:**
+- =ops= — the sandboxed crypto-ops front door, **default ON** (`ops_access_enabled`). The laptop connects as =ops@box= over wg0 and lands in a bubblewrap =ForceCommand= jail running as a non-privileged uid with no sudo. The real wall is **uid separation**: =ops= cannot read keys another uid owns at =0700=. Bubblewrap is defense-in-depth — it blanks the secret paths and narrows the filesystem. No on-box Claude is installed for this mode; Claude runs on the laptop.
+- =dev= — full on-box contributor access, **default OFF** (`dev_access_enabled`). When enabled, installs native Claude Code and the =claude-code-sandboxed= wrapper for running an agent *on* the box. Most repo users never need this — the stack works out of the box as =ops=.
+
+**The core invariant:** live signing material (keystore password, wallet seed, vault password) is never held by any Claude-driven session — it is supplied human-in-the-loop at sign time. The propose/approve signer that enforces this for trades lives in the interop phase (see `docs/sandboxed-remote-access-handoff.md`).
+
+**How bubblewrap isolation works:**
 - Bubblewrap uses Linux namespaces (same foundation as containers)
-- Mount tmpfs over `/home/dev/.secrets/` to hide it from sandboxed apps
-- Apps see normal filesystem except `.secrets/` appears empty
-- No modifications to sandboxed applications needed
+- Mount tmpfs over `/home/dev/.secrets/` to hide it from sandboxed code
+- Code sees a normal filesystem except `.secrets/` appears empty
+- No modifications to the sandboxed program needed
 
-**Prerequisites:** None - installs bubblewrap and bun
+**Prerequisites:** None — installs bubblewrap. =ops= access rides the existing wg0 SSH path (no new port); requires `ops_authorized_key` to be set (fails closed otherwise).
 
 ** Install Bubblewrap
 
@@ -20,15 +24,20 @@ This phase installs application sandboxing infrastructure using bubblewrap to is
     # Application Sandboxing Infrastructure
     # ------------------------------------------------------------------------
 
+    # Both principals rely on bubblewrap: dev mode for claude-code-sandboxed,
+    # ops mode for the ForceCommand jail. Install if either is enabled.
     - name: Install bubblewrap
       community.general.pacman:
         name:
           - bubblewrap
         state: present
+      when: (dev_access_enabled | bool) or (ops_access_enabled | bool)
       tags: [sandbox]
 #+end_src
 
-** Claude Code Sandboxing
+** Dev-mode on-box Claude Code (opt-in)
+
+Gated on =dev_access_enabled= (default OFF). This installs a native Claude Code on the box plus the =claude-code-sandboxed= wrapper, for contributors who want to run an agent *on* the box. The default =ops= front door installs none of this — Claude runs on the laptop.
 
 #+begin_src bash :tangle ../configs/templates/claude-code-sandboxed.sh.j2
 #!/bin/bash
@@ -66,6 +75,7 @@ exec bwrap \
         creates: /home/{{ dev_user }}/.local/bin/claude
       become: yes
       become_user: "{{ dev_user }}"
+      when: dev_access_enabled | bool
       tags: [sandbox, claude-code]
 
     - name: Verify native Claude Code installation
@@ -75,6 +85,7 @@ exec bwrap \
       failed_when: claude_version.rc != 0
       become: yes
       become_user: "{{ dev_user }}"
+      when: dev_access_enabled | bool
       tags: [sandbox, claude-code, verify]
 
     - name: Deploy Claude Code sandbox wrapper
@@ -82,6 +93,7 @@ exec bwrap \
         src: ../configs/templates/claude-code-sandboxed.sh.j2
         dest: /usr/local/bin/claude-code-sandboxed
         mode: '0755'
+      when: dev_access_enabled | bool
       tags: [sandbox, claude-code]
 
     - name: Create shell alias for sandboxed Claude Code
@@ -91,7 +103,173 @@ exec bwrap \
         create: yes
         owner: "{{ dev_user }}"
         group: "{{ dev_user }}"
+      when: dev_access_enabled | bool
       tags: [sandbox, claude-code]
+#+end_src
+
+** ops landing zone (sandboxed remote access)
+
+Gated on =ops_access_enabled= (default ON). The laptop connects as =ops@box= over wg0; sshd forces every session through a bubblewrap =ForceCommand= jail. The =ops= uid is non-privileged, has no sudo, and is not in =wheel= — so it **cannot read** secrets owned by =dev=/root at =0700=, which is the real boundary. Bubblewrap is defense-in-depth: it reuses the =claude-code-sandboxed= mount set (KEEP IN SYNC) to blank the secret paths and narrow the filesystem.
+
+The phase **fails closed**: if =ops_access_enabled= is true but =ops_authorized_key= is empty, the play aborts rather than creating an unreachable (or worse, mis-scoped) account.
+
+*** ForceCommand jail wrapper
+
+Runs =$SSH_ORIGINAL_COMMAND= (for =ssh ops@box "cmd"=) — or an interactive login shell when empty — inside bubblewrap. Mount order matches the dev wrapper: the tmpfs overlays come *after* the home =--bind= so they cannot be re-exposed.
+
+#+begin_src bash :tangle ../configs/templates/ops-sandbox.sh.j2
+#!/bin/bash
+# ops sandboxed ForceCommand jail — landing zone for laptop-side Claude over wg0
+# Generated from org/14-sandbox.org
+#
+# The real boundary is uid separation: ops cannot read {{ dev_user }}/root keys
+# (0700, owned by another uid). bubblewrap is defense-in-depth — it blanks the
+# secret paths and narrows the FS. Mount set KEEP IN SYNC with
+# /usr/local/bin/claude-code-sandboxed and org/80-secrets-isolation.org.
+set -euo pipefail
+
+jail() {
+  exec bwrap \
+    --ro-bind / / \
+    --dev /dev \
+    --proc /proc \
+    --bind /home/{{ ops_user }} /home/{{ ops_user }} \
+    --tmpfs /home/{{ dev_user }}/.secrets \
+    --tmpfs /home/{{ dev_user }}/.config/chromium \
+    --bind /tmp /tmp \
+    --unshare-all \
+    --share-net \
+    --die-with-parent \
+    "$@"
+}
+
+if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
+  # Non-interactive: ssh ops@box "some command"
+  jail /bin/bash -c "$SSH_ORIGINAL_COMMAND"
+else
+  # Interactive PTY: ssh ops@box
+  jail /bin/bash -l
+fi
+#+end_src
+
+*** sshd drop-in for the ops principal
+
+Arch's =sshd_config= =Include=s =/etc/ssh/sshd_config.d/*.conf=. This =Match User= block is net-new to the repo (access control was firewall-only until now). It pins =ops='s authorized key to a root-owned file outside =ops='s home (so =ops= cannot append keys), forces the jail wrapper, and strips forwarding/tunnelling.
+
+#+begin_src bash :tangle ../configs/templates/sshd-ops.conf.j2
+# Sandboxed remote-access principal — generated from org/14-sandbox.org
+# Operate the box from a laptop over wg0 with the box's secrets kept invisible.
+Match User {{ ops_user }}
+    AuthorizedKeysFile /etc/ssh/authorized_keys.d/{{ ops_user }}
+    ForceCommand /usr/local/bin/ops-sandbox
+    AllowTcpForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no
+    PermitTTY yes
+#+end_src
+
+*** Provision the ops account, jail, and sshd policy
+
+#+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
+    - name: Fail closed when ops access is enabled without an authorized key
+      assert:
+        that:
+          - ops_authorized_key | default('') | trim | length > 0
+        fail_msg: >-
+          ops_access_enabled is true but ops_authorized_key is empty. Set the
+          laptop pubkey in config.yml (see config.yml.example) to enable the
+          sandboxed remote-access front door.
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    - name: Create ops user (sandboxed, non-privileged, no sudo)
+      user:
+        name: "{{ ops_user }}"
+        comment: "Sandboxed crypto-ops landing zone"
+        shell: /bin/bash
+        create_home: yes
+        groups: []
+        append: no
+        password: '!'
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    - name: Deploy ops ForceCommand jail wrapper
+      template:
+        src: ../configs/templates/ops-sandbox.sh.j2
+        dest: /usr/local/bin/ops-sandbox
+        owner: root
+        group: root
+        mode: '0755'
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    - name: Create root-owned authorized_keys directory for ops
+      file:
+        path: /etc/ssh/authorized_keys.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    - name: Install ops authorized key (root-owned, outside ops home)
+      copy:
+        content: "{{ ops_authorized_key }}\n"
+        dest: "/etc/ssh/authorized_keys.d/{{ ops_user }}"
+        owner: root
+        group: root
+        mode: '0644'
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    - name: Deploy sshd drop-in for the ops principal
+      template:
+        src: ../configs/templates/sshd-ops.conf.j2
+        dest: /etc/ssh/sshd_config.d/10-ops.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: "/usr/sbin/sshd -t -f %s"
+      when: ops_access_enabled | bool
+      notify: reload sshd
+      tags: [sandbox, ops-access]
+#+end_src
+
+*** Harden secret paths against the ops uid
+
+The real wall is that =ops= cannot read another uid's keys. These tasks defensively assert =0700= on the secret directories (created by later phases) so a stray group/other bit never opens a hole, and skip cleanly when a directory does not yet exist.
+
+#+begin_src yaml :tangle ../ansible/fragments/14-sandbox.yml
+    - name: Stat dev secret paths
+      stat:
+        path: "{{ item }}"
+      loop:
+        - "/home/{{ dev_user }}/.secrets"
+        - "/home/{{ dev_user }}/.foundry/keystores"
+      register: ops_secret_paths
+      when: ops_access_enabled | bool
+      tags: [sandbox, ops-access]
+
+    # Enforce 0700 only where the path already exists — do not pre-create
+    # .secrets here (phase 80 owns its creation/migration).
+    - name: Enforce 0700 on existing dev secret paths (defense against ops reads)
+      file:
+        path: "{{ item.item }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: '0700'
+      loop: "{{ ops_secret_paths.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when:
+        - ops_access_enabled | bool
+        - item.stat is defined
+        - item.stat.exists | default(false)
+      tags: [sandbox, ops-access]
 #+end_src
 
 ** Verify Sandbox Infrastructure
@@ -101,6 +279,7 @@ exec bwrap \
       command: which bwrap
       register: bwrap_check
       changed_when: false
+      when: (dev_access_enabled | bool) or (ops_access_enabled | bool)
       tags: [sandbox, verify]
 
     - name: Display sandbox infrastructure status
@@ -108,24 +287,19 @@ exec bwrap \
         msg:
           - "=== Sandbox Infrastructure Complete ==="
           - ""
-          - "Bubblewrap: {% if bwrap_check.rc == 0 %}Installed{% else %}Not found{% endif %}"
-          - "Native Claude Code: {% if claude_version.rc == 0 %}Installed ({{ claude_version.stdout }}){% else %}Not found{% endif %}"
+          - "Bubblewrap: {% if bwrap_check.rc | default(1) == 0 %}Installed{% else %}Not found{% endif %}"
           - ""
-          - "Wrapper installed:"
-          - "  /usr/local/bin/claude-code-sandboxed"
+          - "ops front door (sandboxed remote access): {% if ops_access_enabled | bool %}ENABLED{% else %}disabled{% endif %}"
+          - "{% if ops_access_enabled | bool %}  ssh {{ ops_user }}@<box> over wg0 → bubblewrap ForceCommand jail{% endif %}"
+          - "{% if ops_access_enabled | bool %}  authorized key: /etc/ssh/authorized_keys.d/{{ ops_user }} (root-owned){% endif %}"
+          - "{% if ops_access_enabled | bool %}  sshd policy: /etc/ssh/sshd_config.d/10-ops.conf{% endif %}"
           - ""
-          - "Usage:"
-          - "  claude-code-sandboxed [options]"
-          - "  # Or use alias: claude-code"
+          - "dev on-box Claude Code: {% if dev_access_enabled | bool %}ENABLED{% else %}disabled (contributor opt-in){% endif %}"
+          - "{% if dev_access_enabled | bool %}  Native Claude Code: {% if claude_version.rc | default(1) == 0 %}Installed ({{ claude_version.stdout }}){% else %}Not found{% endif %}{% endif %}"
+          - "{% if dev_access_enabled | bool %}  Wrapper: /usr/local/bin/claude-code-sandboxed (alias: claude-code){% endif %}"
+          - "{% if dev_access_enabled | bool %}  Hides .secrets/ and Chromium profiles; write access to ~/projects{% endif %}"
           - ""
-          - "The wrapper runs native Claude Code with:"
-          - "  - Full filesystem access (except .secrets/ and Chromium profiles)"
-          - "  - Write access to ~/projects only"
-          - "  - Network access enabled"
-          - "  - .secrets/ directory hidden"
-          - "  - Chromium profiles hidden (~/.config/chromium)"
-          - ""
-          - "Secrets isolation happens in Phase 80"
+          - "Secrets isolation (uid separation) happens in Phase 80"
           - ""
       tags: [sandbox, verify]
 #+end_src
@@ -140,7 +314,21 @@ Bubblewrap creates a new namespace where:
 - `/home/dev/.secrets/` is replaced with empty tmpfs
 - App sees everything except secrets
 
-*** Claude Code Usage
+*** ops remote access (the default front door)
+
+From the laptop, over wg0 — the box installs no agent for this; Claude runs locally and drives the box via SSH:
+
+#+begin_example
+# Run a single command in the jail
+ssh ops@<box>.local "cast --version"
+
+# Interactive shell inside the jail
+ssh ops@<box>.local
+#+end_example
+
+Every =ops= session is forced through =/usr/local/bin/ops-sandbox= (bubblewrap), runs as a non-privileged uid with no sudo, and cannot read =dev=/root secrets. The propose/approve signer for trades is added in the interop phase (PASS 2).
+
+*** dev on-box Claude Code Usage (opt-in)
 
 #+begin_example
 # Sandboxed (via wrapper)
