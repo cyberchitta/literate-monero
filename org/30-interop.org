@@ -1093,6 +1093,283 @@ exit "$rc"
       tags: [interop]
 #+end_src
 
+** Stablecoin Convenience Wrappers (=stable-send= / =stable-bal=)
+
+A *stablecoin wallet* is not a distinct object: USDC/USDT/DAI are ERC-20 tokens,
+and the wallet that holds them is just an *EVM account* (one keypair → one
+address, the *same address on every chain*). =cast= already covers the whole
+lifecycle — *create* (=cast wallet import=, local, no network), *receive* (hand
+out the address), *balance* (=balanceOf= read), *send* (=transfer= via the
+propose/approve signer). These two wrappers add nothing to the trust surface;
+they only close the two ergonomic gaps =cast= leaves for tokens:
+
+1. A *token registry* — symbol → contract + decimals, per chain — so you write
+   =usdc= and =base=, not a raw =0x…= address and a chain id.
+2. *Decimal conversion* — USDC is *6* decimals, not 18. Sending the raw integer
+   =50= instead of =50000000= is a catastrophic footgun; the wrapper converts a
+   human amount using the registry's =decimals= and *fails closed* on excess
+   precision.
+
+The registry is rendered from =interop_chains= / =interop_tokens= (config.yml)
+into plain space-separated *data* files under =interop_registry_dir= that the
+wrappers =awk=-lookup — *data, not sourced code*. The contract addresses are
+*config you audit*: confirm each against the issuer (Circle, for USDC) before
+funding.
+
+- =stable-send <symbol> <amount> <to> --chain <name>= is a *thin, OFFLINE*
+  front-end to =cast-propose=: it resolves the token + decimals, converts the
+  amount, and stages a =transfer(address,uint256)=. No network, no key — so it
+  is *ops-runnable* exactly like =cast-propose=. You still finish with
+  =cast-approve= (re-encode, re-simulate over Tor, sign). The auto-generated
+  =--note= carries the approve-time RPC hint, because an *L2* proposal must be
+  approved against that L2's RPC (=cast-approve <file> --rpc-url <l2-rpc>=) — the
+  chain id travels in the proposal, but the RPC endpoint does not.
+- =stable-bal <symbol> <address> --chain <name>= is an *operator-side read*: a
+  =balanceOf= call over the fail-closed Tor netns (=sudo cast-tor= — the existing
+  grant), formatted back to a human amount by the token's decimals.
+
+(For the sandboxed =ops= front door to stage with =stable-send=, the bubblewrap
+jail must expose =/usr/local/bin/stable-send= and =interop_registry_dir= — a
+one-line follow-up in =org/14-sandbox.org=. The operator can use both directly
+regardless.)
+
+*** Rendered registry data files
+
+#+begin_src conf :tangle ../configs/templates/interop-chains.j2
+# interop chain registry — generated from org/30-interop.org (config: interop_chains)
+# columns: name  chainid  rpc_url   (space-separated; wrappers awk-lookup this)
+{% for c in interop_chains %}
+{{ c.name }} {{ c.chainid }} {{ c.rpc_url }}
+{% endfor %}
+#+end_src
+
+#+begin_src conf :tangle ../configs/templates/interop-tokens.j2
+# interop token registry — generated from org/30-interop.org (config: interop_tokens)
+# VERIFY each address against the issuer (Circle, for USDC) before funding —
+# a wrong contract burns funds. columns: chain  symbol  address  decimals
+{% for t in interop_tokens %}
+{{ t.chain }} {{ t.symbol }} {{ t.address }} {{ t.decimals }}
+{% endfor %}
+#+end_src
+
+*** stable-send — offline ERC-20 transfer staging (runs as the proposer)
+
+#+begin_src bash :tangle ../configs/templates/stable-send.j2
+#!/bin/bash
+# stable-send — stage a stablecoin (ERC-20) transfer for operator approval.
+# Generated from org/30-interop.org.
+#
+# A thin, OFFLINE front-end to cast-propose: it looks up the token contract +
+# decimals from the registry, converts a human amount to base units, and stages
+# an ERC-20 transfer(address,uint256). It makes NO network connection and
+# touches NO key — exactly like cast-propose, which it execs. Approve it with
+# cast-approve (as the key owner, NOT ops).
+set -euo pipefail
+
+PROPOSE="/usr/local/bin/cast-propose"
+REG="{{ interop_registry_dir }}"
+TOKENS="$REG/tokens"
+CHAINS="$REG/chains"
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: stable-send <symbol> <amount> <to-address> --chain <name> [options]
+  <symbol>        token symbol in the registry, e.g. usdc
+  <amount>        human amount, e.g. 50 or 12.5 (converted using the token decimals)
+  <to-address>    0x recipient (20-byte address)
+  --chain NAME    chain name in the registry, e.g. base | arbitrum (required)
+  --custody NAME  keystore | trezor | airgap  (passed through to cast-propose)
+  --note 'text'   override the auto-generated approval note
+
+Stages an ERC-20 transfer WITHOUT signing/broadcasting (offline), then prints the
+proposal path. Approve it (as the key owner, NOT ops):
+  cast-approve <path> --rpc-url <the chain's RPC>
+USAGE
+  exit 2
+}
+
+CHAIN="" CUSTODY="" NOTE=""
+POS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --chain)   CHAIN="${2:?}"; shift 2 ;;
+    --custody) CUSTODY="${2:?}"; shift 2 ;;
+    --note)    NOTE="${2:?}"; shift 2 ;;
+    -h|--help) usage ;;
+    -*)        echo "stable-send: unknown option: $1" >&2; usage ;;
+    *)         POS+=("$1"); shift ;;
+  esac
+done
+[ "${#POS[@]}" -eq 3 ] && [ -n "$CHAIN" ] || usage
+SYMBOL="${POS[0]}"; AMOUNT="${POS[1]}"; TO="${POS[2]}"
+
+[[ "$TO" =~ ^0x[0-9a-fA-F]{40}$ ]]        || { echo "stable-send: <to-address> must be a 0x 20-byte address" >&2; exit 2; }
+[[ "$AMOUNT" =~ ^[0-9]+(\.[0-9]+)?$ ]]    || { echo "stable-send: <amount> must be a decimal number" >&2; exit 2; }
+[ -r "$TOKENS" ] && [ -r "$CHAINS" ]      || { echo "stable-send: registry $REG missing (deploy --tags interop)" >&2; exit 1; }
+
+# Resolve chain id + rpc (registry columns: name chainid rpc_url).
+read -r CHAINID CRPC < <(awk -v n="$CHAIN" '$1==n {print $2, $3; exit}' "$CHAINS")
+[ -n "${CHAINID:-}" ] || { echo "stable-send: chain '$CHAIN' not in $CHAINS" >&2; exit 2; }
+
+# Resolve token address + decimals (registry columns: chain symbol address decimals).
+read -r ADDR DEC < <(awk -v c="$CHAIN" -v s="$SYMBOL" '$1==c && $2==s {print $3, $4; exit}' "$TOKENS")
+[ -n "${ADDR:-}" ] || { echo "stable-send: token '$SYMBOL' on chain '$CHAIN' not in $TOKENS" >&2; exit 2; }
+
+# Human amount -> integer base units; fail closed if more fractional digits than
+# the token has decimals (silently dropping them would send the wrong amount).
+to_base_units() {
+  local amt="$1" dec="$2" int frac out
+  int="${amt%%.*}"
+  if [[ "$amt" == *.* ]]; then frac="${amt#*.}"; else frac=""; fi
+  [ "${#frac}" -le "$dec" ] || { echo "stable-send: $amt has more than $dec decimal places ($SYMBOL)" >&2; return 1; }
+  while [ "${#frac}" -lt "$dec" ]; do frac="${frac}0"; done
+  out="${int}${frac}"
+  out="${out#"${out%%[!0]*}"}"   # strip leading zeros (avoid octal/empty)
+  printf '%s' "${out:-0}"
+}
+UNITS="$(to_base_units "$AMOUNT" "$DEC")" || exit 2
+[ "$UNITS" != "0" ] || { echo "stable-send: amount resolves to 0 base units" >&2; exit 2; }
+
+# The note rides into the proposal; cast-approve shows it. Carry the RPC hint so
+# the approver knows which (L2) endpoint to pass — the chain id is in the
+# proposal, the RPC is not.
+NOTE="${NOTE:-transfer $AMOUNT $SYMBOL on $CHAIN to $TO | approve: cast-approve <file> --rpc-url $CRPC}"
+
+echo "stable-send: staging transfer of $AMOUNT $SYMBOL = $UNITS base units ($DEC dp)" >&2
+echo "             token $ADDR  chain $CHAIN (id $CHAINID)  ->  $TO" >&2
+
+exec "$PROPOSE" \
+  --to "$ADDR" \
+  --chain "$CHAINID" \
+  --sig 'transfer(address,uint256)' \
+  ${CUSTODY:+--custody "$CUSTODY"} \
+  --note "$NOTE" \
+  "$TO" "$UNITS"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Create the interop registry directory
+      file:
+        path: "{{ interop_registry_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Render the interop chain registry
+      template:
+        src: ../configs/templates/interop-chains.j2
+        dest: "{{ interop_registry_dir }}/chains"
+        owner: root
+        group: root
+        mode: '0644'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Render the interop token registry
+      template:
+        src: ../configs/templates/interop-tokens.j2
+        dest: "{{ interop_registry_dir }}/tokens"
+        owner: root
+        group: root
+        mode: '0644'
+      when: cast_enabled | bool
+      tags: [interop]
+
+    - name: Deploy stable-send (offline ERC-20 transfer staging)
+      template:
+        src: ../configs/templates/stable-send.j2
+        dest: /usr/local/bin/stable-send
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
+*** stable-bal — ERC-20 balance over Tor (runs as the operator)
+
+#+begin_src bash :tangle ../configs/templates/stable-bal.j2
+#!/bin/bash
+# stable-bal — show a stablecoin (ERC-20) balance over Tor, decimal-formatted.
+# Generated from org/30-interop.org.
+#
+# Operator-side read: a balanceOf() call routed through the fail-closed Tor netns
+# (sudo cast-tor — the existing grant), formatted with the token's decimals.
+# Read-only; it signs and broadcasts nothing.
+set -euo pipefail
+
+CAST_TOR="/usr/local/bin/cast-tor"
+REG="{{ interop_registry_dir }}"
+TOKENS="$REG/tokens"
+CHAINS="$REG/chains"
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: stable-bal <symbol> <address> --chain <name> [--rpc-url URL]
+  <symbol>      token symbol in the registry, e.g. usdc
+  <address>     0x account to query
+  --chain NAME  chain name in the registry, e.g. base | arbitrum (required)
+  --rpc-url URL override the registry's RPC for this chain
+
+Reads balanceOf() over Tor (sudo cast-tor) and prints it formatted by the token's
+decimals.
+USAGE
+  exit 2
+}
+
+CHAIN="" RPC=""
+POS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --chain)   CHAIN="${2:?}"; shift 2 ;;
+    --rpc-url) RPC="${2:?}"; shift 2 ;;
+    -h|--help) usage ;;
+    -*)        echo "stable-bal: unknown option: $1" >&2; usage ;;
+    *)         POS+=("$1"); shift ;;
+  esac
+done
+[ "${#POS[@]}" -eq 2 ] && [ -n "$CHAIN" ] || usage
+SYMBOL="${POS[0]}"; ADDRQ="${POS[1]}"
+[[ "$ADDRQ" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "stable-bal: <address> must be a 0x 20-byte address" >&2; exit 2; }
+[ -r "$TOKENS" ] && [ -r "$CHAINS" ]  || { echo "stable-bal: registry $REG missing (deploy --tags interop)" >&2; exit 1; }
+
+read -r CHAINID CRPC < <(awk -v n="$CHAIN" '$1==n {print $2, $3; exit}' "$CHAINS")
+[ -n "${CHAINID:-}" ] || { echo "stable-bal: chain '$CHAIN' not in $CHAINS" >&2; exit 2; }
+RPC="${RPC:-$CRPC}"
+[ -n "$RPC" ] || { echo "stable-bal: no RPC for '$CHAIN' (set interop_chains or pass --rpc-url)" >&2; exit 2; }
+
+read -r ADDR DEC < <(awk -v c="$CHAIN" -v s="$SYMBOL" '$1==c && $2==s {print $3, $4; exit}' "$TOKENS")
+[ -n "${ADDR:-}" ] || { echo "stable-bal: token '$SYMBOL' on chain '$CHAIN' not in $TOKENS" >&2; exit 2; }
+
+# balanceOf over Tor. cast may print "12500000 [1.25e7]"; keep the leading int.
+raw="$(sudo "$CAST_TOR" call "$ADDR" 'balanceOf(address)(uint256)' "$ADDRQ" --chain "$CHAINID" --rpc-url "$RPC")"
+raw="${raw%% *}"
+[[ "$raw" =~ ^[0-9]+$ ]] || { echo "stable-bal: unexpected balance output: $raw" >&2; exit 1; }
+
+from_base_units() {
+  local r="$1" dec="$2"
+  [ "$dec" -eq 0 ] && { printf '%s' "$r"; return; }
+  while [ "${#r}" -le "$dec" ]; do r="0$r"; done   # left-pad so an int part exists
+  printf '%s.%s' "${r:0:${#r}-dec}" "${r:${#r}-dec}"
+}
+printf '%s %s (chain %s)\n' "$(from_base_units "$raw" "$DEC")" "${SYMBOL^^}" "$CHAIN"
+#+end_src
+
+#+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
+    - name: Deploy stable-bal (ERC-20 balance over Tor)
+      template:
+        src: ../configs/templates/stable-bal.j2
+        dest: /usr/local/bin/stable-bal
+        owner: root
+        group: root
+        mode: '0755'
+      when: cast_enabled | bool
+      tags: [interop]
+#+end_src
+
 ** Verify Interop Phase
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml

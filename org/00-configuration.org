@@ -193,6 +193,28 @@ interop_custody_default: keystore          # keystore | trezor (airgap = future 
 interop_to_allowlist: []                   # if non-empty, `to` must be in this list
 interop_value_cap: ""                      # max native `value` in wei (decimal string)
 
+# Stablecoin convenience wrappers (stable-send / stable-bal): a thin, auditable
+# layer over the propose/approve signer. They add only a token registry
+# (symbol -> contract + decimals, per chain) and human<->base-unit decimal
+# conversion — no new trust surface. stable-send just builds an OFFLINE
+# cast-propose call; stable-bal is a balanceOf() read over cast-tor. The
+# registry below is rendered to plain space-separated data files under
+# interop_registry_dir that the wrappers grep (data, not sourced code).
+interop_registry_dir: /etc/interop
+# Chains the wrappers know. Pick no-log RPCs (see the cast notes). 1rpc.io
+# serves per-network paths; override per call with --rpc-url if you prefer.
+interop_chains:
+  - { name: base,     chainid: 8453,  rpc_url: "https://1rpc.io/base" }
+  - { name: arbitrum, chainid: 42161, rpc_url: "https://1rpc.io/arb" }
+# Token contracts per chain. VERIFY each address against the issuer's official
+# source (Circle, for USDC) before sending real funds — a wrong contract burns
+# them. These are the canonical Circle-native USDC contracts (not bridged
+# USDC.e). decimals: USDC is 6 (DAI/most others are 18) — the wrappers use this
+# to convert amounts, so it must be correct.
+interop_tokens:
+  - { chain: base,     symbol: usdc, address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 }
+  - { chain: arbitrum, symbol: usdc, address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 }
+
 # Interop: Rabby extension (dapp-UI fallback) — off by default (rabby_enabled in
 # config.yml). The pinned, self-audited release zip is verified against
 # rabby_sha256, self-packed into a signed .crx with a locally-generated key, and
