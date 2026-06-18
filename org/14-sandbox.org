@@ -186,7 +186,7 @@ Match User {{ ops_user }}
           laptop pubkey in config.yml (see config.yml.example) to enable the
           sandboxed remote-access front door.
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     - name: Create ops user (sandboxed, non-privileged, no sudo)
       user:
@@ -198,7 +198,7 @@ Match User {{ ops_user }}
         append: no
         password: '!'
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     - name: Deploy ops ForceCommand jail wrapper
       template:
@@ -208,7 +208,7 @@ Match User {{ ops_user }}
         group: root
         mode: '0755'
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     - name: Create root-owned authorized_keys directory for ops
       file:
@@ -218,7 +218,7 @@ Match User {{ ops_user }}
         group: root
         mode: '0755'
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     - name: Install ops authorized key (root-owned, outside ops home)
       copy:
@@ -228,7 +228,7 @@ Match User {{ ops_user }}
         group: root
         mode: '0644'
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     - name: Deploy sshd drop-in for the ops principal
       template:
@@ -240,7 +240,7 @@ Match User {{ ops_user }}
         validate: "/usr/sbin/sshd -t -f %s"
       when: ops_access_enabled | bool
       notify: reload sshd
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 #+end_src
 
 *** Harden secret paths against the ops uid
@@ -256,7 +256,7 @@ The real wall is that =ops= cannot read another uid's keys. These tasks defensiv
         - "/home/{{ dev_user }}/.foundry/keystores"
       register: ops_secret_paths
       when: ops_access_enabled | bool
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 
     # Enforce 0700 only where the path already exists — do not pre-create
     # .secrets here (phase 80 owns its creation/migration).
@@ -274,7 +274,7 @@ The real wall is that =ops= cannot read another uid's keys. These tasks defensiv
         - ops_access_enabled | bool
         - item.stat is defined
         - item.stat.exists | default(false)
-      tags: [sandbox, ops-access]
+      tags: [sandbox, ops-access, interop]
 #+end_src
 
 ** Verify Sandbox Infrastructure
