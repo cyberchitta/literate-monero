@@ -745,6 +745,7 @@ CAST="{{ foundry_install_dir }}/cast"
 SPOOL="{{ interop_proposal_dir }}"
 CUSTODY_DEFAULT="{{ interop_custody_default }}"
 
+{% raw %}
 usage() {
   cat >&2 <<'USAGE'
 Usage: cast-propose --to <0xADDR> --chain <ID> [options] [ARG...]
@@ -849,6 +850,7 @@ out="$SPOOL/proposal-${ts}-$$.casttx"
   echo "Approve it (as the key owner, NOT ops):  cast-approve $out"
 } >&2
 echo "$out"
+{% endraw %}
 #+end_src
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
@@ -893,6 +895,7 @@ RPC_DEFAULT="{{ cast_rpc_url }}"
 VALUE_CAP="{{ interop_value_cap }}"
 declare -a TO_ALLOWLIST=( {% for a in interop_to_allowlist %}"{{ a }}" {% endfor %})
 
+{% raw %}
 usage() {
   cat >&2 <<'USAGE'
 Usage: cast-approve <proposal-file> [options]
@@ -1079,6 +1082,7 @@ if [ "$rc" -eq 0 ]; then
   echo "cast-approve: broadcast complete."
 fi
 exit "$rc"
+{% endraw %}
 #+end_src
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
@@ -1171,6 +1175,7 @@ REG="{{ interop_registry_dir }}"
 TOKENS="$REG/tokens"
 CHAINS="$REG/chains"
 
+{% raw %}
 usage() {
   cat >&2 <<'USAGE'
 Usage: stable-send <symbol> <amount> <to-address> --chain <name> [options]
@@ -1245,6 +1250,7 @@ exec "$PROPOSE" \
   ${CUSTODY:+--custody "$CUSTODY"} \
   --note "$NOTE" \
   "$TO" "$UNITS"
+{% endraw %}
 #+end_src
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
@@ -1306,6 +1312,7 @@ REG="{{ interop_registry_dir }}"
 TOKENS="$REG/tokens"
 CHAINS="$REG/chains"
 
+{% raw %}
 usage() {
   cat >&2 <<'USAGE'
 Usage: stable-bal <symbol> <address> --chain <name> [--rpc-url URL]
@@ -1356,6 +1363,7 @@ from_base_units() {
   printf '%s.%s' "${r:0:${#r}-dec}" "${r:${#r}-dec}"
 }
 printf '%s %s (chain %s)\n' "$(from_base_units "$raw" "$DEC")" "${SYMBOL^^}" "$CHAIN"
+{% endraw %}
 #+end_src
 
 #+begin_src yaml :tangle ../ansible/fragments/30-interop.yml
