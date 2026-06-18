@@ -48,3 +48,6 @@ docs/system-notes.md
 .commit-msg
 # Planning / handoff notes — local working docs, never commit
 *-handoff.md
+
+# Claude Code: machine-local settings (skills under .claude/skills/ ARE tracked)
+.claude/settings.local.json
