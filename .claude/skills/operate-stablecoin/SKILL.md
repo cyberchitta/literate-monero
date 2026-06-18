@@ -48,12 +48,16 @@ If those are missing, the box isn't provisioned for this — tell the user to
 enable `cast_enabled` and deploy `--tags interop`, then stop. Do not improvise
 with bare `cast`.
 
-Run context matters:
-- **Balance reads (`stable-bal`)** go over Tor via `sudo cast-tor`, so they need
-  the key-owner/`dev` cast-tor sudo grant. From the sandboxed `ops` front door
-  (which lacks that grant), balance reads will fail — only staging works there.
-- **Staging (`stable-send`)** is fully offline and works from any context,
-  including an `ops` session.
+Run context + transport. On the box itself, invoke the wrappers directly; from a
+laptop Claude session, reach them over SSH:
+- **Stage** (`stable-send`, offline — no key, no network) as the sandboxed ops
+  principal: `ssh box-ops 'stable-send …'`. Works from any context.
+- **Read balances** (`stable-bal`) as the key owner: `ssh dev@10.8.0.1
+  'stable-bal …'` — it goes over Tor via `sudo cast-tor`, which needs the `dev`
+  grant, so it fails from the `ops` front door.
+- **Approval is the operator's**: surface the `cast-approve … --rpc-url <L2>`
+  command for them to run in a `dev` session; never run it yourself (it needs the
+  keystore password / Trezor you don't hold).
 
 ## Reading a balance
 
