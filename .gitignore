@@ -44,9 +44,13 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
-docs/system-notes.md
 .commit-msg
-# Planning / handoff notes — local working docs, never commit
+
+# Working notes — the private working-notes repo, symlinked in.
+# No trailing slash: this is a symlink, and git treats a symlink as a file.
+_notes
+
+# Backstop for a note written next to source by reflex, out of habit.
 *-handoff.md
 
 # Claude Code: machine-local settings (skills under .claude/skills/ ARE tracked)

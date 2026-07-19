@@ -101,11 +101,33 @@ The Makefile tracks dependencies between org files and their generated fragments
 - `ansible/fragments/*.yml`
 - `ansible/group_vars/all.yml`
 - `ansible/ansible.cfg`, `ansible/inventory.yml`
+- `configs/templates/*.j2` — every one of these is tangled out of an `org/*.org`
+  block. Edit the org source; an edit made here is lost at the next tangle.
 
 **Edit these** — source of truth:
 - `org/*.org` files
 - `config.yml` (user configuration)
-- `configs/templates/*.j2` (Jinja2 templates)
+
+`config.yml` is gitignored, so a fresh clone does not have one — copy
+`config.yml.example` and fill it in before running `make`. It is a declared
+dependency of every phase fragment, so tangling fails without it.
+
+## Working notes (gitignored)
+
+Tracked separately in the private `working-notes` repo, symlinked at `_notes/`;
+not discoverable by search — `Grep`/`Glob` do not follow symlinks and skip
+gitignored paths, so these never turn up in a search. `Read` them directly by
+path when relevant:
+
+- `_notes/field-notes.md` — host-specific configuration observations from the
+  deployed machine (WiFi/thermal, networking, WireGuard)
+- `_notes/security-fixes-handoff.md` — progress through the `main` security
+  audit, fix by fix
+- `_notes/interop-phase-handoff.md` — interop tier build-out
+- `_notes/sandboxed-remote-access-handoff.md` — sandboxed ops remote-access
+  landing zone
+
+Speculative unless stated otherwise. Do not implement from these without asking.
 
 ## Code Conventions
 
