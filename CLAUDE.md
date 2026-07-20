@@ -115,9 +115,8 @@ dependency of every phase fragment, so tangling fails without it.
 ## Working notes (gitignored)
 
 Tracked separately in the private `working-notes` repo, symlinked at `_notes/`;
-not discoverable by search — `Grep`/`Glob` do not follow symlinks and skip
-gitignored paths, so these never turn up in a search. `Read` them directly by
-path when relevant:
+invisible to the `Grep`/`Glob` tools (global `CLAUDE.md` has the `rg` forms).
+Read directly when relevant:
 
 - `_notes/field-notes.md` — host-specific configuration observations from the
   deployed machine (WiFi/thermal, networking, WireGuard)
