@@ -125,6 +125,8 @@ Read directly when relevant:
 - `_notes/interop-phase-handoff.md` — interop tier build-out
 - `_notes/sandboxed-remote-access-handoff.md` — sandboxed ops remote-access
   landing zone
+- `_notes/improvements-handoff.md` — repo-review backlog; deploy steps for the
+  XMRig pin + Tor-routed update scripts
 
 Speculative unless stated otherwise. Do not implement from these without asking.
 
