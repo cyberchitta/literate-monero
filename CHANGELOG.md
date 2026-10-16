@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.0] - 2026-10-16
+
+### Added
+
+- **Exchange (opt-in, off by default)**: RetoSwap (Haveno) as a signed, GPG-verified AppImage, run on demand under bubblewrap, never as a service
+- **Interop tier (opt-in, off by default)**: `cast` (Foundry) EVM CLI, cosign-verified and confined to a Tor-only network namespace; Rabby browser extension as a dapp-UI fallback on the fail-closed Mullvad path
+- **Sandboxed remote operations**: an `ops` user reached over WireGuard SSH, with a propose/approve signer: `ops` stages transactions, only the operator signs and broadcasts
+- **Stablecoin wrappers**: `stable-bal` and `stable-send` over the signer, plus the `operate-stablecoin` skill
+- **Monero wallet RPC**: `monero-wallet-rpc` service with runtime wallet switching
+- **Mullvad WireGuard**: fallback VPN path for the privacy browser, with exit verification and a kill switch on tunnel drop
+- **KeePassXC**: git credential storage
+- **Release records**: rollbacks now restore `config.yml` to the rolled-back version (and its XMRig commit pin), so the next playbook run no longer silently re-upgrades
+- **Checks**: `make check` (Ansible syntax-check, yamllint, shellcheck on templates rendered with real variables), `make check-drift` (do generated files match the org sources?), and `make docker-check` (both, in a Debian dev container with no network, for non-Linux hosts)
+
+### Changed
+
+- **Updates go through Tor**: version checks, downloads and the weekly check no longer touch clearnet, with no clearnet fallback
+- **Update scripts**: keep the checkout and `config.yml` owned by its user, refuse malformed version strings, and never install a "latest" release that sorts below the current pin
+- **XMRig** is built from a pinned, verified commit cloned over Tor, and every mining run re-checks the checkout against the pin
+- **Monerod** runs as a dedicated `monero` user
+- **Backups** are encrypted with age; plaintext archives are refused
+- **Downloads** are GPG-verified against pinned maintainer keys (`keys/`)
+- **Build**: the Makefile is the single tangle entry point (`tangle.sh` is `make clean all`); templates are tracked build outputs; `ansible/tangle-all.sh` is gone
+- **Docs**: deploy phase by phase; scope framed as sovereign private crypto, Monero-anchored
+- Huge pages doubled so monerod and XMRig both fit their RandomX datasets; P2Pool pinned to v4.16 for its consensus fix
+
+### Fixed
+
+- Haveno release tags with a `v` prefix (upstream changed format at v1.10.0-reto)
+- Security audit fixes: sandbox secret overlays, Tor DNS for git/SSH proxies, ban-list signature check, restore-path whitelist, MSR access gating, pinned yay AUR commit, and a low-severity hardening batch
+- Playbook assembly uses only fragments that match a current org file
+- Tag-filtered runs define the registered variables their tasks read
+- Monerod I2P startup, address discovery and verification; RPC polling during updates
+- WireGuard/Mullvad DNS (systemd-resolved) and wrapper privilege handling
+
 ## [0.0.3] - 2026-01-29
 
 ### Added
