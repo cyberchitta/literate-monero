@@ -72,6 +72,7 @@ clean:
 	rm -f $(ANSIBLE_DIR)/ansible.cfg $(ANSIBLE_DIR)/inventory.yml $(GROUP_VARS_DIR)/all.yml
 	rm -f $(ANSIBLE_DIR)/assemble-playbook.sh
 	rm -f $(TEMPLATES_DIR)/*.j2
+	rm -f $(ANSIBLE_DIR)/tangle-all.sh .config-tangled  # left by older builds
 
 show:
 	@echo "Tangled orgs: $(TANGLE_ORGS)"

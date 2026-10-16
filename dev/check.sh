@@ -6,7 +6,7 @@
 #      (dev/render-templates.yml), then shellcheck on the shell scripts
 # yamllint and shellcheck are skipped with a warning when not installed
 # (the box has neither; the dev container has both). Nothing touches the
-# network or the system: rendering writes only under $RENDER_DIR.
+# network or the system: rendering writes only under a mktemp dir.
 
 set -euo pipefail
 
@@ -16,7 +16,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-RENDER_DIR=/tmp/literate-monero-rendered
+# Per-run scratch: a fixed /tmp path can be left behind by another user.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+RENDER_DIR="$SCRATCH/rendered"
 export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
 
 step() { echo -e "\n${GREEN}== $1${NC}"; }
@@ -36,8 +39,11 @@ else
 fi
 
 step "Render templates"
-ansible-playbook -i localhost, dev/render-templates.yml -e "render_dir=$RENDER_DIR" > /tmp/literate-monero-render.log \
-    || { cat /tmp/literate-monero-render.log; echo -e "${RED}template rendering failed${NC}"; exit 1; }
+# In-memory fact cache: the configured jsonfile cache in /tmp/ansible_facts is
+# root-owned on the box once a playbook has run as root.
+ANSIBLE_CACHE_PLUGIN=memory \
+    ansible-playbook -i localhost, dev/render-templates.yml -e "render_dir=$RENDER_DIR" > "$SCRATCH/render.log" \
+    || { cat "$SCRATCH/render.log"; echo -e "${RED}template rendering failed${NC}"; exit 1; }
 echo "rendered $(find "$RENDER_DIR" -type f | wc -l) templates"
 
 step "shellcheck (warning and above)"

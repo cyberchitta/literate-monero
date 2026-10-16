@@ -11,7 +11,7 @@
     - ../ansible/group_vars/all.yml
     - ../config.yml
   vars:
-    render_dir: /tmp/literate-monero-rendered
+    render_dir: /tmp/literate-monero-rendered   # dev/check.sh passes its own
     # Stand-ins for values the phases compute at run time (set_fact/register).
     # A template that starts using a new one fails to render here: add it.
     rabby_ext_id:
