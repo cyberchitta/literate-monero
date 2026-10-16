@@ -40,6 +40,19 @@ string is refused. And "different from the pin" is not "newer": a latest
 release that sorts below the current pin (=sort -V=) is reported, never
 installed as a silent downgrade.
 
+*A rollback puts =config.yml= back too.* The playbook reads versions from
+=config.yml= at run time, so repointing an =/opt= symlink alone is undone by
+the next playbook run, which silently re-installs the newer version. The
+values cannot be recovered from the directory name: a Haveno dir drops the
+tag's =v= prefix, and an XMRig rollback also needs that version's commit pin
+(reading it back from the old checkout would defeat the pin). So whenever a
+version is replaced, the script first records the =config.yml= values it was
+installed from — a /release record/ — and a rollback writes the target's
+record back. Records live in =/var/lib/literate-monero/releases=, root-only:
+not inside the install dirs, some of which belong to service users who could
+otherwise rewrite the commit pin. A version replaced before records existed
+has none; rolling back to it says which keys to set by hand.
+
 #+begin_src bash :tangle ../configs/templates/update-lib.sh.j2
 # Shared helpers for check-updates.sh and the update-*.sh scripts.
 # Sourced, not executed. Generated from org/97-updates.org.
@@ -84,6 +97,70 @@ backup_config() {
 
 restore_config() {
     as_owner cp "$BACKUP_CONFIG" "$CONFIG_FILE"
+}
+
+# config_value KEY: the current value of a top-level key in config.yml, or
+# nothing if it is absent (not an error, so callers under set -e can check).
+config_value() {
+    { grep "^$1:" "$CONFIG_FILE" || true; } | awk '{print $2}' | tr -d '"'
+}
+
+RELEASE_DIR=/var/lib/literate-monero/releases
+
+# record_release NAME KEY...: save config.yml's current KEYs as the release
+# record of install NAME (an /opt dir name, e.g. xmrig-v6.25.0). Missing or
+# odd-looking values are not recorded; a rollback to NAME then asks for them.
+record_release() {
+    local name="$1" key value content=""
+    shift
+    for key in "$@"; do
+        value=$(config_value "$key")
+        if ! [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Warning: $key not set in config.yml; no release record for $name" >&2
+            return 0
+        fi
+        content+="$key: \"$value\""$'\n'
+    done
+    install -d -m 0700 "$RELEASE_DIR"
+    printf '%s' "$content" > "$RELEASE_DIR/$name.tmp"
+    mv "$RELEASE_DIR/$name.tmp" "$RELEASE_DIR/$name"
+}
+
+# restore_release NAME KEY...: write NAME's recorded KEYs back into
+# config.yml. All or nothing: fails without writing if any KEY is missing.
+restore_release() {
+    local name="$1" key value i=0
+    shift
+    local -a values=()
+    [ -f "$RELEASE_DIR/$name" ] || return 1
+    for key in "$@"; do
+        value=$(sed -n "s/^$key: \"\(.*\)\"\$/\1/p" "$RELEASE_DIR/$name")
+        [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+        values+=("$value")
+    done
+    for key in "$@"; do
+        set_config "$key" "${values[$i]}"
+        i=$((i + 1))
+    done
+}
+
+# rollback_config CURRENT TARGET KEY...: during a rollback from install
+# CURRENT to install TARGET, record CURRENT (so rolling forward again works)
+# and point config.yml at TARGET.
+rollback_config() {
+    local current="$1" target="$2"
+    shift 2
+    if [ -n "$current" ] && [ "$current" != "$target" ]; then
+        record_release "$current" "$@"
+    fi
+    if restore_release "$target" "$@"; then
+        echo "config.yml now names $target"
+    else
+        echo -e "\033[1;33mNo release record for $target (replaced before records were kept).\033[0m"
+        echo "config.yml still names the newer version, and the next playbook run"
+        echo "would re-install it. Before running the playbook, set in $CONFIG_FILE:"
+        printf '  %s\n' "$@"
+    fi
 }
 
 # Regenerate the playbook from the org sources, as the owner.
@@ -376,6 +453,9 @@ fi
 echo ""
 echo -e "${BLUE}=== Starting Monerod Update ===${NC}"
 
+# Record the outgoing release so rollback-monerod.sh can restore its config
+record_release "monero-${CURRENT_VERSION}" monerod_version
+
 # Backup current config
 echo "Backing up config.yml..."
 backup_config
@@ -542,6 +622,9 @@ fi
 echo ""
 echo -e "${BLUE}=== Starting P2Pool Update ===${NC}"
 
+# Record the outgoing release so rollback-p2pool.sh can restore its config
+record_release "p2pool-${CURRENT_VERSION}" p2pool_version
+
 # Backup current config
 echo "Backing up config.yml..."
 backup_config
@@ -705,6 +788,9 @@ echo ""
 echo -e "${BLUE}=== Starting XMRig Update ===${NC}"
 echo -e "${YELLOW}Note: XMRig build may take 5-10 minutes${NC}"
 echo ""
+
+# Record the outgoing release so rollback-xmrig.sh can restore its config
+record_release "xmrig-${CURRENT_VERSION}" xmrig_version xmrig_commit
 
 # Backup current config
 echo "Backing up config.yml..."
@@ -871,6 +957,9 @@ fi
 echo ""
 echo -e "${BLUE}=== Starting Haveno Update ===${NC}"
 
+# Record the outgoing release so rollback-haveno.sh can restore its config
+record_release "haveno-${CURRENT_VERSION#v}" haveno_version
+
 # Backup current config
 echo "Backing up config.yml..."
 backup_config
@@ -1010,6 +1099,9 @@ fi
 
 echo ""
 echo -e "${BLUE}=== Starting cast Update ===${NC}"
+
+# Record the outgoing release so rollback-cast.sh can restore its config
+record_release "foundry-${CURRENT_VERSION}" foundry_version
 
 echo "Backing up config.yml..."
 backup_config
@@ -1219,6 +1311,8 @@ rm -f "$BACKUP_CONFIG"
 
 set -euo pipefail
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -1277,6 +1371,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Rollback cancelled"
     exit 0
 fi
+
+# Point config.yml at the target too, or the next playbook run re-upgrades
+rollback_config "${CURRENT:+monero-$CURRENT}" "monero-${TARGET_VERSION}" monerod_version
 
 # Stop service
 echo "Stopping monerod..."
@@ -1343,6 +1440,8 @@ echo ""
 
 set -euo pipefail
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -1402,6 +1501,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Point config.yml at the target too, or the next playbook run re-upgrades
+rollback_config "${CURRENT:+p2pool-$CURRENT}" "p2pool-${TARGET_VERSION}" p2pool_version
+
 # Stop service
 echo "Stopping P2Pool..."
 systemctl stop p2pool
@@ -1445,6 +1547,8 @@ echo ""
 # Rollback XMRig to a previous version
 
 set -euo pipefail
+
+source /usr/local/lib/literate-monero/update-lib.sh
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1505,6 +1609,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Point config.yml at the target too, or the next playbook run re-upgrades
+rollback_config "${CURRENT:+xmrig-$CURRENT}" "xmrig-${TARGET_VERSION}" xmrig_version xmrig_commit
+
 # Stop service
 echo "Stopping XMRig..."
 systemctl stop xmrig
@@ -1560,6 +1667,8 @@ echo ""
 # No systemd service: this just repoints /opt/haveno to an older versioned dir.
 
 set -euo pipefail
+
+source /usr/local/lib/literate-monero/update-lib.sh
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1621,6 +1730,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Point config.yml at the target too, or the next playbook run re-upgrades
+rollback_config "${CURRENT:+haveno-$CURRENT}" "haveno-${TARGET_VERSION}" haveno_version
+
 # Repoint symlink (no service to stop/start)
 echo "Updating symlink..."
 rm -f /opt/haveno
@@ -1651,6 +1763,8 @@ echo ""
 # No systemd service: this just repoints /opt/foundry to an older versioned dir.
 
 set -euo pipefail
+
+source /usr/local/lib/literate-monero/update-lib.sh
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1707,6 +1821,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Rollback cancelled"
     exit 0
 fi
+
+# Point config.yml at the target too, or the next playbook run re-upgrades
+rollback_config "${CURRENT:+foundry-$CURRENT}" "foundry-${TARGET_VERSION}" foundry_version
 
 echo "Updating symlink..."
 rm -f /opt/foundry
