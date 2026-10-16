@@ -8,14 +8,64 @@ This phase provides update management for installed software components:
 
 All updates are atomic (symlink switches) with automatic rollback on failure.
 
+** Shared Update Helpers
+
+=check-updates.sh= and every =update-*.sh= source this file, so the rules live
+in one place.
+
+*Every request goes through Tor.* A weekly check that asks GitHub, from the
+box's own IP, about monerod, P2Pool and XMRig releases fingerprints the box as
+a Monero node and miner. =tor_curl= sends everything through the local SOCKS
+port with remote DNS (=socks5h=) and has no clearnet fallback: if Tor is down,
+the check fails and says so.
+
+Latest versions come from GitHub's web redirect
+(=/releases/latest= → =/releases/tag/<tag>=), not the REST API. The API allows
+60 unauthenticated requests per hour *per IP*, and a Tor exit shares that budget
+with everyone else using it. Projects whose "latest release" can be a nightly
+(Foundry) are resolved from their =vX.Y.Z= git tags instead.
+
+#+begin_src bash :tangle ../configs/templates/update-lib.sh.j2
+# Shared helpers for check-updates.sh and the update-*.sh scripts.
+# Sourced, not executed. Generated from org/97-updates.org.
+
+TOR_PROXY="socks5h://127.0.0.1:{{ tor_socks_port }}"
+
+# All outbound requests go through Tor. No clearnet fallback: if Tor is down
+# this fails, and the caller reports an error.
+tor_curl() {
+    curl -fsS --max-time 60 --retry 2 --proxy "$TOR_PROXY" "$@"
+}
+
+# latest_release_tag OWNER/REPO: the tag GitHub's "latest release" redirect
+# points at (uses the web redirect, which avoids the per-IP API rate limit).
+latest_release_tag() {
+    local url
+    url=$(tor_curl -o /dev/null -w '%{redirect_url}' "https://github.com/$1/releases/latest") || return 1
+    [[ "$url" == */releases/tag/* ]] || return 1
+    echo "${url##*/}"
+}
+
+# latest_version_tag OWNER/REPO: highest vX.Y.Z git tag, for projects whose
+# "latest release" can be a nightly.
+latest_version_tag() {
+    https_proxy="$TOR_PROXY" git ls-remote --tags --refs "https://github.com/$1.git" 'v*' \
+        | grep -oE 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sed 's|^refs/tags/||' \
+        | sort -V | tail -1
+}
+#+end_src
+
 ** Check for Available Updates Script
 
 #+begin_src bash :tangle ../configs/templates/check-updates.sh.j2
 #!/bin/bash
 # Check for available software updates
-# Queries GitHub releases and compares with config.yml versions
+# Queries GitHub releases (over Tor) and compares with config.yml versions
 
 set -euo pipefail
+
+source /usr/local/lib/literate-monero/update-lib.sh
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -36,16 +86,9 @@ get_latest_release() {
     local repo="$1"
     local current_version="$2"
 
-    # Query GitHub API (no auth needed for public repos)
-    local release_info
-    release_info=$(curl -s "https://api.github.com/repos/${repo}/releases/latest")
-
-    if echo "$release_info" | grep -q '"tag_name"'; then
-        local latest_version
-        latest_version=$(echo "$release_info" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-
-        local release_url
-        release_url=$(echo "$release_info" | grep '"html_url"' | head -1 | cut -d'"' -f4)
+    local latest_version
+    if latest_version=$(latest_release_tag "$repo"); then
+        local release_url="https://github.com/${repo}/releases/tag/${latest_version}"
 
         # Normalize versions for comparison (remove 'v' prefix)
         local current_norm="${current_version#v}"
@@ -97,8 +140,7 @@ fi
 CAST_CURRENT=$(get_current_version "foundry")
 if [ -n "$CAST_CURRENT" ]; then
     echo -e "${YELLOW}Checking cast (Foundry)...${NC}"
-    CAST_LATEST=$(curl -s "https://api.github.com/repos/foundry-rs/foundry/releases" \
-        | grep '"tag_name"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    CAST_LATEST=$(latest_version_tag "foundry-rs/foundry" || true)
     if [ -z "$CAST_LATEST" ]; then
         CAST_STATUS="error"; CAST_LATEST="unknown"
     elif [ "${CAST_CURRENT#v}" = "${CAST_LATEST#v}" ]; then
@@ -234,6 +276,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -248,8 +292,7 @@ CURRENT_VERSION=$(grep "^monerod_version:" "$CONFIG_FILE" | awk '{print $2}' | t
 
 # Get latest version from GitHub
 echo -e "${BLUE}Checking for latest monerod release...${NC}"
-RELEASE_INFO=$(curl -s "https://api.github.com/repos/monero-project/monero/releases/latest")
-LATEST_VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+LATEST_VERSION=$(latest_release_tag "monero-project/monero" || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest version${NC}"
@@ -397,6 +440,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -411,8 +456,7 @@ CURRENT_VERSION=$(grep "^p2pool_version:" "$CONFIG_FILE" | awk '{print $2}' | tr
 
 # Get latest version from GitHub
 echo -e "${BLUE}Checking for latest P2Pool release...${NC}"
-RELEASE_INFO=$(curl -s "https://api.github.com/repos/SChernykh/p2pool/releases/latest")
-LATEST_VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+LATEST_VERSION=$(latest_release_tag "SChernykh/p2pool" || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest version${NC}"
@@ -535,6 +579,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -549,8 +595,7 @@ CURRENT_VERSION=$(grep "^xmrig_version:" "$CONFIG_FILE" | awk '{print $2}' | tr 
 
 # Get latest version from GitHub
 echo -e "${BLUE}Checking for latest XMRig release...${NC}"
-RELEASE_INFO=$(curl -s "https://api.github.com/repos/xmrig/xmrig/releases/latest")
-LATEST_VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+LATEST_VERSION=$(latest_release_tag "xmrig/xmrig" || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest version${NC}"
@@ -682,6 +727,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -704,8 +751,7 @@ CURRENT_VERSION=$(grep "^haveno_version:" "$CONFIG_FILE" | awk '{print $2}' | tr
 
 # Get latest version from GitHub (reto tags have no 'v' prefix, e.g. 1.6.0-reto)
 echo -e "${BLUE}Checking for latest Haveno (RetoSwap) release...${NC}"
-RELEASE_INFO=$(curl -s "https://api.github.com/repos/retoaccess1/haveno-reto/releases/latest")
-LATEST_VERSION=$(echo "$RELEASE_INFO" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+LATEST_VERSION=$(latest_release_tag "retoaccess1/haveno-reto" || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest version${NC}"
@@ -819,6 +865,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -840,10 +888,7 @@ CURRENT_VERSION=$(grep "^foundry_version:" "$CONFIG_FILE" | awk '{print $2}' | t
 # Latest VERSIONED tag (vX.Y.Z). We deliberately skip `stable`/`nightly-*` tags:
 # only versioned releases carry the .sha256 + .sigstore.json the phase verifies.
 echo -e "${BLUE}Checking for latest Foundry (cast) release...${NC}"
-LATEST_VERSION=$(curl -s "https://api.github.com/repos/foundry-rs/foundry/releases" \
-    | grep '"tag_name"' \
-    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
-    | head -1)
+LATEST_VERSION=$(latest_version_tag "foundry-rs/foundry" || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest versioned release${NC}"
@@ -949,6 +994,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+source /usr/local/lib/literate-monero/update-lib.sh
+
 CONFIG_FILE="{{ lookup('env', 'HOME') }}/literate-monero/config.yml"
 BACKUP_CONFIG="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 POLICY="{{ chromium_policy_dir }}/interop-rabby.json"
@@ -969,10 +1016,7 @@ fi
 CURRENT_VERSION=$(grep "^rabby_version:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
 
 echo -e "${BLUE}Checking for latest Rabby release...${NC}"
-LATEST_VERSION=$(curl -s "https://api.github.com/repos/RabbyHub/Rabby/releases/latest" \
-    | grep '"tag_name"' \
-    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' \
-    | head -1)
+LATEST_VERSION=$(latest_release_tag "RabbyHub/Rabby" | grep -oE '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
 
 if [ -z "$LATEST_VERSION" ]; then
     echo -e "${RED}Error: Could not determine latest release${NC}"
@@ -993,7 +1037,7 @@ echo "  Current: $CURRENT_VERSION"
 echo "  Latest:  $LATEST_VERSION"
 echo ""
 echo -e "${BLUE}Downloading $LATEST_VERSION to compute its hash...${NC}"
-curl -fsSL -o "$TMP_ZIP" "$ZIP_URL"
+tor_curl -L -o "$TMP_ZIP" "$ZIP_URL"
 COMPUTED_HASH=$(sha256sum "$TMP_ZIP" | awk '{print $1}')
 rm -f "$TMP_ZIP"
 
@@ -1586,6 +1630,24 @@ echo ""
     # Update Management
     # ------------------------------------------------------------------------
 
+    - name: Create update helper library directory
+      file:
+        path: /usr/local/lib/literate-monero
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: [updates, scripts]
+
+    - name: Deploy shared update helpers
+      template:
+        src: "../configs/templates/update-lib.sh.j2"
+        dest: /usr/local/lib/literate-monero/update-lib.sh
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [updates, scripts]
+
     - name: Deploy update management scripts
       template:
         src: "../configs/templates/{{ item }}.j2"
@@ -1670,7 +1732,7 @@ echo ""
 
 Each component update follows this safe pattern:
 
-1. **Check** - Query GitHub for latest version
+1. **Check** - Query GitHub (over Tor) for latest version
 2. **Confirm** - Interactive prompt showing current → new version
 3. **Backup** - Save config.yml before changes
 4. **Update** - Modify config.yml, re-tangle, run Ansible
@@ -1686,12 +1748,13 @@ Updates are atomic (symlink switch) so rollback is instant.
 - Old versions kept until manual cleanup
 - Rollback just repoints symlink and restarts service
 
-*** GitHub API Rate Limits
+*** Version Lookups over Tor
 
-- Public GitHub API: 60 requests/hour without auth
-- Checking 3 components = 3 requests
-- Weekly automated checks stay well within limits
-- Rate limit errors handled gracefully (shows "unknown" version)
+- All lookups and downloads go through Tor (see Shared Update Helpers); with Tor
+  down, a check shows "unknown"/ERROR rather than falling back to clearnet
+- Lookups use GitHub's web redirect and git tags, not the REST API, whose
+  per-IP limit is shared by everyone on a Tor exit
+- Failed lookups are handled gracefully (shows "unknown" version)
 
 *** Safety Features
 
