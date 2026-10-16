@@ -25,7 +25,9 @@ VALIDATE := $(ANSIBLE_DIR)/validate.yml
 # Final playbook
 PLAYBOOK := $(ANSIBLE_DIR)/playbook.yml
 
-.PHONY: all clean show
+.PHONY: all clean show check docker-image docker-check
+
+DEV_IMAGE := literate-monero-dev
 
 all: $(PLAYBOOK) $(VALIDATE)
 
@@ -78,6 +80,19 @@ $(ANSIBLE_DIR)/assemble-playbook.sh: $(ORG_DIR)/install.org
 $(PLAYBOOK): $(FRAGMENTS) $(CONFIGS) $(ANSIBLE_DIR)/assemble-playbook.sh
 	@echo "Assembling playbook..."
 	@$(ANSIBLE_DIR)/assemble-playbook.sh
+
+# Static checks on the generated Ansible (needs ansible; run `make all` first)
+check: $(PLAYBOOK) $(VALIDATE)
+	cd $(ANSIBLE_DIR) && ansible-playbook playbook.yml --syntax-check
+	cd $(ANSIBLE_DIR) && ansible-playbook validate.yml --syntax-check
+
+# Tangle + check inside the dev container (dev/Dockerfile), for non-Linux hosts.
+# The repo is mounted read-only and the run has no network.
+docker-image:
+	docker build -t $(DEV_IMAGE) dev
+
+docker-check: docker-image
+	docker run --rm --network none -v "$(CURDIR)":/src:ro $(DEV_IMAGE) /src/dev/container-check.sh
 
 clean:
 	rm -f $(FRAGMENTS_DIR)/*.yml
