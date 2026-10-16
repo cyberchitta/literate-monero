@@ -123,3 +123,21 @@ phase expects for the Rabby path (the extension never holds the key; you confirm
 the real destination/amount on the device). To bump, change `rabby_version` +
 `rabby_sha256` together and cross-check the published hash over **more than one
 path** (clearnet + Tor) before pinning, e.g. `curl -L <release-zip-url> | sha256sum`.
+
+## Non-GPG trust anchor: XMRig source (pinned commit)
+
+The `mining` phase builds **XMRig** from source. Its git tags are lightweight and
+unsigned, and the release `SHA256SUMS` covers binaries, not source — so the
+anchor is a **commit we pin** (`xmrig_commit` in `config.yml`). The phase checks
+out that commit and asserts that both `HEAD` and the tag resolve to it,
+fail-closed on mismatch.
+
+| Field | Value |
+|-------|-------|
+| Repository | `https://github.com/xmrig/xmrig.git` |
+| `xmrig_version` | `v6.25.0` |
+| `xmrig_commit` | `753859caea40cd645eacb9049cf94a8104d63f43` |
+
+Provenance (2026-10-16): `git ls-remote` of `refs/tags/v6.25.0`, clearnet only —
+**cross-check over Tor before relying on it.** Like the Rabby pin, this is a
+consistency check against a targeted swap or a later re-tag, not a code audit.

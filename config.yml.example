@@ -30,6 +30,11 @@
 monerod_version: "v0.18.5.0"
 p2pool_version: "v4.16"
 xmrig_version: "v6.25.0"
+# XMRig tags are unsigned, so the build is pinned to this exact commit and
+# fails closed if the tag no longer points at it. Change both lines together;
+# resolve with `git ls-remote https://github.com/xmrig/xmrig.git
+# refs/tags/<version>` over more than one path (clearnet + Tor).
+xmrig_commit: "753859caea40cd645eacb9049cf94a8104d63f43"
 # Note: dist.torproject.org removes old releases, so fresh installs can
 # only verify the current version.
 tor_browser_version: "15.0.15"

@@ -193,7 +193,32 @@ This Jinja2 template configures XMRig with variables from configuration.org.
 
 ** Build XMRig
 
+XMRig is built from source, and its git tags are lightweight and unsigned — a
+tag is just a movable pointer, so cloning =v6.25.0= says nothing about *which*
+code arrives. The phase therefore pins the exact commit (=xmrig_commit= in
+=config.yml=), checks that commit out rather than the tag, and before building
+asserts both that =HEAD= is the pin and that the tag still resolves to it. A
+moved tag or a swapped repository fails closed; an already-built version is
+re-checked on every run.
+
+Like =rabby_sha256=, this is a *consistency* pin, not an audit: it stops a
+targeted swap or a silent re-tag after pinning, not a malicious commit that was
+upstream when you pinned. The clone goes through Tor (=socks5h=), matching the
+dev user's git routing.
+
 #+begin_src yaml :tangle ../ansible/fragments/19-mining.yml
+    - name: Fail if XMRig commit pin is not set
+      fail:
+        msg: |
+          xmrig_commit must be the full 40-char commit that {{ xmrig_version }} points at
+          (got: '{{ xmrig_commit | default('') }}'). XMRig tags are unsigned, so this
+          pin IS the verification. Resolve it with
+            git ls-remote https://github.com/xmrig/xmrig.git refs/tags/{{ xmrig_version }}
+          over more than one path (clearnet + Tor), then set xmrig_version +
+          xmrig_commit together in config.yml.
+      when: (xmrig_commit | default('')) is not match('^[a-f0-9]{40}$')
+      tags: [mining]
+
     - name: Set versioned XMRig directory
       set_fact:
         xmrig_versioned_dir: "{{ xmrig_install_dir }}-{{ xmrig_version }}"
@@ -215,15 +240,40 @@ This Jinja2 template configures XMRig with variables from configuration.org.
       when: not xmrig_version_exists.stat.exists
       tags: [mining]
 
-    - name: Clone XMRig repository to versioned directory
+    - name: Clone XMRig repository to versioned directory (pinned commit, via Tor)
       git:
         repo: https://github.com/xmrig/xmrig.git
         dest: "{{ xmrig_versioned_dir }}"
-        version: "{{ xmrig_version }}"
+        version: "{{ xmrig_commit }}"
         force: yes
+      environment:
+        https_proxy: "socks5h://127.0.0.1:{{ tor_socks_port }}"
       become_user: mining
       when: not xmrig_version_exists.stat.exists
       register: xmrig_clone
+      tags: [mining]
+
+    # Runs on every pass, not only after a fresh clone, so an existing
+    # checkout that no longer matches the pin is caught too.
+    - name: Read XMRig checkout commit and tag target
+      command: git -C {{ xmrig_versioned_dir }} rev-parse HEAD {{ xmrig_version }}^{commit}
+      become_user: mining
+      register: xmrig_rev
+      changed_when: false
+      tags: [mining]
+
+    - name: Verify XMRig checkout matches the pinned commit
+      assert:
+        that:
+          - xmrig_rev.stdout_lines[0] == xmrig_commit
+          - xmrig_rev.stdout_lines[1] == xmrig_commit
+        fail_msg: |
+          XMRig commit mismatch — refusing to build or run.
+            pinned:              {{ xmrig_commit }}
+            HEAD:                {{ xmrig_rev.stdout_lines[0] }}
+            {{ xmrig_version }} resolves to: {{ xmrig_rev.stdout_lines[1] }}
+          A moved tag or swapped repository is an incident: investigate before
+          re-pinning.
       tags: [mining]
 
     - name: Create XMRig build directory
