@@ -27,17 +27,23 @@ The literate programming approach means users read the source. Maintain that tra
 ## Build Commands
 
 ```bash
-# Generate all playbooks from org files (requires Emacs)
+# Generate all playbooks from org files (requires Emacs) — the one tangle entry point
 make all
 
-# Alternative: tangle everything via script
+# Full regeneration (make clean all); what the update scripts run
 ./tangle.sh
+
+# Static checks: Ansible syntax-check, yamllint, shellcheck on rendered templates
+make check
+
+# Do this tree's generated files still match the org sources?
+make check-drift
+
+# Off-box (e.g. macOS): tangle + check in the Debian dev container, no network
+make docker-check
 
 # Clean generated files
 make clean
-
-# Show dependency graph
-make show
 
 # Initial system setup (installs Emacs, Ansible, tmux)
 ./bootstrap.sh
@@ -69,7 +75,7 @@ org/*.org  →  (emacs org-babel-tangle)  →  ansible/fragments/*.yml
 ansible/fragments/*.yml  →  (assemble-playbook.sh)  →  ansible/playbook.yml
 ```
 
-The Makefile tracks dependencies between org files and their generated fragments, only re-tangling what changed. `config.yml` is a dependency of all phase fragments.
+The Makefile tangles each org file as a unit (fragment, config files and `configs/templates/*`), stamped under `.tangled/`, so only changed org files are re-tangled. Tangling never reads `config.yml` — Ansible loads it at run time via `vars_files` — but the playbook build stops without one.
 
 ### Phase Names and File Numbering
 

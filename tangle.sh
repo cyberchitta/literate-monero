@@ -1,23 +1,14 @@
 #!/bin/bash
-# Tangle org files and assemble Ansible playbook
+# Regenerate everything from the org sources: a full `make clean all`.
+# The Makefile is the one tangle entry point; this wrapper is kept for the
+# update scripts and for habit.
 
 set -euo pipefail
 
-echo "=== Tangling install.org to generate build scripts ==="
-emacs --batch \
-  --eval "(setq org-src-preserve-indentation t)" \
-  --eval "(require 'org)" \
-  --eval "(find-file \"org/install.org\")" \
-  --eval "(org-babel-tangle)"
-
-echo ""
-echo "=== Tangling all org files to generate Ansible fragments ==="
-ansible/tangle-all.sh
-
-echo ""
-echo "=== Assembling final playbook ==="
-ansible/assemble-playbook.sh
+cd "$(dirname "${BASH_SOURCE[0]}")"
+make clean
+make all
 
 echo ""
 echo "=== Generation complete ==="
-echo "Next: ansible-playbook ansible/validate.yml"
+echo "Next: make check, then ansible-playbook ansible/validate.yml"

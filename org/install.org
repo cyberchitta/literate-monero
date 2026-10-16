@@ -177,48 +177,14 @@ Available tags correspond to phases:
 
 * Build System
 
-** Tangle All Script
+** Tangling
 
-This script tangles all org files to generate Ansible fragments and configuration.
-
-#+begin_src bash :tangle ../ansible/tangle-all.sh :shebang "#!/bin/bash"
-# Tangle all org files with indentation preserved
-# Generated from org/install.org
-# Get absolute paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-echo "=== Setting up directory structure ==="
-# Create directories with absolute paths
-mkdir -p "$PROJECT_ROOT/ansible/fragments"
-mkdir -p "$PROJECT_ROOT/ansible/group_vars"
-mkdir -p "$PROJECT_ROOT/configs/templates"
-
-echo ""
-echo "=== Cleaning old fragments ==="
-rm -f "$PROJECT_ROOT/ansible/fragments"/*.yml
-echo "Removed old fragment files"
-
-echo ""
-echo "=== Tangling all org files with preserved indentation ==="
-echo ""
-
-# Tangle each phase file using absolute paths
-for f in "$PROJECT_ROOT"/org/*.org; do
-  if [ -f "$f" ]; then
-    echo "Tangling: $(basename $f)"
-    emacs --batch \
-      --eval "(setq org-src-preserve-indentation t)" \
-      --eval "(require 'org)" \
-      --eval "(find-file \"$f\")" \
-      --eval "(org-babel-tangle)"
-  fi
-done
-
-echo ""
-echo "=== Tangling complete ==="
-echo "Run $PROJECT_ROOT/ansible/assemble-playbook.sh to create final playbook.yml"
-#+end_src
+=make all= is the single tangle entry point: it tangles each org file that
+changed (Emacs, with =org-src-preserve-indentation=) and then assembles the
+playbook with the script below. =./tangle.sh= is =make clean all=, a full
+regeneration; the update scripts use it after editing =config.yml=.
+=make check= syntax-checks and lints the result, and =make check-drift= shows
+whether this tree's generated files still match the org sources.
 
 ** Playbook Assembly Script
 
@@ -237,14 +203,14 @@ echo ""
 # Ensure fragments directory exists
 if [ ! -d "$FRAGMENTS_DIR" ]; then
   echo "Error: $FRAGMENTS_DIR does not exist"
-  echo "Run tangle-all.sh first"
+  echo "Run make all first"
   exit 1
 fi
 
 # Check if we have any fragments
 if ! ls "$FRAGMENTS_DIR"/*.yml >/dev/null 2>&1; then
   echo "Error: No .yml files found in $FRAGMENTS_DIR"
-  echo "Run tangle-all.sh first"
+  echo "Run make all first"
   exit 1
 fi
 

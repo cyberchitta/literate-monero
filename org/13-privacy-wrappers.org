@@ -356,8 +356,8 @@ browser_profiles:
 Then re-run:
 
 #+begin_example
+make all
 cd ansible
-./tangle-all.sh && ./assemble-playbook.sh
 ansible-playbook playbook.yml --tags privacy-wrappers,browser-dispatch
 #+end_example
 

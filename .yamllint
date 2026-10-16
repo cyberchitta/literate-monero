@@ -1,0 +1,6 @@
+# yamllint config for `make check` (dev/check.sh), run on the assembled
+# playbook — fragments are not standalone YAML documents.
+extends: relaxed
+
+rules:
+  line-length: disable

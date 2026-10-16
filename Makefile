@@ -1,90 +1,61 @@
 # Makefile for literate-monero
-# Selective org-mode tangling with dependency tracking
+# Selective org-mode tangling with dependency tracking.
+#
+# This is the one tangle entry point: tangle.sh and the update scripts call
+# `make clean all`. Each org file is tangled as a unit (it can write a
+# fragment, config files and configs/templates/*), and a stamp under
+# $(STAMP_DIR) records when, so an org edit re-tangles only that file.
 
 ORG_DIR := org
 ANSIBLE_DIR := ansible
 FRAGMENTS_DIR := $(ANSIBLE_DIR)/fragments
 GROUP_VARS_DIR := $(ANSIBLE_DIR)/group_vars
+TEMPLATES_DIR := configs/templates
+STAMP_DIR := .tangled
 
-# Phase org files that create fragments (10-98, excluding 99)
-PHASE_ORGS := $(filter-out $(ORG_DIR)/99-%.org,$(wildcard $(ORG_DIR)/[1-9][0-9]-*.org))
+# Every org file with tangle targets: 00-98 (99 is reference only) + install
+TANGLE_ORGS := $(filter-out $(ORG_DIR)/99-%.org,$(wildcard $(ORG_DIR)/[0-9][0-9]-*.org)) \
+               $(ORG_DIR)/install.org
+STAMPS := $(patsubst $(ORG_DIR)/%.org,$(STAMP_DIR)/%.stamp,$(TANGLE_ORGS))
 
-# Generated fragments (same names as org files)
-FRAGMENTS := $(patsubst $(ORG_DIR)/%.org,$(FRAGMENTS_DIR)/%.yml,$(PHASE_ORGS))
-
-# Special files that don't follow the pattern
-CONFIG_ORG := $(ORG_DIR)/00-configuration.org
-VALIDATE_ORG := $(ORG_DIR)/01-validation.org
-
-CONFIGS := $(ANSIBLE_DIR)/ansible.cfg \
-           $(ANSIBLE_DIR)/inventory.yml \
-           $(GROUP_VARS_DIR)/all.yml
-
-VALIDATE := $(ANSIBLE_DIR)/validate.yml
-
-# Final playbook
 PLAYBOOK := $(ANSIBLE_DIR)/playbook.yml
-
-.PHONY: all clean show check docker-image docker-check
-
 DEV_IMAGE := literate-monero-dev
 
-all: $(PLAYBOOK) $(VALIDATE)
+.PHONY: all clean show check check-drift docker-image docker-check
 
-# Tangle phase org files to fragments
-$(FRAGMENTS_DIR)/%.yml: $(ORG_DIR)/%.org config.yml | $(FRAGMENTS_DIR)
-	@echo "Tangling $< to $@..."
+all: $(PLAYBOOK)
+
+# Tangle one org file. The only place Emacs is invoked.
+$(STAMP_DIR)/%.stamp: $(ORG_DIR)/%.org | $(STAMP_DIR) $(FRAGMENTS_DIR) $(GROUP_VARS_DIR) $(TEMPLATES_DIR)
+	@echo "Tangling $<..."
 	@emacs --batch \
 		--eval "(setq org-src-preserve-indentation t)" \
 		--eval "(require 'org)" \
 		--eval "(find-file \"$<\")" \
 		--eval "(org-babel-tangle)"
+	@touch $@
 
-# Tangle configuration from 00-configuration.org (creates all 3 files at once)
-.INTERMEDIATE: .config-tangled
-
-$(CONFIGS): .config-tangled
-
-.config-tangled: $(CONFIG_ORG) | $(GROUP_VARS_DIR)
-	@echo "Tangling configuration..."
-	@emacs --batch \
-		--eval "(setq org-src-preserve-indentation t)" \
-		--eval "(require 'org)" \
-		--eval "(find-file \"$<\")" \
-		--eval "(org-babel-tangle)"
-	@touch .config-tangled $(CONFIGS)
-
-# Tangle validation from 01-validation.org
-$(VALIDATE): $(VALIDATE_ORG)
-	@echo "Tangling validation..."
-	@emacs --batch \
-		--eval "(setq org-src-preserve-indentation t)" \
-		--eval "(require 'org)" \
-		--eval "(find-file \"$<\")" \
-		--eval "(org-babel-tangle)"
-
-# Ensure directories exist
-$(FRAGMENTS_DIR) $(GROUP_VARS_DIR):
-	@mkdir -p $@
-
-# Tangle the assembly script when its org source changes
-$(ANSIBLE_DIR)/assemble-playbook.sh: $(ORG_DIR)/install.org
-	@echo "Tangling install scripts..."
-	@emacs --batch \
-		--eval "(setq org-src-preserve-indentation t)" \
-		--eval "(require 'org)" \
-		--eval "(find-file \"$<\")" \
-		--eval "(org-babel-tangle)"
-
-# Assemble playbook from all fragments
-$(PLAYBOOK): $(FRAGMENTS) $(CONFIGS) $(ANSIBLE_DIR)/assemble-playbook.sh
+# Assemble playbook.yml from the phase fragments. config.yml is not read here,
+# but the playbook is useless without it, so its absence stops the build.
+$(PLAYBOOK): $(STAMPS) | config.yml
 	@echo "Assembling playbook..."
 	@$(ANSIBLE_DIR)/assemble-playbook.sh
 
-# Static checks on the generated Ansible (needs ansible; run `make all` first)
-check: $(PLAYBOOK) $(VALIDATE)
-	cd $(ANSIBLE_DIR) && ansible-playbook playbook.yml --syntax-check
-	cd $(ANSIBLE_DIR) && ansible-playbook validate.yml --syntax-check
+config.yml:
+	@echo "config.yml is missing: cp config.yml.example config.yml, then edit it"
+	@exit 1
+
+$(STAMP_DIR) $(FRAGMENTS_DIR) $(GROUP_VARS_DIR) $(TEMPLATES_DIR):
+	@mkdir -p $@
+
+# Static checks on the generated files: Ansible syntax, yamllint, shellcheck
+# on rendered templates (linters are skipped with a warning if not installed)
+check: all
+	@dev/check.sh
+
+# Re-tangle into a scratch copy and diff against this tree's generated files
+check-drift:
+	@dev/check-drift.sh
 
 # Tangle + check inside the dev container (dev/Dockerfile), for non-Linux hosts.
 # The repo is mounted read-only and the run has no network.
@@ -95,15 +66,12 @@ docker-check: docker-image
 	docker run --rm --network none -v "$(CURDIR)":/src:ro $(DEV_IMAGE) /src/dev/container-check.sh
 
 clean:
+	rm -rf $(STAMP_DIR)
 	rm -f $(FRAGMENTS_DIR)/*.yml
-	rm -f $(PLAYBOOK)
-	rm -f $(CONFIGS)
-	rm -f $(VALIDATE)
+	rm -f $(PLAYBOOK) $(ANSIBLE_DIR)/validate.yml
+	rm -f $(ANSIBLE_DIR)/ansible.cfg $(ANSIBLE_DIR)/inventory.yml $(GROUP_VARS_DIR)/all.yml
+	rm -f $(ANSIBLE_DIR)/assemble-playbook.sh
+	rm -f $(TEMPLATES_DIR)/*.j2
 
 show:
-	@echo "Phase orgs: $(PHASE_ORGS)"
-	@echo ""
-	@echo "Fragments: $(FRAGMENTS)"
-	@echo ""
-	@echo "Config org: $(CONFIG_ORG)"
-	@echo "Validate org: $(VALIDATE_ORG)"
+	@echo "Tangled orgs: $(TANGLE_ORGS)"

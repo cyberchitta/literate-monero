@@ -1,0 +1,43 @@
+---
+# Render every configs/templates/*.j2 with the real variables (group_vars +
+# config.yml), so shell templates can be linted as the box would get them.
+# Used by `make check`; writes only under render_dir.
+- name: Render templates for linting
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars_files:
+    - ../ansible/group_vars/all.yml
+    - ../config.yml
+  vars:
+    render_dir: /tmp/literate-monero-rendered
+    # Stand-ins for values the phases compute at run time (set_fact/register).
+    # A template that starts using a new one fails to render here: add it.
+    rabby_ext_id:
+      stdout: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    rabby_crx: "{{ rabby_install_dir }}/Rabby-{{ rabby_version }}.crx"
+    wg_server_privkey:
+      content: "{{ 'STUB-NOT-A-KEY' | b64encode }}"
+  tasks:
+    - name: Start from an empty render dir
+      file:
+        path: "{{ render_dir }}"
+        state: "{{ item }}"
+        mode: '0755'
+      loop: [absent, directory]
+
+    - name: Find templates
+      find:
+        paths: "{{ playbook_dir }}/../configs/templates"
+        patterns: "*.j2"
+      register: templates
+
+    - name: Render each template
+      template:
+        src: "{{ item.path }}"
+        dest: "{{ render_dir }}/{{ item.path | basename | regex_replace('\\.j2$', '') }}"
+        mode: '0644'
+      loop: "{{ templates.files | sort(attribute='path') }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
