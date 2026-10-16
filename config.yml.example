@@ -133,8 +133,9 @@ mining_msr_access: false
 # risks below, then deploy with: ansible-playbook playbook.yml --tags exchange -K
 haveno_enabled: false
 
-# RetoSwap release tag (no "v" prefix; the asset name's "v1.6.0" is derived
-# automatically). PIN >= 1.6.0-reto: that release fixes the 2026-05 trade-
+# RetoSwap release tag, exactly as published (older tags have no "v" prefix,
+# e.g. 1.6.0-reto; newer ones do, e.g. v1.10.0-reto). Asset names and the
+# install dir are derived automatically. PIN >= 1.6.0-reto: that release fixes the 2026-05 trade-
 # protocol exploit (peer-identity verification). The signed AppImage is
 # verified against keys/retoswap.asc before install.
 haveno_version: "1.6.0-reto"

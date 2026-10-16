@@ -829,7 +829,9 @@ fi
 # Get current version
 CURRENT_VERSION=$(grep "^haveno_version:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
 
-# Get latest version from GitHub (reto tags have no 'v' prefix, e.g. 1.6.0-reto)
+# Get latest version from GitHub. Reto tags changed format upstream
+# (1.6.0-reto, then v1.10.0-reto); config.yml keeps the tag as published,
+# while /opt dirs are named by the bare release (no "v").
 echo -e "${BLUE}Checking for latest Haveno (RetoSwap) release...${NC}"
 LATEST_VERSION=$(latest_release_tag "retoaccess1/haveno-reto" || true)
 
@@ -842,6 +844,9 @@ if ! valid_version "$LATEST_VERSION"; then
     echo -e "${RED}Error: unexpected version string from GitHub: $LATEST_VERSION${NC}"
     exit 1
 fi
+
+CURRENT_DIR="/opt/haveno-${CURRENT_VERSION#v}"
+LATEST_DIR="/opt/haveno-${LATEST_VERSION#v}"
 
 if ! version_newer "$LATEST_VERSION" "$CURRENT_VERSION"; then
     echo -e "${GREEN}Already up to date: $CURRENT_VERSION (latest release: $LATEST_VERSION)${NC}"
@@ -892,14 +897,14 @@ else
     echo "Rolling back to $CURRENT_VERSION..."
     restore_config
     rm -f /opt/haveno
-    ln -s "/opt/haveno-${CURRENT_VERSION}" /opt/haveno
+    ln -s "$CURRENT_DIR" /opt/haveno
     exit 1
 fi
 
 # No service to check: verify the symlink points at the new versioned dir and
 # a verified AppImage is present and executable.
 echo "Verifying installation..."
-if [ "$(readlink -f /opt/haveno)" = "/opt/haveno-${LATEST_VERSION}" ] \
+if [ "$(readlink -f /opt/haveno)" = "$LATEST_DIR" ] \
    && ls /opt/haveno/*.AppImage >/dev/null 2>&1 \
    && [ -x "$(ls /opt/haveno/*.AppImage | head -1)" ]; then
     echo -e "${GREEN}✓ Haveno ${LATEST_VERSION} installed and verified${NC}"
@@ -908,15 +913,15 @@ else
     echo "Rolling back to $CURRENT_VERSION..."
     restore_config
     rm -f /opt/haveno
-    ln -s "/opt/haveno-${CURRENT_VERSION}" /opt/haveno
+    ln -s "$CURRENT_DIR" /opt/haveno
     exit 1
 fi
 
 echo ""
 echo -e "${GREEN}=== Haveno Update Complete ===${NC}"
 echo "  Updated: $CURRENT_VERSION → $LATEST_VERSION"
-echo "  Old version kept at: /opt/haveno-${CURRENT_VERSION}"
-echo "  Current version at: /opt/haveno → /opt/haveno-${LATEST_VERSION}"
+echo "  Old version kept at: $CURRENT_DIR"
+echo "  Current version at: /opt/haveno → $LATEST_DIR"
 echo ""
 echo "Launch when trading (no service):"
 echo "  haveno-sandboxed"

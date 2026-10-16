@@ -117,7 +117,7 @@ trusts a partially-downloaded or tampered file.
 
     - name: Set versioned Haveno directory
       set_fact:
-        haveno_versioned_dir: "{{ haveno_install_dir }}-{{ haveno_version }}"
+        haveno_versioned_dir: "{{ haveno_install_dir }}-{{ haveno_release }}"
       when: haveno_enabled | bool
       tags: [exchange]
 
@@ -140,7 +140,7 @@ trusts a partially-downloaded or tampered file.
 
     - name: Download Haveno signed hashes manifest
       get_url:
-        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_version }}.hashes"
+        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_release }}.hashes"
         dest: /tmp/haveno.hashes
         mode: '0644'
       when:
@@ -150,7 +150,7 @@ trusts a partially-downloaded or tampered file.
 
     - name: Download Haveno hashes signature
       get_url:
-        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_version }}.hashes.sig"
+        url: "https://github.com/retoaccess1/haveno-reto/releases/download/{{ haveno_version }}/{{ haveno_release }}.hashes.sig"
         dest: /tmp/haveno.hashes.sig
         mode: '0644'
       when:
@@ -189,7 +189,7 @@ trusts a partially-downloaded or tampered file.
       fail:
         msg: |
           Could not extract a valid sha256 for {{ haveno_appimage_name }}
-          from {{ haveno_version }}.hashes (got: '{{ haveno_expected_hash.stdout }}').
+          from {{ haveno_release }}.hashes (got: '{{ haveno_expected_hash.stdout }}').
 
           The release asset naming may have changed. Check the assets at
           https://github.com/retoaccess1/haveno-reto/releases/tag/{{ haveno_version }}

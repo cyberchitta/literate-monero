@@ -136,10 +136,14 @@ haveno_install_dir: /opt/haveno
 # key, so it sits OUTSIDE ~/.secrets (the sandbox blanks .secrets, but Haveno
 # needs the wallet at runtime). Backed up by the backup phase.
 haveno_data_dir: "/home/{{ dev_user }}/.local/share/Haveno-reto"
-# The release tag is e.g. "1.6.0-reto"; the published asset embeds the upstream
-# Haveno version ("v1.6.0"). Derive the asset name from the tag so a version
-# bump only touches haveno_version in config.yml.
-haveno_appimage_version: "v{{ haveno_version | regex_replace('-reto$', '') }}"
+# haveno_version is the release tag exactly as published upstream, and the tag
+# format is not stable: "1.6.0-reto" (2026-05), "v1.10.0-reto" (2026-10). The
+# tag is used only in download URLs. Everything else derives from the bare
+# release ("1.10.0-reto"): the signed manifest "<release>.hashes", the
+# versioned install dir, and the asset name, which embeds the upstream Haveno
+# version ("v1.10.0"). A version bump only touches haveno_version in config.yml.
+haveno_release: "{{ haveno_version | regex_replace('^v', '') }}"
+haveno_appimage_version: "v{{ haveno_release | regex_replace('-reto$', '') }}"
 haveno_appimage_name: "haveno-{{ haveno_appimage_version }}-linux-x86_64.AppImage"
 
 # Interop: cast (Foundry) EVM-chain tooling — CLI signer, off by default
