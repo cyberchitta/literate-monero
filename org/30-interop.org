@@ -963,6 +963,7 @@ field() {
 # field() runs in a command substitution (a subshell), so its failure must be
 # caught with `|| exit` here — `set -e` does NOT abort the parent on a failed
 # assignment, which would otherwise let a malformed field slip through.
+# shellcheck disable=SC2034  # checked for its format only; never used after
 VERSION="$(field CAST_PROPOSAL_VERSION '^1$')"                                  || exit 2
 CHAIN="$(field CHAIN_ID '^[0-9]+$')"                                            || exit 2
 TO="$(field TO '^0x[0-9a-fA-F]{40}$')"                                          || exit 2

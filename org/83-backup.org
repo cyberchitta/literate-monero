@@ -461,9 +461,9 @@ done
 echo ""
 echo "--- Backup Statistics ---"
 echo "Total backups: $(echo "$BACKUPS" | wc -l)"
-echo "Total size: $(du -sh $BACKUP_DIR | cut -f1)"
-echo "Oldest: $(basename $(echo "$BACKUPS" | head -n 1))"
-echo "Newest: $(basename $(echo "$BACKUPS" | tail -n 1))"
+echo "Total size: $(du -sh "$BACKUP_DIR" | cut -f1)"
+echo "Oldest: $(basename "$(echo "$BACKUPS" | head -n 1)")"
+echo "Newest: $(basename "$(echo "$BACKUPS" | tail -n 1)")"
 
 exit 0
 #+end_src

@@ -98,13 +98,12 @@ echo ""
 # ============================================================================
 echo "=== User Account Checks ==="
 
-for user in {{ mining_user }}; do
-  if id "$user" &>/dev/null; then
-    check_pass "User $user exists"
-  else
-    check_fail "User $user does not exist"
-  fi
-done
+user="{{ mining_user }}"
+if id "$user" &>/dev/null; then
+  check_pass "User $user exists"
+else
+  check_fail "User $user does not exist"
+fi
 
 # Data directories
 for dir in {{ mining_data_dir }} {{ p2pool_data_dir }}; do

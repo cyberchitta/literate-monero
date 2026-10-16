@@ -148,7 +148,7 @@ Run this BEFORE the main playbook to catch configuration errors early.
           - ""
       when: i2pd_check.rc != 0
       tags: [validation, i2p]
-      
+
     # ========================================================================
     # Monero Full Node Validation
     # ========================================================================
@@ -225,13 +225,13 @@ Run this BEFORE the main playbook to catch configuration errors early.
           - p2pool_type in ['normal', 'mini', 'nano']
         fail_msg: |
           Invalid p2pool_type: {{ p2pool_type | default('undefined') }}
-          
+
           Must be one of: 'normal', 'mini', 'nano'
-          
+
           - normal: Main pool (for hashrate > 100 kH/s)
           - mini: For hashrate < 100 kH/s (most home systems)
           - nano: For very low hashrate (experimental)
-          
+
           Edit config.yml and set p2pool_type to a valid value
         success_msg: "✓ P2Pool type: {{ p2pool_type }} (port: {{ p2pool_port_map[p2pool_type] }})"
       tags: [validation, mining]
@@ -251,16 +251,16 @@ Run this BEFORE the main playbook to catch configuration errors early.
         fail_msg: |
           Monero wallet address not configured or invalid!
           Current value: {{ monero_wallet_address }}
-          
+
           A valid Monero mainnet address:
           - Starts with '4'
           - Is exactly 95 characters long
-          
+
           Get a wallet from:
           - Official GUI/CLI: https://www.getmonero.org
           - MyMonero: https://mymonero.com
           - Cake Wallet (mobile)
-          
+
           Edit config.yml in the project root and update monero_wallet_address
         success_msg: "✓ Monero wallet address configured"
 
@@ -322,10 +322,10 @@ Run this BEFORE the main playbook to catch configuration errors early.
           - dev_user_ssh_public_key | length > 50  # SSH keys are typically 200+ chars
         fail_msg: |
           SSH public key not configured!
-          
+
           Get your public key from your client machine:
             cat ~/.ssh/id_rsa.pub
-          
+
           Then add it to config.yml:
             dev_user_ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB... user@laptop"
         success_msg: "✓ SSH public key configured"
@@ -387,7 +387,7 @@ Run this BEFORE the main playbook to catch configuration errors early.
         msg:
           - "ℹ INFO: Mining threads set to auto ({{ ansible_facts['processor_vcpus'] }} cores)"
           - "Consider leaving 2 cores free: set mining_threads to {{ ansible_facts['processor_vcpus'] - 2 }}"
-      when: 
+      when:
         - mining_threads == 0
         - ansible_facts['processor_vcpus'] > 4
 
