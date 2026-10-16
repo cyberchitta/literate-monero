@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tag-filtered runs define the registered variables their tasks read
 - Monerod I2P startup, address discovery and verification; RPC polling during updates
 - WireGuard/Mullvad DNS (systemd-resolved) and wrapper privilege handling
+- `make check` runs as an ordinary user on the box (per-run scratch dir, in-memory fact cache); `make clean` removes leftovers from older builds
 
 ## [0.0.3] - 2026-01-29
 

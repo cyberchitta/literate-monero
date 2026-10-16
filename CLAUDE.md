@@ -115,8 +115,8 @@ The Makefile tangles each org file as a unit (fragment, config files and `config
 - `config.yml` (user configuration)
 
 `config.yml` is gitignored, so a fresh clone does not have one — copy
-`config.yml.example` and fill it in before running `make`. It is a declared
-dependency of every phase fragment, so tangling fails without it.
+`config.yml.example` and fill it in before running `make`. Tangling the org
+files does not need it, but playbook assembly stops without it.
 
 ## Working notes (gitignored)
 
