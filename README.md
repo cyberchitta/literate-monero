@@ -48,15 +48,20 @@ Built using literate programming: the documentation IS the source code. Understa
 
 Full Monero node infrastructure with defense-in-depth privacy:
 
-- **monerod**: Trustless blockchain validation
-- **Monero wallet tools**: CLI/RPC wallets + Feather GUI + optional Trezor support
+- **monerod**: Trustless blockchain validation, run as its own service user
+- **Monero wallet tools**: CLI wallet, `monero-wallet-rpc` service, Feather GUI + optional Trezor support
 - **KeePassXC**: Encrypted password and TOTP manager (no cloud, clipboard auto-clears)
 - **I2P**: Peer-to-peer network anonymity for Monero traffic
-- **Tor**: Anonymous git operations and web browsing
+- **Tor**: Anonymous git operations, web browsing, and update checks/downloads (no clearnet fallback)
+- **Mullvad WireGuard**: Fail-closed VPN path for the privacy browser, killed if the tunnel drops
 - **Browser dispatch**: Domain-based routing (Tor Browser by default, Chromium for KYC-required sites)
 - **Application sandboxing**: Bubblewrap isolation with secrets separation for sensitive apps
-- **WireGuard**: Secure remote access
-- **Optional**: P2Pool decentralized mining + XMRig CPU miner; a Monero-native P2P exchange (opt-in)
+- **WireGuard**: Secure remote access — the only way in
+- **Sandboxed remote operations**: an `ops` user reachable over WireGuard SSH, jailed, with a propose/approve signer — `ops` can stage a transaction, only you sign and broadcast it
+- **Mining**: P2Pool decentralized mining + XMRig CPU miner built from a pinned, verified commit
+- **Opt-in, off by default**:
+  - **Exchange**: RetoSwap (Haveno), a Monero-native P2P exchange, as a signed AppImage
+  - **Interop**: `cast` (Foundry) EVM CLI in a Tor-only network namespace, plus the Rabby extension on the Mullvad path, for working with external chains
 
 All documented as executable narrative in `org/*.org` files.
 
@@ -89,13 +94,15 @@ All documented as executable narrative in `org/*.org` files.
 3. **Configure:**
 
    ```bash
+   cp config.yml.example config.yml
    nano config.yml  # Set monero_wallet_address, ssh keys, etc.
    ```
 
 4. **Generate and deploy:**
 
    ```bash
-   ./tangle.sh  # Extract Ansible playbooks from org files
+   make all     # Extract Ansible playbooks from org files
+   make check   # Syntax-check and lint what was generated
    ansible-playbook ansible/validate.yml  # Check configuration
    ansible-playbook ansible/playbook.yml --tags base -K  # Run first phase
    # Continue with remaining phases (see org/install.org for order)
@@ -116,12 +123,14 @@ This is a literate programming system - documentation and code are the same file
 **Making changes:**
 
 1. Edit `config.yml` for simple settings, or edit `org/*.org` files directly for deeper changes
-2. Tangle: `./tangle.sh` extracts Ansible playbooks from Org files
-3. Deploy: `ansible-playbook ansible/playbook.yml --tags <phase>`
+2. Tangle and check: `make all && make check` (only changed org files are re-tangled)
+3. Deploy one phase at a time: `ansible-playbook ansible/playbook.yml --tags <phase> -K`
+
+`make check-drift` shows whether the generated files on a machine still match the org sources. On a machine without Emacs and Ansible (e.g. macOS), `make docker-check` tangles and checks everything in a Debian container (`dev/Dockerfile`) with no network access.
 
 ## Post-Install
 
-Daily operations and monitoring are documented in `org/09-monitoring.org` and `org/99-appendix.org`.
+Daily operations and monitoring are documented in the monitoring phase (`org/82-monitoring.org`) and `org/99-appendix.org`. Updates and rollbacks (`check-updates.sh`, `update-*.sh`, `rollback-*.sh`) are in `org/97-updates.org`.
 
 Quick reference:
 
@@ -141,7 +150,7 @@ source /etc/profile.d/log-aliases.sh && logs-all  # Live logs
 
 - `org/install.org` - Complete installation guide
 - `org/00-configuration.org` - System configuration
-- `org/01-11-*.org` - Modular installation phases
+- `org/[0-9][0-9]-*.org` - Modular installation phases (file numbers only set execution order)
 - `org/99-appendix.org` - Commands and troubleshooting
 
 **External:** [Monero](https://monerodocs.org) · [I2P](https://geti2p.net/en/docs) · [P2Pool](https://github.com/SChernykh/p2pool)
