@@ -16,25 +16,37 @@ The installation is split into modular phases, each in its own file under =org/=
 #+begin_example
 Physical Server (Beelink AMD Ryzen)
 ├─ Omarchy Linux (Arch-based, encrypted)
-│  ├─ dev (primary user: desktop + privacy-first operations)
-│  ├─ mining (Monero mining, headless)
-│  ├─ monerod (Monero full node, I2P privacy)
-│  └─ Services:
-│     ├─ Tor (network privacy layer)
-│     ├─ I2P (Monero P2P network privacy)
-│     ├─ P2Pool (decentralized mining pool)
-│     └─ XMRig (CPU mining)
+│  ├─ Users:
+│  │  ├─ dev     (primary user: desktop + privacy-first operations)
+│  │  ├─ mining  (P2Pool + XMRig, headless, no login shell)
+│  │  ├─ monero  (runs the Monero full node service)
+│  │  └─ ops     (sandboxed remote operations, reached over WireGuard SSH)
+│  ├─ Access & privacy:
+│  │  ├─ WireGuard (the only way in: SSH over wg0)
+│  │  ├─ Mullvad WireGuard (fail-closed path for the privacy browser)
+│  │  ├─ Tor (network privacy layer; updates and git go through it)
+│  │  ├─ I2P (Monero P2P network privacy)
+│  │  └─ bubblewrap sandboxes for desktop apps
+│  ├─ Monero core:
+│  │  ├─ monerod (full node, I2P/Tor peers)
+│  │  ├─ monero-wallet-rpc
+│  │  ├─ P2Pool (decentralized mining pool)
+│  │  └─ XMRig (CPU mining, built from a pinned commit)
+│  └─ Opt-in, off by default:
+│     ├─ exchange: Haveno (RetoSwap), signed AppImage, run on demand
+│     └─ interop:  cast (Foundry) over Tor, Rabby on the Mullvad path
 #+end_example
 
 ** How to Use This Document
 
 1. *Read through* each included phase to understand the system
-2. *Customize* the configuration in Phase 0
-3. *Tangle* all org files to generate Ansible playbooks
-4. *Validate* configuration: =cd ansible && ansible-playbook validate.yml=
-5. *Run* the installation: =cd ansible && ansible-playbook playbook.yml=
-
-** Tangling
+2. *Customize* =config.yml= (copy =config.yml.example=); system defaults are in
+   the Configuration section
+3. *Tangle*: =make all= (see Build System below)
+4. *Check*: =make check=
+5. *Validate* configuration: =cd ansible && ansible-playbook validate.yml=
+6. *Run* the installation phase by phase, as below — never the whole
+   playbook in one go
 
 ** Running Validation
 
@@ -54,7 +66,9 @@ This checks:
 
 ** Running Installation
 
-The playbook should be run phase-by-phase in order. This is the tested and recommended approach:
+Run the playbook one phase at a time, in this order, checking each before
+moving on. This is the tested approach; running the whole playbook at once
+is not.
 
 #+begin_example
 # Validate configuration first
@@ -69,51 +83,66 @@ ansible-playbook ansible/playbook.yml --tags sandbox -K
 ansible-playbook ansible/playbook.yml --tags monerod -K
 ansible-playbook ansible/playbook.yml --tags users -K
 ansible-playbook ansible/playbook.yml --tags wallet -K
+ansible-playbook ansible/playbook.yml --tags wallet-rpc -K
 ansible-playbook ansible/playbook.yml --tags mining -K
 ansible-playbook ansible/playbook.yml --tags secrets-isolation -K
 ansible-playbook ansible/playbook.yml --tags firewall -K
 ansible-playbook ansible/playbook.yml --tags monitoring -K
 ansible-playbook ansible/playbook.yml --tags backup -K
+ansible-playbook ansible/playbook.yml --tags updates -K
 ansible-playbook ansible/playbook.yml --tags verify -K
+
+# Opt-in tiers (off by default; enable in config.yml first)
+ansible-playbook ansible/playbook.yml --tags exchange -K   # haveno_enabled
+ansible-playbook ansible/playbook.yml --tags interop -K    # cast_enabled / rabby_enabled
 #+end_example
+
+Enabling =cast= needs the =sandbox= phase re-run as well: the =ops= jail
+bind-mounts the proposal spool that the interop phase creates.
 
 Each phase can be re-run independently if needed:
 
 #+begin_example
+cd ansible
+
 # Re-run specific phase
 ansible-playbook playbook.yml --tags firewall -K
 
 # Dry run to see what would change
-ansible-playbook playbook.yml --tags firewall --check --diff
+ansible-playbook playbook.yml --tags firewall --check --diff -K
 #+end_example
 
 ** Development/Debugging Workflow
 
 If you need to modify or fix a specific phase:
 
-1. *Edit* the phase file: =emacs -nw 04-users.org=
-2. *Tangle* just that phase: =C-c C-v t= (in that file)
-3. *Test* changes: =cd ansible && ansible-playbook playbook.yml --tags users --check=
-4. *Apply* changes: =ansible-playbook playbook.yml --tags users=
+1. *Edit* the phase's org file, e.g. =emacs -nw org/16-users.org=
+2. *Tangle* and check: =make all && make check= (only changed files re-tangle)
+3. *Test* changes: =cd ansible && ansible-playbook playbook.yml --tags users --check --diff -K=
+4. *Apply* changes: =ansible-playbook playbook.yml --tags users -K=
 5. *Verify*: Check logs and run phase verification
 
 Each phase can be worked on independently without re-running the entire installation.
 
-Available tags correspond to phases:
-- =base= - Phase 10: Base system
-- =wireguard= - Phase 11: WireGuard VPN
-- =privacy= - Phase 12: Privacy infrastructure (Tor, I2P, browsers)
-- =privacy-wrappers= - Phase 13: Privacy wrappers (git, SSH routing)
-- =sandbox= - Phase 14: Application sandboxing
-- =monerod= - Phase 15: Monero full node
-- =users= - Phase 16: User accounts
-- =wallet= - Phase 17: Monero wallet
-- =mining= - Phase 18: Mining
-- =secrets-isolation= - Phase 80: Secrets isolation (finalization)
-- =firewall= - Phase 81: Firewall (finalization)
-- =monitoring= - Phase 82: Monitoring (finalization)
-- =backup= - Phase 83: Backup (finalization)
-- =verify= - Phase 84: Verification (finalization)
+Available tags correspond to phases, in playbook order:
+- =base= - Base system
+- =wireguard= - WireGuard VPN and SSH access
+- =privacy= - Privacy infrastructure (Tor, I2P, browsers, Mullvad)
+- =privacy-wrappers= - Privacy wrappers (git, SSH routing)
+- =sandbox= - Application sandboxing and =ops= remote access
+- =monerod= - Monero full node
+- =users= - Service user accounts
+- =wallet= - Monero wallet
+- =wallet-rpc= - Monero wallet RPC
+- =mining= - P2Pool + XMRig
+- =exchange= - Haveno (RetoSwap) exchange, opt-in
+- =interop= - cast + Rabby interop tier, opt-in
+- =secrets-isolation= - Secrets isolation (finalization)
+- =firewall= - Firewall (finalization)
+- =monitoring= - Monitoring (finalization)
+- =backup= - Backup (finalization)
+- =verify= - Verification (finalization)
+- =updates= - Update and rollback scripts
 
 * Configuration
 #+INCLUDE: "00-configuration.org"
@@ -121,56 +150,62 @@ Available tags correspond to phases:
 * Pre-flight Validation
 #+INCLUDE: "01-validation.org"
 
-* Phase 10: Base System Setup
+* Base System Setup
 #+INCLUDE: "10-base-system.org"
 
-* Phase 11: WireGuard Secure Access
+* WireGuard Secure Access
 #+INCLUDE: "11-wireguard.org"
 
-* Phase 12: Privacy Foundation
+* Privacy Foundation
 #+INCLUDE: "12-privacy.org"
 
-* Phase 13: Privacy Wrappers
+* Privacy Wrappers
 #+INCLUDE: "13-privacy-wrappers.org"
 
-* Phase 14: Application Sandboxing
+* Application Sandboxing
 #+INCLUDE: "14-sandbox.org"
 
-* Phase 15: Monero Full Node
+* Monero Full Node
 #+INCLUDE: "15-monerod.org"
 
-* Phase 16: User Account Setup
+* User Account Setup
 #+INCLUDE: "16-users.org"
 
-* Phase 17: Monero Wallet
+* Monero Wallet
 #+INCLUDE: "17-wallet.org"
 
-* Phase 18: Monero Wallet RPC
+* Monero Wallet RPC
 #+INCLUDE: "18-wallet-rpc.org"
 
-* Phase 19: Monero Mining Setup
+* Monero Mining Setup
 #+INCLUDE: "19-mining.org"
 
-* Phase 80: Secrets Isolation (Finalization)
+* Exchange (opt-in)
+#+INCLUDE: "20-exchange.org"
+
+* Interop (opt-in)
+#+INCLUDE: "30-interop.org"
+
+* Secrets Isolation (Finalization)
 #+INCLUDE: "80-secrets-isolation.org"
 
-* Phase 81: Firewall Setup (Finalization)
+* Firewall Setup (Finalization)
 #+INCLUDE: "81-firewall.org"
 
-* Phase 82: Monitoring (Finalization)
+* Monitoring (Finalization)
 #+INCLUDE: "82-monitoring.org"
 
-* Phase 83: Backup & Recovery (Finalization)
+* Backup & Recovery (Finalization)
 #+INCLUDE: "83-backup.org"
 
-* Phase 84: Verification & Testing (Finalization)
+* Verification & Testing (Finalization)
 #+INCLUDE: "84-verification.org"
 
 * Update Management
 #+INCLUDE: "97-updates.org"
 
 * Handlers
-#+INCLUDE: "98_handlers.org"
+#+INCLUDE: "98-handlers.org"
 
 * Appendix: Quick Reference
 #+INCLUDE: "99-appendix.org"
