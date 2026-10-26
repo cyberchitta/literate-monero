@@ -1,0 +1,12 @@
+# Commits git blame should look through, not stop at: each one only
+# reformats, without changing behaviour.
+#
+# Opt in per clone:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Add each commit in the FOLLOWING commit (a commit cannot contain its own
+# hash), as its subject line and full 40-character hash.
+
+# style: format shell scripts with shfmt
+2144804527a4b5bbf63ccd933ca603ca4fae0ba5
