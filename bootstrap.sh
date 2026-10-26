@@ -25,25 +25,25 @@ echo ""
 
 # Check if running as root
 if [[ $EUID -eq 0 ]]; then
-   echo -e "${RED}ERROR: Do not run this script as root${NC}"
-   echo "Run as your dev user account"
-   exit 1
+  echo -e "${RED}ERROR: Do not run this script as root${NC}"
+  echo "Run as your dev user account"
+  exit 1
 fi
 
 # Verify we're running as dev
 if [ "$(whoami)" != "dev" ]; then
-   echo -e "${YELLOW}WARNING: Expected username 'dev' but running as '$(whoami)'${NC}"
-   echo ""
-   echo "This system is designed for privacy-first workflow with 'dev' as the primary user."
-   echo "If you created a different username during Omarchy install, you'll need to update"
-   echo "config.yml to match (set dev_user: $(whoami))"
-   echo ""
-   read -p "Continue anyway? (y/N) " -n 1 -r
-   echo
-   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-       echo "Aborted."
-       exit 1
-   fi
+  echo -e "${YELLOW}WARNING: Expected username 'dev' but running as '$(whoami)'${NC}"
+  echo ""
+  echo "This system is designed for privacy-first workflow with 'dev' as the primary user."
+  echo "If you created a different username during Omarchy install, you'll need to update"
+  echo "config.yml to match (set dev_user: $(whoami))"
+  echo ""
+  read -p "Continue anyway? (y/N) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+  fi
 fi
 
 # Confirm before proceeding
@@ -57,8 +57,8 @@ echo ""
 read -p "Continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
+  echo "Aborted."
+  exit 1
 fi
 
 # Update system
@@ -68,16 +68,16 @@ sudo pacman -Syu --noconfirm
 # Install base packages
 echo -e "${YELLOW}→${NC} Installing base packages..."
 sudo pacman -S --noconfirm \
-    base-devel \
-    git \
-    emacs-wayland \
-    tmux \
-    ansible \
-    bind-tools \
-    curl \
-    wget \
-    htop \
-    ufw
+  base-devel \
+  git \
+  emacs-wayland \
+  tmux \
+  ansible \
+  bind-tools \
+  curl \
+  wget \
+  htop \
+  ufw
 
 # Install yay (AUR helper)
 #
@@ -89,31 +89,31 @@ sudo pacman -S --noconfirm \
 YAY_COMMIT="fb5d0b2479e6d80374765c8017cd22a7df8072b8"
 
 echo -e "${YELLOW}→${NC} Installing yay (AUR helper)..."
-if ! command -v yay &> /dev/null; then
-    YAY_BUILD_DIR=$(mktemp -d)
-    trap 'rm -rf "$YAY_BUILD_DIR"' EXIT
+if ! command -v yay &>/dev/null; then
+  YAY_BUILD_DIR=$(mktemp -d)
+  trap 'rm -rf "$YAY_BUILD_DIR"' EXIT
 
-    git clone https://aur.archlinux.org/yay.git "$YAY_BUILD_DIR/yay"
-    if ! git -C "$YAY_BUILD_DIR/yay" checkout --quiet "$YAY_COMMIT"; then
-        echo -e "${RED}✗${NC} Pinned yay commit $YAY_COMMIT not found in AUR repo."
-        echo "  The AUR history may have been rewritten - investigate before updating the pin."
-        exit 1
-    fi
+  git clone https://aur.archlinux.org/yay.git "$YAY_BUILD_DIR/yay"
+  if ! git -C "$YAY_BUILD_DIR/yay" checkout --quiet "$YAY_COMMIT"; then
+    echo -e "${RED}✗${NC} Pinned yay commit $YAY_COMMIT not found in AUR repo."
+    echo "  The AUR history may have been rewritten - investigate before updating the pin."
+    exit 1
+  fi
 
-    echo ""
-    echo "--- PKGBUILD for yay (commit ${YAY_COMMIT:0:12}) ---"
-    cat "$YAY_BUILD_DIR/yay/PKGBUILD"
-    echo "--- end PKGBUILD ---"
-    echo ""
-    read -r -p "Build and install yay from this PKGBUILD? [y/N] " YAY_CONFIRM
-    if [[ ! "$YAY_CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 1
-    fi
+  echo ""
+  echo "--- PKGBUILD for yay (commit ${YAY_COMMIT:0:12}) ---"
+  cat "$YAY_BUILD_DIR/yay/PKGBUILD"
+  echo "--- end PKGBUILD ---"
+  echo ""
+  read -r -p "Build and install yay from this PKGBUILD? [y/N] " YAY_CONFIRM
+  if [[ ! "$YAY_CONFIRM" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+  fi
 
-    (cd "$YAY_BUILD_DIR/yay" && makepkg -si --noconfirm)
+  (cd "$YAY_BUILD_DIR/yay" && makepkg -si --noconfirm)
 else
-    echo -e "${GREEN}✓${NC} yay already installed"
+  echo -e "${GREEN}✓${NC} yay already installed"
 fi
 
 # Configure Emacs for Org-mode
@@ -121,12 +121,12 @@ echo -e "${YELLOW}→${NC} Configuring Emacs..."
 
 # Backup existing .emacs if present
 if [ -f ~/.emacs ]; then
-    BACKUP_FILE=~/.emacs.backup.$(date +%Y%m%d_%H%M%S)
-    echo -e "${YELLOW}  Backing up existing ~/.emacs to ${BACKUP_FILE}${NC}"
-    cp ~/.emacs "$BACKUP_FILE"
+  BACKUP_FILE=~/.emacs.backup.$(date +%Y%m%d_%H%M%S)
+  echo -e "${YELLOW}  Backing up existing ~/.emacs to ${BACKUP_FILE}${NC}"
+  cp ~/.emacs "$BACKUP_FILE"
 fi
 
-cat > ~/.emacs << 'EOF'
+cat >~/.emacs <<'EOF'
 ;; Minimal Emacs config for Org-mode and Ansible
 
 ;; Package management
@@ -202,7 +202,7 @@ EOF
 # A global (setq org-confirm-babel-evaluate nil) would let any org file
 # opened in Emacs run code without asking.
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cat >> ~/.emacs << EOF2
+cat >>~/.emacs <<EOF2
 
 ;; Skip babel-evaluate confirmation only inside the literate-monero repo
 (setq org-confirm-babel-evaluate
@@ -213,7 +213,7 @@ EOF2
 
 # Configure tmux
 echo -e "${YELLOW}→${NC} Configuring tmux..."
-cat > ~/.tmux.conf << 'EOF'
+cat >~/.tmux.conf <<'EOF'
 # Tmux configuration for literate-monero management
 
 # Better prefix key (C-a instead of C-b)
@@ -277,11 +277,11 @@ mkdir -p scripts
 
 # Check if config.yml exists
 if [ ! -f config.yml ]; then
-    echo -e "${YELLOW}→${NC} Creating config.yml from template..."
-    cp config.yml.example config.yml
-    echo -e "${GREEN}✓${NC} Created config.yml - edit before running playbooks"
+  echo -e "${YELLOW}→${NC} Creating config.yml from template..."
+  cp config.yml.example config.yml
+  echo -e "${GREEN}✓${NC} Created config.yml - edit before running playbooks"
 else
-    echo -e "${GREEN}✓${NC} config.yml already exists"
+  echo -e "${GREEN}✓${NC} config.yml already exists"
 fi
 
 # Create .gitkeep files for empty directories that need to exist

@@ -17,23 +17,27 @@ SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
 tar -C "$ROOT" \
-    --exclude=./_notes --exclude=./ansible --exclude=./configs --exclude=./scripts \
-    --exclude=./.git --exclude=./.tangled \
-    -cf - . | tar -C "$SCRATCH" -xf -
+  --exclude=./_notes --exclude=./ansible --exclude=./configs --exclude=./scripts \
+  --exclude=./.git --exclude=./.tangled \
+  -cf - . | tar -C "$SCRATCH" -xf -
 mkdir -p "$SCRATCH/ansible"
 [ -f "$SCRATCH/config.yml" ] || cp "$SCRATCH/config.yml.example" "$SCRATCH/config.yml"
 
-make -C "$SCRATCH" all > "$SCRATCH/tangle.log" 2>&1 \
-    || { cat "$SCRATCH/tangle.log"; echo -e "${RED}re-tangle failed${NC}"; exit 1; }
+make -C "$SCRATCH" all >"$SCRATCH/tangle.log" 2>&1 ||
+  {
+    cat "$SCRATCH/tangle.log"
+    echo -e "${RED}re-tangle failed${NC}"
+    exit 1
+  }
 
 status=0
 for dir in ansible configs/templates; do
-    diff -r --exclude=.gitkeep "$SCRATCH/$dir" "$ROOT/$dir" || status=1
+  diff -r --exclude=.gitkeep "$SCRATCH/$dir" "$ROOT/$dir" || status=1
 done
 
 if [ "$status" = 0 ]; then
-    echo -e "${GREEN}No drift: generated files match the org sources${NC}"
+  echo -e "${GREEN}No drift: generated files match the org sources${NC}"
 else
-    echo -e "${RED}Drift: the files above differ from a fresh tangle (left: fresh, right: this tree)${NC}"
+  echo -e "${RED}Drift: the files above differ from a fresh tangle (left: fresh, right: this tree)${NC}"
 fi
 exit "$status"

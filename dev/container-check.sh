@@ -16,9 +16,9 @@ rm -rf "$WORK"
 mkdir -p "$WORK"
 # Copy sources only: generated dirs are rebuilt, _notes is a dangling symlink here.
 tar -C "$SRC" \
-    --exclude=./_notes --exclude=./ansible --exclude=./configs --exclude=./scripts \
-    --exclude=./.git \
-    -cf - . | tar -C "$WORK" -xf -
+  --exclude=./_notes --exclude=./ansible --exclude=./configs --exclude=./scripts \
+  --exclude=./.git \
+  -cf - . | tar -C "$WORK" -xf -
 mkdir -p "$WORK/ansible" "$WORK/configs/templates" "$WORK/scripts"
 
 # config.yml is gitignored and lives on the box; test against the example.

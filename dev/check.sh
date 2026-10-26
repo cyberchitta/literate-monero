@@ -31,31 +31,35 @@ step "Ansible syntax-check"
 
 step "yamllint"
 if command -v yamllint >/dev/null; then
-    yamllint -c .yamllint ansible/playbook.yml ansible/validate.yml \
-        ansible/inventory.yml ansible/group_vars/all.yml
-    echo "ok"
+  yamllint -c .yamllint ansible/playbook.yml ansible/validate.yml \
+    ansible/inventory.yml ansible/group_vars/all.yml
+  echo "ok"
 else
-    skip yamllint
+  skip yamllint
 fi
 
 step "Render templates"
 # In-memory fact cache: the configured jsonfile cache in /tmp/ansible_facts is
 # root-owned on the box once a playbook has run as root.
 ANSIBLE_CACHE_PLUGIN=memory \
-    ansible-playbook -i localhost, dev/render-templates.yml -e "render_dir=$RENDER_DIR" > "$SCRATCH/render.log" \
-    || { cat "$SCRATCH/render.log"; echo -e "${RED}template rendering failed${NC}"; exit 1; }
+  ansible-playbook -i localhost, dev/render-templates.yml -e "render_dir=$RENDER_DIR" >"$SCRATCH/render.log" ||
+  {
+    cat "$SCRATCH/render.log"
+    echo -e "${RED}template rendering failed${NC}"
+    exit 1
+  }
 echo "rendered $(find "$RENDER_DIR" -type f | wc -l) templates"
 
 step "shellcheck (warning and above)"
 if command -v shellcheck >/dev/null; then
-    scripts=()
-    for f in "$RENDER_DIR"/*; do
-        head -1 "$f" | grep -qE '^#!.*\b(ba)?sh\b' && scripts+=("$f")
-    done
-    shellcheck -S warning "${scripts[@]}"
-    echo "ok: ${#scripts[@]} scripts"
+  scripts=()
+  for f in "$RENDER_DIR"/*; do
+    head -1 "$f" | grep -qE '^#!.*\b(ba)?sh\b' && scripts+=("$f")
+  done
+  shellcheck -S warning "${scripts[@]}"
+  echo "ok: ${#scripts[@]} scripts"
 else
-    skip shellcheck
+  skip shellcheck
 fi
 
 echo -e "\n${GREEN}All checks passed${NC}"
