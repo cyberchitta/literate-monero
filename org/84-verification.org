@@ -316,8 +316,11 @@ else
 fi
 
 # Mining performance (recent)
-if journalctl -u xmrig --since "10 minutes ago" --no-pager | grep -q "speed"; then
-  HASHRATE=$(journalctl -u xmrig --since "10 minutes ago" --no-pager | grep "speed" | tail -n 1 | grep -oP '\d+\.\d+\s+H/s')
+# Read the journal once, without grep -q: under pipefail, grep -q exiting at
+# the first match kills journalctl with SIGPIPE (141) and fails the test.
+SPEED_LINE=$(journalctl -u xmrig --since "10 minutes ago" --no-pager | grep "speed" | tail -n 1 || true)
+if [ -n "$SPEED_LINE" ]; then
+  HASHRATE=$(grep -oP '\d+\.\d+\s+H/s' <<<"$SPEED_LINE" | sed -n 1p || true)
   check_pass "XMRig producing hashrate: $HASHRATE"
 else
   check_warn "No recent hashrate data (may still be starting)"
@@ -356,7 +359,7 @@ if [ -d "{{ backup_dir }}" ]; then
   check_pass "Backup directory exists"
 
   # Recent backup
-  LATEST_BACKUP=$(find {{ backup_dir }} -name "backup_*.tar.gz" -type f -mtime -2 | wc -l)
+  LATEST_BACKUP=$(find {{ backup_dir }} -name "backup_*.tar.gz.age" -type f -mtime -2 | wc -l)
   if [ "$LATEST_BACKUP" -gt 0 ]; then
     check_pass "Recent backup found (< 2 days old)"
   else
