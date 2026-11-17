@@ -281,6 +281,48 @@ dev user's git routing.
       when: xmrig_version_exists.stat.exists or not ansible_check_mode
       tags: [mining]
 
+    # Stock XMRig compiles in a 1% minimum donation (src/donate.h) that
+    # overrides donate-level 0: once every ~100 minutes it mines for the
+    # developers at donate.ssl.xmrig.com, directly rather than through Tor,
+    # logging in with a hash of the wallet address. Setting the minimum to 0
+    # lets donate-level 0 stand, and XMRig then never starts the donate
+    # strategy (src/net/Network.cpp). The patch comes after the pin check, so
+    # the pin still verifies the untouched upstream commit.
+    - name: Remove XMRig's compiled-in minimum donation
+      replace:
+        path: "{{ xmrig_versioned_dir }}/src/donate.h"
+        regexp: '^(constexpr const int k(Default|Minimum)DonateLevel = )1;'
+        replace: '\g<1>0;'
+      register: xmrig_donate_patch
+      when: xmrig_version_exists.stat.exists or not ansible_check_mode
+      tags: [mining]
+
+    # The replace above reports "ok" when its pattern no longer matches, so
+    # an upstream rewording of donate.h would quietly bring the donation
+    # back. Check the result instead. A dry-run has not written the patch
+    # yet, so there it only checks the patch will find both lines.
+    - name: Read XMRig donate.h
+      slurp:
+        src: "{{ xmrig_versioned_dir }}/src/donate.h"
+      register: xmrig_donate_h
+      when: xmrig_version_exists.stat.exists or not ansible_check_mode
+      tags: [mining]
+
+    - name: Verify XMRig builds with no minimum donation
+      assert:
+        that:
+          - donate_h is search('(?m)^constexpr const int kMinimumDonateLevel = ' ~ want ~ ';$')
+          - donate_h is search('(?m)^constexpr const int kDefaultDonateLevel = ' ~ want ~ ';$')
+        fail_msg: |
+          {{ xmrig_versioned_dir }}/src/donate.h does not set both donate
+          levels to 0. Upstream may have reworded the file: update the patch
+          task's pattern before building, or XMRig will donate 1%.
+      vars:
+        donate_h: "{{ xmrig_donate_h.content | b64decode }}"
+        want: "{{ '[01]' if ansible_check_mode else '0' }}"
+      when: xmrig_version_exists.stat.exists or not ansible_check_mode
+      tags: [mining]
+
     - name: Create XMRig build directory
       file:
         path: "{{ xmrig_versioned_dir }}/build"
@@ -297,13 +339,15 @@ dev user's git routing.
       when: not xmrig_version_exists.stat.exists
       tags: [mining]
 
+    # Also rebuilds an existing version when the donation patch was just
+    # applied; make recompiles only what includes donate.h.
     - name: Build XMRig
       command:
         cmd: make -j{{ ansible_facts['processor_vcpus'] }}
         chdir: "{{ xmrig_versioned_dir }}/build"
-        creates: "{{ xmrig_versioned_dir }}/build/xmrig"
-      when: not xmrig_version_exists.stat.exists
+      when: not xmrig_version_exists.stat.exists or xmrig_donate_patch is changed
       register: xmrig_build
+      notify: restart xmrig
       tags: [mining]
 
     # Ownership must be settled BEFORE granting capabilities:
