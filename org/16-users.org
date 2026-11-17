@@ -19,6 +19,7 @@ This phase configures the mining user account:
       command: getent group {{ mining_user }}
       register: mining_group_info
       changed_when: false
+      check_mode: false  # read-only; must run in --check so later tasks get its output
       tags: [users, mining]
 
     - name: Extract mining group GID

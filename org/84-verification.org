@@ -557,6 +557,7 @@ echo "Security audit completed"
       command: /usr/local/bin/system-check.sh
       register: system_check
       changed_when: false
+      check_mode: false  # read-only; must run in --check so later tasks get its output
       failed_when: false
       tags: [verify, check]
 

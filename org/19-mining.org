@@ -254,12 +254,16 @@ dev user's git routing.
       tags: [mining]
 
     # Runs on every pass, not only after a fresh clone, so an existing
-    # checkout that no longer matches the pin is caught too.
+    # checkout that no longer matches the pin is caught too. Runs under
+    # --check as well; the one exception is a dry-run of a new version,
+    # where the clone above was skipped and there is no checkout to read.
     - name: Read XMRig checkout commit and tag target
       command: git -C {{ xmrig_versioned_dir }} rev-parse HEAD {{ xmrig_version }}^{commit}
       become_user: mining
       register: xmrig_rev
       changed_when: false
+      check_mode: false
+      when: xmrig_version_exists.stat.exists or not ansible_check_mode
       tags: [mining]
 
     - name: Verify XMRig checkout matches the pinned commit
@@ -274,6 +278,7 @@ dev user's git routing.
             {{ xmrig_version }} resolves to: {{ xmrig_rev.stdout_lines[1] }}
           A moved tag or swapped repository is an incident: investigate before
           re-pinning.
+      when: xmrig_version_exists.stat.exists or not ansible_check_mode
       tags: [mining]
 
     - name: Create XMRig build directory
@@ -326,14 +331,17 @@ dev user's git routing.
       command: getcap {{ xmrig_versioned_dir }}/build/xmrig
       register: xmrig_caps
       changed_when: false
-      when: not (mining_msr_access | bool)
+      check_mode: false
+      when:
+        - not (mining_msr_access | bool)
+        - xmrig_version_exists.stat.exists or not ansible_check_mode
       tags: [mining]
 
     - name: Remove XMRig MSR capability (MSR access disabled)
       command: setcap -r {{ xmrig_versioned_dir }}/build/xmrig
       when:
         - not (mining_msr_access | bool)
-        - "'cap_sys_rawio' in xmrig_caps.stdout"
+        - "'cap_sys_rawio' in (xmrig_caps.stdout | default(''))"
       tags: [mining]
 
     - name: Update XMRig symlink to current version
@@ -681,6 +689,7 @@ WantedBy=multi-user.target
         fi
       register: p2pool_mode
       changed_when: false
+      check_mode: false  # read-only; must run in --check so later tasks get its output
       tags: [mining, verify]
 
     - name: Check P2Pool status

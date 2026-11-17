@@ -598,6 +598,7 @@ unrecoverable without your offline copy.
       command: /usr/local/bin/verify-backup.sh
       register: backup_verify
       changed_when: false
+      check_mode: false  # read-only; a dry-run should still verify the backups
       tags: [backup, verify]
 
     - name: Display backup status
