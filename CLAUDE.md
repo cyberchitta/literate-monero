@@ -118,24 +118,6 @@ The Makefile tangles each org file as a unit (fragment, config files and `config
 `config.yml.example` and fill it in before running `make`. Tangling the org
 files does not need it, but playbook assembly stops without it.
 
-## Working notes (gitignored)
-
-Tracked separately in the private `working-notes` repo, symlinked at `_notes/`;
-invisible to the `Grep`/`Glob` tools (global `CLAUDE.md` has the `rg` forms).
-Read directly when relevant:
-
-- `_notes/field-notes.md` — host-specific configuration observations from the
-  deployed machine (WiFi/thermal, networking, WireGuard)
-- `_notes/security-fixes-handoff.md` — progress through the `main` security
-  audit, fix by fix
-- `_notes/interop-phase-handoff.md` — interop tier build-out
-- `_notes/sandboxed-remote-access-handoff.md` — sandboxed ops remote-access
-  landing zone
-- `_notes/improvements-handoff.md` — repo-review backlog; deploy steps for the
-  XMRig pin + Tor-routed update scripts
-
-Speculative unless stated otherwise. Do not implement from these without asking.
-
 ## Code Conventions
 
 - Discuss approach before generating complete implementations
