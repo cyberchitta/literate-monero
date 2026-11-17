@@ -654,6 +654,7 @@ WantedBy=multi-user.target
         timeout: 10
       register: monerod_test
       failed_when: false
+      check_mode: false  # read-only get_info; uri is skipped under --check otherwise
       tags: [mining, verify]
 
     - name: Display monerod connectivity
