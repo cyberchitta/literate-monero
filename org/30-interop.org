@@ -1545,7 +1545,7 @@ belt-and-braces against an IP leak, even though Mullvad is already the only exit
         rabby_crx: "{{ rabby_install_dir }}/Rabby-{{ rabby_version }}.crx"
         rabby_key: "{{ rabby_install_dir }}/packing-key.pem"
       when: rabby_enabled | bool
-      tags: [interop]
+      tags: [interop, verify]  # the verify-tagged crx check needs rabby_crx
 
     - name: Check if this Rabby version is already unpacked
       stat:
