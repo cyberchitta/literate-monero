@@ -716,7 +716,9 @@ Regular maintenance tasks:
 - Verify backups: =sudo verify-backup.sh=
 
 *Monthly:*
-- System updates: =sudo pacman -Syu=
+- System updates: =omarchy update=, as the desktop user (it takes a
+  snapshot and runs Omarchy's migrations; a bare =pacman -Syu= skips both,
+  and Omarchy 4 refuses it)
 - Security audit: =sudo security-audit.sh=
 - Test restore from backup
 - Review and clean old logs
